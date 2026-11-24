@@ -15,12 +15,13 @@ pub fn lower(prog: &Program) -> Module {
     m.clock_hz = prog.clock_hz;
     m.clock_defaulted = prog.clock_defaulted;
     m.roms = prog.roms.clone();
+    m.arrays = prog.arrays.clone();
     m.adc_acq_ns = prog.adc_config.acq_ns;
     let mut gidx = HashMap::new();
     for it in &prog.module.items {
         if let Item::Var(v) = it {
             // las tablas viven en la memoria de programa, no son globales
-            if prog.roms.iter().any(|t| t.0 == v.name.name) {
+            if prog.roms.iter().any(|t| t.0 == v.name.name) || prog.arrays.iter().any(|t| t.0 == v.name.name) {
                 continue;
             }
             let sym = &prog.globals[&v.name.name];
@@ -83,7 +84,7 @@ fn ann_type(te: &TypeExpr) -> Type {
         TypeExprKind::Name(n) => Type::from_name(n).unwrap_or(Type::Error),
         TypeExprKind::Const(inner) => ann_type(inner),
         TypeExprKind::None => Type::Void,
-        TypeExprKind::Rom(_) => Type::Error,
+        TypeExprKind::Rom(_) | TypeExprKind::Array(..) => Type::Error,
     }
 }
 
@@ -242,9 +243,13 @@ impl<'a> FnLower<'a> {
                 }
             }
             ExprKind::Index { index, .. } => {
-                let rom = self.prog.rom_gets[&e.id];
                 let index = self.value(index);
-                self.emit(Inst::RomGet { dst: dst.unwrap(), rom, index });
+                if let Some(&arr) = self.prog.array_gets.get(&e.id) {
+                    self.emit(Inst::ArrGet { dst: dst.unwrap(), arr, index });
+                } else {
+                    let rom = self.prog.rom_gets[&e.id];
+                    self.emit(Inst::RomGet { dst: dst.unwrap(), rom, index });
+                }
             }
             ExprKind::Str(_) | ExprKind::FStr(_) => unreachable!("el frontend rechaza el texto fuera de UART.write_text"),
             ExprKind::List(_) => unreachable!("el frontend rechaza las listas fuera de una tabla"),
@@ -370,6 +375,23 @@ impl<'a> FnLower<'a> {
             StmtKind::Assign { target, value } => {
                 let dst = self.name_place(&target.name);
                 self.into(dst, value);
+            }
+            StmtKind::IndexAssign { target, index, op, value } => {
+                let arr = self.prog.arrays.iter().position(|(n, _)| *n == target.name).expect("el frontend declara el arreglo");
+                let idx = self.value(index);
+                let u8t = Type::Int { bits: 8, signed: false };
+                let new = match op {
+                    None => self.value(value),
+                    Some(op) => {
+                        // buf[i] op= v: se lee, se opera y se escribe con el mismo indice (evaluado una sola vez)
+                        let cur = self.new_temp(u8t);
+                        self.emit(Inst::ArrGet { dst: cur, arr, index: idx });
+                        let rhs = self.value(value);
+                        self.emit(Inst::Binary { dst: cur, op: *op, lhs: Operand::Place(cur), rhs });
+                        Operand::Place(cur)
+                    }
+                };
+                self.emit(Inst::ArrSet { arr, index: idx, value: new });
             }
             StmtKind::AugAssign { target, op, value } => {
                 let dst = self.name_place(&target.name);

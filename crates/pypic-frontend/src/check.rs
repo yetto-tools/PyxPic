@@ -145,6 +145,9 @@ pub struct Program {
     /// Tablas constantes (nombre y entradas) y las lecturas con indice variable, por id de expresion.
     pub roms: Vec<(String, Vec<u8>)>,
     pub rom_gets: BTreeMap<u32, usize>,
+    /// Arreglos de RAM (`buf: uint8[16]`): nombre y capacidad; y las lecturas `buf[i]` con indice variable, por id de expresion.
+    pub arrays: Vec<(String, usize)>,
+    pub array_gets: BTreeMap<u32, usize>,
     /// Llamadas a metodos de `pypic.periph.adc`, por id de expresion.
     pub adc_calls: BTreeMap<u32, AdcCall>,
     /// Condiciones electricas que asume el programa para el ADC (adquisicion y alimentacion).
@@ -168,6 +171,8 @@ pub struct Checked {
     pub bits_calls: BTreeMap<u32, BitsOp>,
     pub roms: Vec<(String, Vec<u8>)>,
     pub rom_gets: BTreeMap<u32, usize>,
+    pub arrays: Vec<(String, usize)>,
+    pub array_gets: BTreeMap<u32, usize>,
     pub adc_calls: BTreeMap<u32, AdcCall>,
     pub adc_config: adc::AdcConfig,
     pub uart_calls: BTreeMap<u32, UartCall>,
@@ -226,6 +231,9 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         roms: Vec::new(),
         rom_idx: HashMap::new(),
         rom_gets: BTreeMap::new(),
+        arrays: Vec::new(),
+        array_idx: HashMap::new(),
+        array_gets: BTreeMap::new(),
         bits_calls: BTreeMap::new(),
         carry_ok: false,
         carry_prev: false,
@@ -233,7 +241,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         stmt_top: None,
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, adc_calls: c.adc_calls, adc_config: c.adc_config, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, arrays: c.arrays, array_gets: c.array_gets, adc_calls: c.adc_calls, adc_config: c.adc_config, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -324,6 +332,9 @@ struct Checker<'a> {
     roms: Vec<(String, Vec<u8>)>,
     rom_idx: HashMap<String, usize>,
     rom_gets: BTreeMap<u32, usize>,
+    arrays: Vec<(String, usize)>,
+    array_idx: HashMap<String, usize>,
+    array_gets: BTreeMap<u32, usize>,
     /// Funciones importadas de `pypic.bits` y sus llamadas por id de expresion.
     bits_fns: HashSet<String>,
     bits_calls: BTreeMap<u32, BitsOp>,
@@ -1987,6 +1998,9 @@ impl<'a> Checker<'a> {
 
     fn declare_variable(&mut self, v: &VarDecl, is_global: bool) {
         let name = &v.name.name;
+        if let TypeExprKind::Array(elem, n) = &v.ann.kind {
+            return self.declare_array(v, elem, *n, is_global);
+        }
         match &v.ann.kind {
             TypeExprKind::Const(inner) if matches!(inner.kind, TypeExprKind::Rom(_)) => {
                 let TypeExprKind::Rom(elem) = &inner.kind else { unreachable!() };
@@ -2008,7 +2022,7 @@ impl<'a> Checker<'a> {
         let exists = if is_global { self.globals.contains_key(name) } else { self.locals.contains_key(name) };
         if !is_global && self.globals.contains_key(name) {
             self.d.error("PYP2008", v.name.span, format!("'{name}' oculta una variable global del mismo nombre"));
-        } else if exists || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.time_fns.contains_key(name) || self.bits_fns.contains(name) || self.timer_names.contains_key(name) || self.reg_names.contains_key(name) || self.timer_consts.contains(name) {
+        } else if exists || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.time_fns.contains_key(name) || self.bits_fns.contains(name) || self.timer_names.contains_key(name) || self.reg_names.contains_key(name) || self.timer_consts.contains(name) || self.array_idx.contains_key(name) || self.rom_idx.contains_key(name) {
             self.d.error("PYP2009", v.name.span, format!("'{name}' ya esta declarado"));
         }
         let mut konst = None;
@@ -2141,6 +2155,77 @@ impl<'a> Checker<'a> {
     /// Profundidad maxima de CALL anidados desde `f` (hoja = 0). Sin recursion es finita;
     /// el guardia de ciclos solo evita bucles si ya se reporto `PYP2013`.
     /// `NOMBRE: Rom[u8] = [..]`: datos constantes en la memoria de programa (`docs/sdk-tablas.md`).
+    /// `buf: uint8[16]`: un arreglo de capacidad fija en RAM (docs/sdk-arreglos.md). Solo globales y solo `uint8`; empieza en cero
+    /// (el arranque lo pone a cero, como al resto de las globales) y no se inicializa con valores.
+    fn declare_array(&mut self, v: &VarDecl, elem: &TypeExpr, n: i128, is_global: bool) {
+        let name = &v.name.name;
+        if !is_global {
+            self.d.error("PYP2170", v.span, format!("'{name}': un arreglo se declara a nivel de modulo, no dentro de una funcion (la RAM de los arreglos es fija)"));
+        }
+        match &elem.kind {
+            TypeExprKind::Name(t) if Type::from_name(t) == Some(U8) => {}
+            _ => self.d.error("PYP2170", elem.span, "los arreglos de RAM solo admiten uint8 por ahora: buf: uint8[16]"),
+        }
+        if !(1..=255).contains(&n) {
+            self.d.error("PYP2171", v.ann.span, format!("la capacidad de un arreglo va de 1 a 255 (el indice es un uint8), '{name}' pide {n}"));
+        }
+        if let Some(val) = &v.value {
+            self.expr(val);
+            self.d.error("PYP2170", val.span, format!("un arreglo empieza con todos sus elementos en cero y no se inicializa con valores: quita el '= ...' de '{name}'"));
+        }
+        if self.globals.contains_key(name) || self.rom_idx.contains_key(name) || self.array_idx.contains_key(name) || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.reg_names.contains_key(name) || self.timer_names.contains_key(name) || self.bits_fns.contains(name) || self.time_fns.contains_key(name) {
+            self.d.error("PYP2009", v.name.span, format!("'{name}' ya esta declarado"));
+            return;
+        }
+        self.array_idx.insert(name.clone(), self.arrays.len());
+        self.arrays.push((name.clone(), n.clamp(1, 255) as usize));
+    }
+
+    /// El indice de `buf[i]` / `buf[i] = v`: un `uint8` (o una constante dentro de la capacidad).
+    fn array_index_ok(&mut self, obj: &str, ai: usize, index: &Expr) -> bool {
+        let len = self.arrays[ai].1;
+        let t = self.expr(index);
+        match (t, self.konst(index)) {
+            (Type::Error, _) => false,
+            (_, Some(k)) if (0..len as i128).contains(&k) => {
+                self.coerce_literal(index, U8);
+                true
+            }
+            (_, Some(k)) => {
+                self.d.error("PYP2161", index.span, format!("el indice {k} esta fuera del arreglo '{obj}' (tiene {len} elementos: 0..={})", len - 1));
+                false
+            }
+            (Type::Int { bits: 8, signed: false }, None) => true,
+            (other, None) => {
+                self.d.error("PYP2163", index.span, format!("el indice de un arreglo es un uint8, no {other}: convierte con uint8(...)"));
+                false
+            }
+        }
+    }
+
+    fn index_assign(&mut self, target: &Ident, index: &Expr, op: Option<BinOp>, value: &Expr, span: Span) {
+        let name = &target.name;
+        let Some(&ai) = self.array_idx.get(name) else {
+            self.expr(index);
+            self.expr(value);
+            let msg = if self.rom_idx.contains_key(name) {
+                format!("'{name}' es una tabla Rom de solo lectura: no se puede escribir en ella")
+            } else if self.lookup(name).is_some() {
+                format!("'{name}' no es un arreglo: solo se indexan los declarados como '{name}: uint8[N]'")
+            } else {
+                format!("'{name}' no esta declarado como arreglo")
+            };
+            self.d.error("PYP2162", target.span, msg);
+            return;
+        };
+        let ok = self.array_index_ok(name, ai, index);
+        match op {
+            Some(BinOp::Shl | BinOp::Shr) => self.shift_amount(value, U8),
+            _ => self.expect(value, U8, Some("los elementos de un arreglo son uint8")),
+        }
+        let _ = (ok, span);
+    }
+
     fn declare_rom(&mut self, v: &VarDecl, inner: &TypeExpr, is_global: bool, is_final: bool) {
         let name = &v.name.name;
         // Rom ya es de solo lectura: `Const` no hace falta (se acepta `Const[Rom[u8]]`)
@@ -2152,7 +2237,7 @@ impl<'a> Checker<'a> {
             TypeExprKind::Name(n) if Type::from_name(n) == Some(U8) => {}
             _ => self.d.error("PYP2160", inner.span, "Rom solo admite uint8 por ahora: cada entrada es un RETLW"),
         }
-        if self.globals.contains_key(name) || self.rom_idx.contains_key(name) || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.reg_names.contains_key(name) || self.timer_names.contains_key(name) || self.bits_fns.contains(name) {
+        if self.globals.contains_key(name) || self.rom_idx.contains_key(name) || self.array_idx.contains_key(name) || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.reg_names.contains_key(name) || self.timer_names.contains_key(name) || self.bits_fns.contains(name) {
             self.d.error("PYP2009", v.name.span, format!("'{name}' ya esta declarado"));
         }
         let Some(val) = &v.value else {
@@ -2183,9 +2268,17 @@ impl<'a> Checker<'a> {
 
     /// `TABLA[i]`: lectura de costo fijo; un indice constante se resuelve al compilar.
     fn index_expr(&mut self, e: &Expr, obj: &str, obj_span: Span, index: &Expr) -> Type {
+        if let Some(&ai) = self.array_idx.get(obj) {
+            return if self.array_index_ok(obj, ai, index) {
+                self.array_gets.insert(e.id, ai);
+                self.set(e, U8, None)
+            } else {
+                self.set(e, Type::Error, None)
+            };
+        }
         let Some(&ti) = self.rom_idx.get(obj) else {
             self.expr(index);
-            let msg = if self.lookup(obj).is_some() { format!("'{obj}' no es una tabla: solo se indexan las 'Rom[uint8]'") } else { format!("'{obj}' no esta declarada como tabla") };
+            let msg = if self.lookup(obj).is_some() { format!("'{obj}' no es una tabla ni un arreglo: solo se indexan las 'Rom[uint8]' y los 'uint8[N]'") } else { format!("'{obj}' no esta declarada como tabla") };
             self.d.error("PYP2162", obj_span, msg);
             return self.set(e, Type::Error, None);
         };
@@ -2348,6 +2441,7 @@ impl<'a> Checker<'a> {
                     self.expr(value);
                 }
             },
+            StmtKind::IndexAssign { target, index, op, value } => self.index_assign(target, index, *op, value, s.span),
             StmtKind::AugAssign { target, op, value } => {
                 let sym = self.assign_target(target);
                 match sym {
@@ -2389,6 +2483,10 @@ impl<'a> Checker<'a> {
     }
 
     fn assign_target(&mut self, t: &Ident) -> Option<Symbol> {
+        if self.array_idx.contains_key(&t.name) {
+            self.d.error("PYP2172", t.span, format!("'{0}' es un arreglo: se escribe un elemento, '{0}[indice] = valor'", t.name));
+            return None;
+        }
         let Some(sym) = self.lookup(&t.name) else {
             self.d.error("PYP2022", t.span, format!("'{0}' no esta declarada; declarala con tipo: '{0}: uint8 = ...'", t.name));
             return None;
@@ -2546,6 +2644,8 @@ impl<'a> Checker<'a> {
             self.d.error("PYP2175", e.span, "'ADC' es el convertidor: usa sus metodos (ADC.start(), ADC.read(AN0), ADC.result()...)");
         } else if self.adc_consts.contains(n) {
             self.d.error("PYP2175", e.span, format!("'{n}' es una constante del ADC: solo se usa como argumento de ADC.select/read o ADC.start(clock=...)"));
+        } else if self.array_idx.contains_key(n) {
+            self.d.error("PYP2172", e.span, format!("'{n}' es un arreglo: se lee con {n}[indice], se escribe con {n}[indice] = valor y su tamano es len({n})"));
         } else if self.rom_idx.contains_key(n) {
             self.d.error("PYP2164", e.span, format!("'{n}' es una tabla: se lee con {n}[indice] y su tamano con len({n})"));
         } else if self.reg_names.contains_key(n) {
@@ -2876,11 +2976,16 @@ impl<'a> Checker<'a> {
                     let len = self.roms[self.rom_idx[n]].1.len() as i128;
                     self.set(e, Type::Literal, Some(len))
                 }
+                [a] if matches!(&a.kind, ExprKind::Name(n) if self.array_idx.contains_key(n)) => {
+                    let ExprKind::Name(n) = &a.kind else { unreachable!() };
+                    let len = self.arrays[self.array_idx[n]].1 as i128;
+                    self.set(e, Type::Literal, Some(len))
+                }
                 _ => {
                     for a in args {
                         self.expr(a);
                     }
-                    self.d.error("PYP2162", e.span, "len() solo mide una tabla: len(TABLA)");
+                    self.d.error("PYP2162", e.span, "len() solo mide una tabla o un arreglo: len(TABLA)");
                     self.set(e, Type::Error, None)
                 }
             };

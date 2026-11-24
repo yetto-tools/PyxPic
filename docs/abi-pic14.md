@@ -31,7 +31,7 @@ Los tipos más anchos que 8 bits se compilan con secuencias nativas (cadenas de 
   recursión ✅ (`PYP2013`) y porque ninguna función se comparte entre `main` y la interrupción ✅ (`PYP2060`): el contexto principal y el de
   la ISR usan **áreas de memoria disjuntas**.
 - Los globales se inicializan con constantes (`MOVLW k` / `MOVWF f`) en el arranque; no hay copia desde flash.
-- Reparto de la RAM común `70h–7Fh` (16 bytes): `70h W_TEMP`, `71h STATUS_TEMP`, `72h PCLATH_TEMP`, `73h FSR_TEMP` (reservado para indirecto);
+- Reparto de la RAM común `70h–7Fh` (16 bytes): `70h W_TEMP`, `71h STATUS_TEMP`, `72h PCLATH_TEMP`, `73h FSR_TEMP` (la interrupcion lo usa para guardar `FSR` solo si ella o algo que llama usa arreglos);
   `74h–7Fh` libres para temporales calientes del compilador.
 
 ## 4. Convención de llamada

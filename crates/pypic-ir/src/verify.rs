@@ -127,6 +127,18 @@ fn verify_fn(m: &Module, f: &Function, errs: &mut Vec<String>) {
                         e(format!("{}: Adc {:?} mal formado", at(i), call.op));
                     }
                 }
+                Inst::ArrGet { dst, arr, index } => {
+                    let u8_ty = Type::Int { bits: 8, signed: false };
+                    if *arr >= m.arrays.len() || !valid(*dst) || m.place_ty(f, *dst) != u8_ty || ty(index) != u8_ty {
+                        e(format!("{}: ArrGet mal formado", at(i)));
+                    }
+                }
+                Inst::ArrSet { arr, index, value } => {
+                    let u8_ty = Type::Int { bits: 8, signed: false };
+                    if *arr >= m.arrays.len() || ty(index) != u8_ty || ty(value) != u8_ty {
+                        e(format!("{}: ArrSet mal formado", at(i)));
+                    }
+                }
                 Inst::RomGet { dst, rom, index } => {
                     let u8_ty = Type::Int { bits: 8, signed: false };
                     if *rom >= m.roms.len() || !valid(*dst) || m.place_ty(f, *dst) != u8_ty || ty(index) != u8_ty {

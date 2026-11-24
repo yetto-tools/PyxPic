@@ -84,6 +84,8 @@ pub fn print(m: &Module) -> String {
                         format!("{}uart {:?}{a}", dst.map(|d| format!("{} = ", place(m, f, d))).unwrap_or_default(), call.op)
                     }
                     Inst::Adc { call, dst } => format!("{}adc {:?}", dst.map(|d| format!("{} = ", place(m, f, d))).unwrap_or_default(), call.op),
+                    Inst::ArrGet { dst, arr, index } => format!("{} = array {}[{}]", place(m, f, *dst), m.arrays[*arr].0, operand(m, f, index)),
+                    Inst::ArrSet { arr, index, value } => format!("array {}[{}] = {}", m.arrays[*arr].0, operand(m, f, index), operand(m, f, value)),
                     Inst::RomGet { dst, rom, index } => format!("{} = rom {}[{}]", place(m, f, *dst), m.roms[*rom].0, operand(m, f, index)),
                     Inst::Bits { op, dst, src } => {
                         let a = src.as_ref().map(|s| format!(" {}", operand(m, f, s))).unwrap_or_default();

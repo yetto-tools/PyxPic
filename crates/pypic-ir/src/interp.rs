@@ -46,6 +46,10 @@ pub struct Machine<'m> {
     /// Los caracteres de 9 bits (`write9` y `read9`): lo que el programa envio y lo que se le va a dar a leer.
     pub uart_tx9: Vec<u16>,
     pub uart_rx9: std::collections::VecDeque<u16>,
+    /// Los arreglos de RAM (todo en cero al empezar) y los accesos con un indice fuera de la capacidad (el indice se satura a la
+    /// ultima posicion, igual que en el PIC): el intérprete los anota para que una prueba los vea; el simulador del PIC no puede.
+    pub arrays: Vec<Vec<u8>>,
+    pub array_oob: Vec<String>,
 }
 
 struct Frame {
@@ -75,7 +79,19 @@ impl<'m> Machine<'m> {
             uart_rx: Default::default(),
             uart_tx9: Vec::new(),
             uart_rx9: Default::default(),
+            arrays: module.arrays.iter().map(|(_, n)| vec![0; *n]).collect(),
+            array_oob: Vec::new(),
         }
+    }
+
+    /// El indice efectivo de un acceso a un arreglo: saturado a la ultima posicion, anotando el acceso fuera de rango.
+    fn array_index(&mut self, arr: usize, raw: i128) -> usize {
+        let n = self.arrays[arr].len();
+        if raw < 0 || raw as usize >= n {
+            self.array_oob.push(format!("{}[{}] con {} elementos", self.module.arrays[arr].0, raw, n));
+            return n - 1;
+        }
+        raw as usize
     }
 
     /// Nivel externo de un pin configurado como entrada.
@@ -268,6 +284,16 @@ impl<'m> Machine<'m> {
                     self.write(f, fr, dst.unwrap(), self.adc_result);
                 }
             },
+            Inst::ArrGet { dst, arr, index } => {
+                let i = self.array_index(*arr, self.read(fr, index));
+                let v = self.arrays[*arr][i];
+                self.write(f, fr, *dst, v as i128);
+            }
+            Inst::ArrSet { arr, index, value } => {
+                let i = self.array_index(*arr, self.read(fr, index));
+                let v = self.read(fr, value);
+                self.arrays[*arr][i] = v as u8;
+            }
             Inst::RomGet { dst, rom, index } => {
                 let t = &self.module.roms[*rom].1;
                 let i = (self.read(fr, index) as usize).min(t.len() - 1);

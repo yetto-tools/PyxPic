@@ -16,7 +16,7 @@ Los issues abiertos están en <https://github.com/yetto-tools/PyPic/issues>.
 - [x] Tipado y constantes; [~] sin `u32`/`i32` en el backend (#32)
 - [x] Instrucciones PIC14, codificador y desensamblador (las 35, ida y vuelta de las 16 384 palabras)
 - [~] Bancos, saltos y llamadas: todo el dato en el banco 0 (#26); programas de hasta toda la flash con PCLATH (una función por página, +4 ciclos por llamada); sin enlazador entre módulos
-- [ ] Arreglos estáticos mutables e indexado (#8): propuesta y dependencias en `docs/diseno-arreglos.md`; todavía no habilitan búferes de texto (#63).
+- [x] Arreglos estáticos `uint8[N]` globales e indexado `buf[i]` (#8, primera entrega: `docs/sdk-arreglos.md`) · [ ] otros tipos de elemento, locales, inicializadores y `char[N]`/recepción de texto (#63).
 - [x] Intel HEX y palabras de configuración por nombre (`pypic build --config`)
 - [x] Blink y pulsador reales compilados desde `.py`, confirmados en Proteus; [ ] confirmación en hardware (#16)
 - [~] Ensamblador textual con un subconjunto de la sintaxis PIC-AS y ensamblador en línea (`@asm_function`); compatibilidad y directivas pendientes en #49–#52, #60, #66 y #67. `IDLOC0`–`IDLOC3` y su desensamblado están implementados (#68).

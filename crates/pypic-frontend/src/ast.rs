@@ -139,6 +139,8 @@ pub enum TypeExprKind {
     Name(String),
     /// `Const[T]`
     Const(Box<TypeExpr>),
+    /// `uint8[16]`: arreglo de capacidad fija en RAM (solo a nivel de modulo).
+    Array(Box<TypeExpr>, i128),
     /// `None` (solo como tipo de retorno)
     None,
 }
@@ -173,6 +175,8 @@ pub struct Stmt {
 pub enum StmtKind {
     Decl(VarDecl),
     Assign { target: Ident, value: Expr },
+    /// `buf[i] = v` (con `op`: `buf[i] += v`): escritura en un arreglo de RAM.
+    IndexAssign { target: Ident, index: Expr, op: Option<BinOp>, value: Expr },
     AugAssign { target: Ident, op: BinOp, value: Expr },
     If { test: Expr, body: Vec<Stmt>, orelse: Vec<Stmt> },
     While { test: Expr, body: Vec<Stmt> },

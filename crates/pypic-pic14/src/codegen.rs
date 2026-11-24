@@ -29,6 +29,10 @@ const BIT_IRP: u8 = 7;
 const W_TEMP: u8 = 0x70;
 const STATUS_TEMP: u8 = 0x71;
 const PCLATH_TEMP: u8 = 0x72;
+/// FSR de la interrupcion (solo si la interrupcion usa arreglos); FSR esta en 04h en todos los bancos.
+const FSR_TEMP: u8 = 0x73;
+const FSR: u8 = 0x04;
+const INDF: u8 = 0x00;
 const SCRATCH_MAIN: u8 = 0x74; // 74h-77h
 const SCRATCH_ISR: u8 = 0x78; // 78h-7Bh
 const RETV_MAIN: u8 = 0x7C;
@@ -149,6 +153,14 @@ pub struct GlobalSym {
     pub is_const: bool,
 }
 
+/// Un arreglo de RAM ya ubicado: nombre, direccion del primer elemento (banco 0) y capacidad.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArraySym {
+    pub name: String,
+    pub addr: u8,
+    pub len: usize,
+}
+
 /// El generador de baudios de la UART: lo pedido, lo que da y su configuracion.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct UartReport {
@@ -201,6 +213,7 @@ pub struct Compiled {
     pub uart: Option<UartReport>,
     pub image: Image,
     pub globals: Vec<GlobalSym>,
+    pub arrays: Vec<ArraySym>,
     /// (nombre, direccion de palabra del punto de entrada).
     pub functions: Vec<(String, u32)>,
     pub listing: String,
@@ -279,6 +292,8 @@ struct Alloc {
     /// Bloque de trabajo de las rutinas de runtime de cada contexto (main, interrupcion): 0 si no las usa.
     rt: [u8; 2],
     globals: Vec<u8>,
+    /// Direccion (banco 0) del primer elemento de cada arreglo de RAM.
+    arrays: Vec<u8>,
     locals: HashMap<usize, Vec<u8>>,
     temps: HashMap<usize, Vec<u8>>,
     used: usize,
@@ -300,6 +315,7 @@ fn allocate(m: &Module, live: &[usize], isr_ctx: &HashSet<usize>, opts: &Options
         let n = size(g.ty)?;
         globals.push(take(n));
     }
+    let arrays: Vec<u8> = m.arrays.iter().map(|(_, n)| take(*n)).collect();
     let mut locals = HashMap::new();
     let mut temps = HashMap::new();
     for &fi in live {
@@ -327,7 +343,7 @@ fn allocate(m: &Module, live: &[usize], isr_ctx: &HashSet<usize>, opts: &Options
     if used > available {
         return Err(CodegenError::OutOfRam { needed: used, available });
     }
-    Ok(Alloc { delay_ws, rt, globals, locals, temps, used })
+    Ok(Alloc { delay_ws, rt, globals, arrays, locals, temps, used })
 }
 
 // ---- grafo de llamadas -----------------------------------------------------------------------
@@ -373,6 +389,8 @@ struct Gen<'a> {
     asm: Asm,
     fn_labels: HashMap<usize, Label>,
     isr_ctx: HashSet<usize>,
+    /// La interrupcion (o algo que llama) usa arreglos: su prologo guarda FSR y su epilogo lo restaura.
+    saves_fsr: bool,
     cur: usize,
     clock_hz: Option<u32>,
     cpc: u32,
@@ -416,6 +434,10 @@ impl<'a> Gen<'a> {
         self.asm.i(Movwf(STATUS_TEMP));
         self.asm.i(Movf(PCLATH, W));
         self.asm.i(Movwf(PCLATH_TEMP));
+        if self.saves_fsr {
+            self.asm.i(Movf(FSR, W));
+            self.asm.i(Movwf(FSR_TEMP));
+        }
         self.asm.i(Clrf(PCLATH));
         self.asm.i(Bcf(STATUS, BIT_RP0));
         self.asm.i(Bcf(STATUS, BIT_RP1));
@@ -934,6 +956,8 @@ impl<'a> Gen<'a> {
             I::Adc { call, dst } => self.adc(call, *dst),
             I::Uart { call, dst, arg } => self.uart(call, *dst, arg.as_ref()),
             I::RomGet { dst, rom, index } => self.rom_get(*dst, *rom, index),
+            I::ArrGet { dst, arr, index } => self.arr_get(*dst, *arr, index),
+            I::ArrSet { arr, index, value } => self.arr_set(*arr, index, value),
             I::PinCfg { pin, output } => self.pin_cfg(*pin, *output),
             I::PinSet { pin, value } => self.pin_set(*pin, value),
             I::PinToggle { pin } => {
@@ -965,6 +989,10 @@ impl<'a> Gen<'a> {
         }
         if self.f().is_interrupt {
             // restaura PCLATH, STATUS (con los bits de banco) y W sin alterar STATUS (ejemplo 14-1, p.219)
+            if self.saves_fsr {
+                self.asm.i(Movf(FSR_TEMP, W));
+                self.asm.i(Movwf(FSR));
+            }
             self.asm.i(Movf(PCLATH_TEMP, W));
             self.asm.i(Movwf(PCLATH));
             self.asm.i(Swapf(STATUS_TEMP, W));
@@ -1130,7 +1158,8 @@ fn compile_mode(m: &Module, opts: &Options, multi: bool) -> Result<Compiled, Cod
     let isr_ctx = reach(m, &isrs);
 
     let al = allocate(m, &live, &isr_ctx, opts)?;
-    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new(), registers: opts.registers.clone(), analog_pins: opts.analog_pins.clone(), uart_report: None, rom_labels: HashMap::new(), rom_order: Vec::new(), rt_labels: HashMap::new(), rt_order: Vec::new(), force_isr: None, multi };
+    let saves_fsr = live.iter().filter(|fi| isr_ctx.contains(fi)).any(|&fi| m.functions[fi].blocks.iter().any(|b| b.insts.iter().any(|i| matches!(i, pypic_ir::ir::Inst::ArrGet { .. } | pypic_ir::ir::Inst::ArrSet { .. }))));
+    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, saves_fsr, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new(), registers: opts.registers.clone(), analog_pins: opts.analog_pins.clone(), uart_report: None, rom_labels: HashMap::new(), rom_order: Vec::new(), rt_labels: HashMap::new(), rt_order: Vec::new(), force_isr: None, multi };
     for &fi in &live {
         let l = g.asm.label(m.functions[fi].name.clone());
         g.fn_labels.insert(fi, l);
@@ -1175,6 +1204,26 @@ fn compile_mode(m: &Module, opts: &Options, multi: bool) -> Result<Compiled, Cod
                 g.asm.i(Movlw(byte));
                 g.asm.i(Movwf(addr + k as u8));
             }
+        }
+    }
+    // los arreglos de RAM empiezan en cero: hasta 4 elementos con CLRF; mas, un bucle con FSR (sin contador)
+    for (ai, (_, n)) in m.arrays.iter().enumerate() {
+        let base = g.al.arrays[ai];
+        if *n <= 4 {
+            for k in 0..*n {
+                g.asm.i(Clrf(base + k as u8));
+            }
+        } else {
+            let top = g.asm.label("arr.cero");
+            g.asm.i(Movlw(base));
+            g.asm.i(Movwf(FSR));
+            g.asm.place(top);
+            g.asm.i(Clrf(INDF));
+            g.asm.i(Incf(FSR, F));
+            g.asm.i(Movlw(base + *n as u8));
+            g.asm.i(Xorwf(FSR, W));
+            g.asm.i(Btfss(STATUS, BIT_Z));
+            g.asm.goto(top);
         }
     }
     let mut ports: Vec<u8> = Vec::new();
@@ -1322,7 +1371,8 @@ fn compile_mode(m: &Module, opts: &Options, multi: bool) -> Result<Compiled, Cod
         .map(|(i, gl)| GlobalSym { name: gl.name.clone(), addr: g.al.globals[i], ty: gl.ty, is_const: gl.is_const })
         .collect();
     let functions = live.iter().map(|&fi| (m.functions[fi].name.clone(), addr_of[g.fn_labels[&fi]].unwrap())).collect();
-    Ok(Compiled { timing: g.timing, uart: g.uart_report, image, globals, functions, listing, flash_words, ram_bytes: g.al.used })
+    let arrays = m.arrays.iter().enumerate().map(|(i, (n, len))| ArraySym { name: n.clone(), addr: g.al.arrays[i], len: *len }).collect();
+    Ok(Compiled { timing: g.timing, uart: g.uart_report, image, globals, arrays, functions, listing, flash_words, ram_bytes: g.al.used })
 }
 
 // ---- temporizadores (pypic.periph.timer) ---------------------------------------------------------------
@@ -1483,6 +1533,68 @@ impl<'a> Gen<'a> {
         self.ld(bs[0]);
         self.asm.i(Movwf(txreg));
         self.asm.i(Nop);
+        Ok(())
+    }
+
+    /// `FSR` = direccion del elemento `index` de un arreglo del banco 0, con el indice saturado a `len - 1` (igual que las tablas Rom):
+    ///
+    /// ```text
+    ///   MOVF  index,W / SUBLW len-1 / BTFSS STATUS,C / CLRW / SUBLW len-1   ; satura un indice >= len a len-1
+    ///   ADDLW base / MOVWF FSR                                              ; 9 ciclos con el indice variable, sin importar el valor
+    /// ```
+    ///
+    /// Requiere IRP = 0 (la ABI lo mantiene) y que el arreglo este en el banco 0.
+    fn arr_fsr(&mut self, arr: usize, index: B) {
+        let len = self.m.arrays[arr].1;
+        let base = self.al.arrays[arr];
+        match index {
+            B::Imm(k) => {
+                self.asm.i(Movlw(base + (k as usize).min(len - 1) as u8));
+            }
+            B::Reg(r) => {
+                self.asm.i(Movf(r, W));
+                self.asm.i(Sublw(len as u8 - 1));
+                self.asm.i(Btfss(STATUS, BIT_C));
+                self.asm.i(Clrw);
+                self.asm.i(Sublw(len as u8 - 1));
+                self.asm.i(Addlw(base));
+            }
+        }
+        self.asm.i(Movwf(FSR));
+    }
+
+    /// `dst = ARR[index]`: un indice constante es un acceso directo (2 ciclos); uno variable, con `FSR` e `INDF`.
+    fn arr_get(&mut self, dst: Place, arr: usize, index: &Operand) -> Result<(), CodegenError> {
+        let d = self.regs(dst)?[0];
+        match self.bytes(index)?[0] {
+            B::Imm(k) => {
+                let addr = self.al.arrays[arr] + (k as usize).min(self.m.arrays[arr].1 - 1) as u8;
+                self.asm.i(Movf(addr, W));
+            }
+            r => {
+                self.arr_fsr(arr, r);
+                self.asm.i(Movf(INDF, W));
+            }
+        }
+        self.st(d);
+        Ok(())
+    }
+
+    /// `ARR[index] = value`.
+    fn arr_set(&mut self, arr: usize, index: &Operand, value: &Operand) -> Result<(), CodegenError> {
+        let v = self.bytes(value)?[0];
+        match self.bytes(index)?[0] {
+            B::Imm(k) => {
+                let addr = self.al.arrays[arr] + (k as usize).min(self.m.arrays[arr].1 - 1) as u8;
+                self.ld(v);
+                self.asm.i(Movwf(addr));
+            }
+            r => {
+                self.arr_fsr(arr, r);
+                self.ld(v);
+                self.asm.i(Movwf(INDF));
+            }
+        }
         Ok(())
     }
 

@@ -15,6 +15,21 @@ const UNSUPPORTED_KEYWORDS: &[&str] = &[
     "as",
 ];
 
+fn aug_op(op: &str) -> BinOp {
+    match op {
+        "+" => BinOp::Add,
+        "-" => BinOp::Sub,
+        "*" => BinOp::Mul,
+        "//" => BinOp::Div,
+        "%" => BinOp::Mod,
+        "&" => BinOp::BitAnd,
+        "|" => BinOp::BitOr,
+        "^" => BinOp::BitXor,
+        "<<" => BinOp::Shl,
+        _ => BinOp::Shr,
+    }
+}
+
 pub fn parse(src: &str, d: &mut Diagnostics) -> Module {
     let toks = lex(src, d);
     let mut p = Parser { toks, pos: 0, d, next_id: 0 };
@@ -328,6 +343,15 @@ impl<'a> Parser<'a> {
             }
             Tok::Ident(s) if !UNSUPPORTED_KEYWORDS.contains(&s.as_str()) => {
                 self.bump();
+                if self.at(&Tok::LBracket) {
+                    if let Tok::Int(n) = self.peek_at(1).clone() {
+                        self.bump();
+                        self.bump();
+                        let end = self.expect(Tok::RBracket, "']'")?;
+                        let elem = TypeExpr { span: sp, kind: TypeExprKind::Name(s) };
+                        return Ok(TypeExpr { span: sp.to(end), kind: TypeExprKind::Array(Box::new(elem), n) });
+                    }
+                }
                 Ok(TypeExpr { span: sp, kind: TypeExprKind::Name(s) })
             }
             _ => self.err("PYP2001", sp, "tipo no valido; usa u8, i8, u16, i16, u32, i32 o bool"),
@@ -429,6 +453,21 @@ impl<'a> Parser<'a> {
             }
             // sentencia simple que empieza por un nombre
             match self.peek_at(1).clone() {
+                Tok::LBracket => {
+                    let target = self.ident("un nombre")?;
+                    self.bump(); // '['
+                    let index = self.expr()?;
+                    self.expect(Tok::RBracket, "']'")?;
+                    let op = match self.peek().clone() {
+                        Tok::Assign => None,
+                        Tok::AugAssign(o) => Some(aug_op(o)),
+                        _ => return self.err("PYP1011", index.span, "una lectura suelta buf[i] no tiene efecto; para escribir usa buf[i] = valor"),
+                    };
+                    self.bump();
+                    let value = self.expr()?;
+                    self.end_stmt()?;
+                    return Ok(Stmt { span: start.to(value.span), kind: StmtKind::IndexAssign { target, index, op, value } });
+                }
                 Tok::Colon => {
                     let decl = self.var_decl()?;
                     return Ok(Stmt { span: decl.span, kind: StmtKind::Decl(decl) });

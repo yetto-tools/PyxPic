@@ -111,5 +111,5 @@ cargo test
 - [x] Tipado y constantes (literales, casts, overflow, `//` y `%`).
 - [x] Reglas hardware-conscientes: sin recursion, una ISR, tipos limitados por el destino.
 - [x] Cada construccion rechazada tiene test con su codigo.
-- [ ] Pendiente: resolucion de modulos del SDK (`machine`, `gpio`...), arreglos estaticos, IR tipada,
+- [ ] Pendiente: resolucion de modulos del SDK (`machine`, `gpio`...), IR tipada, (arreglos estaticos `uint8[N]`: hechos, ver `sdk-arreglos.md`),
       validacion contra Device Pack, advertencias (codigo inalcanzable, variables sin usar).

@@ -63,6 +63,10 @@ pub enum Inst {
     /// `dst = TABLA[index]`: lectura de una tabla constante de la memoria de programa. Un indice mayor que el ultimo
     /// devuelve la ultima entrada (el backend lo comprueba; la consulta cuesta lo mismo con cualquier indice).
     RomGet { dst: Place, rom: usize, index: Operand },
+    /// `dst = ARREGLO[index]`: un indice mayor que la capacidad se satura a la ultima posicion (comportamiento definido).
+    ArrGet { dst: Place, arr: usize, index: Operand },
+    /// `ARREGLO[index] = value`, con el mismo indice saturado: nunca escribe fuera del arreglo.
+    ArrSet { arr: usize, index: Operand, value: Operand },
     /// Operacion del ADC (`ADC.start()`, `ADC.read(AN0)`...). `dst` recibe el resultado de `Done` (bool), `Result` y `Read` (u16).
     Adc { call: AdcCall, dst: Option<Place> },
     /// Operacion de la UART (`UART.start(baud=9600)`, `UART.write(x)`...). `arg` es el byte de `Write`/`Send`; `dst` recibe
@@ -142,6 +146,8 @@ pub struct Module {
     pub adc_acq_ns: u32,
     /// Tablas constantes: nombre y entradas (u8).
     pub roms: Vec<(String, Vec<u8>)>,
+    /// Arreglos de RAM (`buf: uint8[16]`): nombre y capacidad. Empiezan en cero.
+    pub arrays: Vec<(String, usize)>,
     pub functions: Vec<Function>,
     pub pins: Vec<Pin>,
     /// Dispositivo declarado en el programa (`from pypic.device import PIC16F887`).

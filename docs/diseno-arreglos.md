@@ -1,6 +1,6 @@
 # Diseño pendiente: arreglos estáticos en RAM
 
-**Estado: propuesta para #8, todavía no implementada.** El objetivo es habilitar búferes explícitos para recepción y formato de texto (#63), sin reservar un búfer implícito para `UART.write_text` ni introducir un intérprete en el PIC.
+**Estado: la primera entrega está implementada (ver `docs/sdk-arreglos.md`); este documento conserva el diseño y lo que sigue pendiente.** Lo siguiente, escrito antes de implementar, queda como contexto: El objetivo es habilitar búferes explícitos para recepción y formato de texto (#63), sin reservar un búfer implícito para `UART.write_text` ni introducir un intérprete en el PIC.
 
 ## Primera entrega propuesta
 
