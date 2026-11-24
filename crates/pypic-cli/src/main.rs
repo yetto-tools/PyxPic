@@ -512,13 +512,15 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
         let how = if settings.is_empty() { "por defecto del pack: INTOSCIO, WDT apagado, MCLR interno".to_string() } else { format!("{} ajuste(s) pedidos", settings.len()) };
         format!("{} ({how})", names.join(", "))
     };
-    let clock = module.clock_hz.map(|hz| if module.clock_defaulted { format!(", reloj {hz} Hz (por defecto)") } else { format!(", reloj declarado {hz} Hz") }).unwrap_or_default();
-    println!(
-        "{out_path}: para {}: {} palabras de programa, {} bytes de RAM (banco 0){clock}. Configuracion: {}.",
-        pack.device.name,
-        compiled.flash_words,
-        compiled.ram_bytes,
-        cfg_text
-    );
+    println!("Compilacion completada:");
+    println!("  Archivo:       {out_path}");
+    println!("  Dispositivo:   {}", pack.device.name);
+    println!("  Programa:      {} palabras", compiled.flash_words);
+    println!("  RAM:           {} bytes (banco 0)", compiled.ram_bytes);
+    if let Some(hz) = module.clock_hz {
+        let source = if module.clock_defaulted { "por defecto" } else { "declarado" };
+        println!("  Reloj:         {hz} Hz ({source})");
+    }
+    println!("  Configuracion: {cfg_text}");
     ExitCode::SUCCESS
 }

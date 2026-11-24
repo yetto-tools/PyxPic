@@ -158,6 +158,10 @@ fn build_finds_the_device_pack_from_the_programs_declaration() {
     let o = pypic(&root(), &["build", "examples/button_led.py", "-o", out.to_str().unwrap()]);
     assert!(o.status.success(), "{}", text(&o));
     assert!(text(&o).contains("PIC16F887") && text(&o).contains("4000000 Hz"), "{}", text(&o));
+    let summary = String::from_utf8_lossy(&o.stdout);
+    for label in ["Archivo:", "Dispositivo:", "Programa:", "RAM:", "Reloj:", "Configuracion:"] {
+        assert!(summary.lines().any(|line| line.trim_start().starts_with(label)), "{summary}");
+    }
     let img = Image::from_intel_hex(&std::fs::read_to_string(&out).unwrap()).unwrap();
     assert_eq!(img.get(0x2007), Some(0x20D4)); // palabra de configuracion en la direccion del pack
     assert!(img.get(0).is_some());
