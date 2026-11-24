@@ -9,6 +9,7 @@
 //!  * Las condiciones deben ser bool (sin "truthiness").
 //!  * Sin recursion: la memoria es estatica y la pila de hardware es limitada.
 
+use crate::adc::{self, AdcCall, AdcOp};
 use crate::bits::{self, BitsOp};
 use crate::regs::{RegCall, RegOp, BANK_BITS, WRITE_PROTECTED};
 use crate::target::RegInfo;
@@ -143,6 +144,8 @@ pub struct Program {
     /// Tablas constantes (nombre y entradas) y las lecturas con indice variable, por id de expresion.
     pub roms: Vec<(String, Vec<u8>)>,
     pub rom_gets: BTreeMap<u32, usize>,
+    /// Llamadas a metodos de `pypic.periph.adc`, por id de expresion.
+    pub adc_calls: BTreeMap<u32, AdcCall>,
 }
 
 pub struct Checked {
@@ -158,6 +161,7 @@ pub struct Checked {
     pub bits_calls: BTreeMap<u32, BitsOp>,
     pub roms: Vec<(String, Vec<u8>)>,
     pub rom_gets: BTreeMap<u32, usize>,
+    pub adc_calls: BTreeMap<u32, AdcCall>,
 }
 
 pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Checked {
@@ -194,6 +198,12 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         bits_fns: HashSet::new(),
         claims: Vec::new(),
         rt_warned: BTreeSet::new(),
+        adc_name: false,
+        adc_consts: HashSet::new(),
+        adc_calls: BTreeMap::new(),
+        adc_started: false,
+        adc_needs: None,
+        adc_pending: Vec::new(),
         roms: Vec::new(),
         rom_idx: HashMap::new(),
         rom_gets: BTreeMap::new(),
@@ -204,7 +214,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         stmt_top: None,
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, adc_calls: c.adc_calls }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -273,6 +283,13 @@ struct Checker<'a> {
     claims: Vec<Claim>,
     /// Rutinas de runtime ya avisadas (`PYP3011`): una vez por rutina y programa.
     rt_warned: BTreeSet<String>,
+    /// ADC: importado, constantes (AN0.., FOSC_8...), llamadas, si se inicio y los `start` por resolver (reloj automatico).
+    adc_name: bool,
+    adc_consts: HashSet<String>,
+    adc_calls: BTreeMap<u32, AdcCall>,
+    adc_started: bool,
+    adc_needs: Option<Span>,
+    adc_pending: Vec<(u32, Span, Option<adc::AdcClock>)>,
     /// Tablas constantes declaradas, su indice por nombre y las lecturas variables.
     roms: Vec<(String, Vec<u8>)>,
     rom_idx: HashMap<String, usize>,
@@ -340,6 +357,7 @@ impl<'a> Checker<'a> {
         self.check_pin_usage();
         self.check_timer_usage();
         self.check_pin_claims();
+        self.check_adc_usage();
         self.check_time_usage();
         self.check_asm_usage();
     }
@@ -424,6 +442,32 @@ impl<'a> Checker<'a> {
                     self.bits_fns.insert(n.name.clone());
                 } else {
                     self.d.error("PYP2140", n.span, format!("'pypic.bits' no exporta '{}' (exporta: {})", n.name, bits::FUNCTIONS.join(", ")));
+                }
+            }
+            return;
+        }
+        if module == "pypic.periph.adc" {
+            for n in names {
+                if n.name == "ADC" {
+                    if let Some(set) = &self.target.peripherals {
+                        if !set.contains("ADC") {
+                            self.d.error("PYP2170", n.span, format!("'{}' no tiene ADC: el dispositivo no lo trae", self.target.name));
+                            continue;
+                        }
+                    }
+                    self.adc_name = true;
+                } else if let Some(ch) = adc::channel(&n.name) {
+                    // el canal existe si algun pin del dispositivo tiene esa funcion (ANSn lo reclama)
+                    if self.target.pin_claims.as_ref().is_some_and(|c| !c.contains_key(&format!("ANS{ch}"))) {
+                        self.d.error("PYP2170", n.span, format!("'{}' no tiene el canal {}: ningun pin del dispositivo es AN{ch}", self.target.name, n.name));
+                        continue;
+                    }
+                    self.adc_consts.insert(n.name.clone());
+                } else if adc::CLOCKS.iter().any(|(c, _)| *c == n.name) {
+                    self.adc_consts.insert(n.name.clone());
+                } else {
+                    let all: Vec<String> = std::iter::once("ADC".to_string()).chain((0..adc::CHANNELS).map(|c| format!("AN{c}"))).chain(adc::CLOCKS.iter().map(|(c, _)| c.to_string())).collect();
+                    self.d.error("PYP2170", n.span, format!("'pypic.periph.adc' no exporta '{}' (exporta: {})", n.name, all.join(", ")));
                 }
             }
             return;
@@ -1136,7 +1180,131 @@ impl<'a> Checker<'a> {
         }
     }
 
+    // ------------------------------------------------------ convertidor analogico-digital (pypic.periph.adc)
+    fn adc_method(&mut self, e: &Expr, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
+        let void = |this: &mut Self| this.set(e, Type::Void, None);
+        if method != "start" {
+            if let Some(k) = kwargs.first() {
+                self.d.error("PYP2172", k.name_span, format!("ADC.{method} no acepta argumentos con nombre"));
+            }
+        }
+        let channel = |this: &mut Self, a: &Expr| -> Option<u8> {
+            let ExprKind::Name(n) = &a.kind else {
+                this.expr(a);
+                this.d.error("PYP2174", a.span, format!("ADC.{method} recibe un canal (AN0..AN13): se escribe en el registro al compilar"));
+                return None;
+            };
+            let Some(ch) = adc::channel(n).filter(|_| this.adc_consts.contains(n)) else {
+                let hint = if adc::channel(n).is_some() { format!("; importalo con 'from pypic.periph.adc import {n}'") } else { String::new() };
+                this.d.error("PYP2174", a.span, format!("'{n}' no es un canal del ADC (AN0..AN13){hint}"));
+                return None;
+            };
+            this.set(a, Type::Literal, Some(ch as i128));
+            this.note_claims(&format!("ANS{ch}"), a.span);
+            Some(ch)
+        };
+        match method {
+            "start" => {
+                if !args.is_empty() {
+                    self.d.error("PYP2127", args[0].span, "ADC.start se escribe con argumentos con nombre: ADC.start() o ADC.start(clock=FOSC_8)");
+                }
+                let mut clock = None;
+                for k in kwargs {
+                    match (k.name.as_str(), &k.value.kind) {
+                        ("clock", ExprKind::Name(n)) if self.adc_consts.contains(n) && adc::CLOCKS.iter().any(|(c, _)| c == n) => {
+                            clock = adc::CLOCKS.iter().find(|(c, _)| c == n).map(|(_, c)| *c);
+                            self.set(&k.value, Type::Literal, None);
+                        }
+                        ("clock", _) => {
+                            self.expr(&k.value);
+                            self.d.error("PYP2172", k.value.span, "ADC.start: clock es FOSC_2, FOSC_8, FOSC_32 o FRC (importados de pypic.periph.adc)");
+                        }
+                        _ => {
+                            self.expr(&k.value);
+                            self.d.error("PYP2172", k.name_span, format!("ADC.start no tiene el argumento '{}' (admite: clock)", k.name));
+                        }
+                    }
+                }
+                self.adc_started = true;
+                self.adc_pending.push((e.id, e.span, clock));
+                void(self)
+            }
+            "select" | "read" => {
+                if args.len() != 1 {
+                    self.d.error("PYP2055", e.span, format!("'ADC.{method}' recibe un canal (AN0..AN13)"));
+                    for a in args {
+                        self.expr(a);
+                    }
+                    return self.set(e, Type::Error, None);
+                }
+                self.adc_needs.get_or_insert(e.span);
+                if let Some(ch) = channel(self, &args[0]) {
+                    let op = if method == "select" { AdcOp::Select(ch) } else { AdcOp::Read(ch) };
+                    self.adc_calls.insert(e.id, AdcCall { op });
+                }
+                if method == "select" { void(self) } else { self.set(e, U16, None) }
+            }
+            "go" | "done" | "result" => {
+                if !args.is_empty() {
+                    self.d.error("PYP2055", e.span, format!("'ADC.{method}' no recibe argumentos"));
+                    for a in args {
+                        self.expr(a);
+                    }
+                }
+                self.adc_needs.get_or_insert(e.span);
+                let op = match method {
+                    "go" => AdcOp::Go,
+                    "done" => AdcOp::Done,
+                    _ => AdcOp::Result,
+                };
+                self.adc_calls.insert(e.id, AdcCall { op });
+                match op {
+                    AdcOp::Done => self.set(e, Type::Bool, None),
+                    AdcOp::Result => self.set(e, U16, None),
+                    _ => void(self),
+                }
+            }
+            other => {
+                self.d.error("PYP2173", e.span, format!("ADC no tiene el metodo '{other}' (disponibles: start, select, go, done, result, read)"));
+                for a in args {
+                    self.expr(a);
+                }
+                self.set(e, Type::Error, None)
+            }
+        }
+    }
+
+    /// ADC usado sin `ADC.start()` y reloj automatico de `start()`.
+    fn check_adc_usage(&mut self) {
+        if let Some(sp) = self.adc_needs.take() {
+            if !self.adc_started {
+                self.d.error("PYP2171", sp, "el ADC se usa pero nunca se inicia: llama a ADC.start() en algun punto del programa");
+            }
+        }
+        let pend = std::mem::take(&mut self.adc_pending);
+        for (id, span, clock) in pend {
+            let clock = match clock {
+                Some(c) => c,
+                None => match self.effective_clock(span, "ADC.start") {
+                    Some(hz) => adc::auto_clock(hz),
+                    None => continue,
+                },
+            };
+            // un reloj elegido a mano que viola TAD es un aviso: el resultado dejaria de ser fiable
+            if let (Some(hz), Some(_)) = (self.clock_hz, clock.divisor()) {
+                let t = adc::tad_ns(clock, hz);
+                if t < adc::TAD_MIN_NS as f64 || t > adc::TAD_MAX_NS as f64 {
+                    self.d.warning("PYP3012", span, format!("el reloj del ADC da TAD = {t:.0} ns y el datasheet exige 1600..6000 ns: la conversion no es fiable; omite clock= para que se elija solo"));
+                }
+            }
+            self.adc_calls.insert(id, AdcCall { op: AdcOp::Start(Some(clock)) });
+        }
+    }
+
     fn method_call(&mut self, e: &Expr, obj: &str, obj_span: Span, attr: Option<&Ident>, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
+        if obj == "ADC" && self.adc_name {
+            return self.adc_method(e, method, args, kwargs);
+        }
         if self.reg_names.contains_key(obj) {
             return self.reg_method(e, obj, attr, method, args, kwargs);
         }
@@ -1938,6 +2106,10 @@ impl<'a> Checker<'a> {
         }
         if self.timer_consts.contains(n) {
             self.d.error("PYP2128", e.span, format!("'{n}' es una constante de configuracion de temporizadores: solo se usa como argumento de TMRx.start(...)"));
+        } else if self.adc_name && n == "ADC" {
+            self.d.error("PYP2175", e.span, "'ADC' es el convertidor: usa sus metodos (ADC.start(), ADC.read(AN0), ADC.result()...)");
+        } else if self.adc_consts.contains(n) {
+            self.d.error("PYP2175", e.span, format!("'{n}' es una constante del ADC: solo se usa como argumento de ADC.select/read o ADC.start(clock=...)"));
         } else if self.rom_idx.contains_key(n) {
             self.d.error("PYP2164", e.span, format!("'{n}' es una tabla: se lee con {n}[indice] y su tamano con len({n})"));
         } else if self.reg_names.contains_key(n) {
@@ -2374,7 +2546,7 @@ const PERIPH_MODULES: &[&str] = &["gpio", "adc", "timer", "pwm", "ccp", "eccp", 
 const SYSTEM_MODULES: &[&str] = &["time", "irq", "wdt", "clock", "power", "flash"];
 /// `pypic.soft.*`: implementaciones por software sobre cualquier GPIO (cuestan ciclos de CPU).
 const SOFT_MODULES: &[&str] = &["spi", "i2c", "uart", "onewire"];
-const IMPLEMENTED_MODULES: &[&str] = &["pypic.periph.gpio", "pypic.periph.timer", "pypic.regs", "pypic.bits", "pypic.system.time"];
+const IMPLEMENTED_MODULES: &[&str] = &["pypic.periph.adc", "pypic.periph.gpio", "pypic.periph.timer", "pypic.regs", "pypic.bits", "pypic.system.time"];
 
 /// Problema con la ruta de un modulo `pypic.*` (renombrado, categoria sin modulo, inexistente o aun no implementado).
 /// `None` si es un modulo implementado o no es del arbol de categorias.

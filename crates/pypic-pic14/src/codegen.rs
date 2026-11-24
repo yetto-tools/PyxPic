@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
-use pypic_ir::ir::{BitsOp, BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, RegCall, RegOp, Terminator, TimerCall, TimerId, TimerOp, TimerStart, Type, UnaryOp};
+use pypic_ir::ir::{AdcCall, AdcOp, BitsOp, BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, RegCall, RegOp, Terminator, TimerCall, TimerId, TimerOp, TimerStart, Type, UnaryOp};
 use pypic_frontend::timer::{GateSource, TimerSource};
 
 use crate::asm::{assemble_fragment, AsmError, FragItem};
@@ -104,11 +104,20 @@ pub struct Options {
     /// Mapa de registros del dispositivo (`registers.json` del Device Pack): el ensamblador en linea y los
     /// temporizadores los usan por nombre.
     pub registers: pypic_device::Registers,
+    /// Pin de cada canal analogico `ANn` -> (puerto, bit), del Device Pack: el ADC pone su TRIS en entrada.
+    pub analog_pins: BTreeMap<u8, (char, u8)>,
 }
 
 /// Registros del PIC16F887 (`devices/pic16f887/registers.json`, incluido en el binario) para los usos sin pack.
 fn builtin_registers() -> pypic_device::Registers {
     pypic_device::Registers::parse(include_str!("../../../devices/pic16f887/registers.json")).expect("registers.json incluido es valido")
+}
+
+/// Canales analogicos del PIC16F887 (DS40001291H p.7); una prueba comprueba que coinciden con `pins.json`.
+pub fn builtin_analog_pins() -> BTreeMap<u8, (char, u8)> {
+    [(0, ('A', 0)), (1, ('A', 1)), (2, ('A', 2)), (3, ('A', 3)), (4, ('A', 5)), (5, ('E', 0)), (6, ('E', 1)), (7, ('E', 2)), (8, ('B', 2)), (9, ('B', 3)), (10, ('B', 1)), (11, ('B', 4)), (12, ('B', 0)), (13, ('B', 5))]
+        .into_iter()
+        .collect()
 }
 
 impl Default for Options {
@@ -123,6 +132,7 @@ impl Default for Options {
             config: vec![(CONFIG1, BLINK_CONFIG1), (CONFIG2, BLINK_CONFIG2)],
             clocks_per_cycle: 4,
             registers: builtin_registers(),
+            analog_pins: builtin_analog_pins(),
         }
     }
 }
@@ -283,7 +293,8 @@ fn allocate(m: &Module, live: &[usize], isr_ctx: &HashSet<usize>, opts: &Options
         locals.insert(fi, f.locals.iter().map(|l| size(l.ty).map(&mut take)).collect::<Result<Vec<_>, _>>()?);
         temps.insert(fi, f.temps.iter().map(|&t| size(t).map(&mut take)).collect::<Result<Vec<_>, _>>()?);
     }
-    let uses_delay = live.iter().any(|&fi| m.functions[fi].blocks.iter().any(|b| b.insts.iter().any(|i| matches!(i, pypic_ir::ir::Inst::Delay { .. }))));
+    // ADC.read espera la adquisicion con la misma espera exacta que `delay_cycles`
+    let uses_delay = live.iter().any(|&fi| m.functions[fi].blocks.iter().any(|b| b.insts.iter().any(|i| matches!(i, pypic_ir::ir::Inst::Delay { .. } | pypic_ir::ir::Inst::Adc { call: AdcCall { op: AdcOp::Read(_) }, .. }))));
     let delay_ws = if uses_delay { take(5) } else { 0 };
     // cada contexto que use una rutina de runtime (`*`, `//`, `%`) tiene su propio bloque de 9 bytes
     let uses_rt = |isr: bool| {
@@ -353,6 +364,7 @@ struct Gen<'a> {
     cpc: u32,
     timing: Vec<DelayReport>,
     registers: pypic_device::Registers,
+    analog_pins: BTreeMap<u8, (char, u8)>,
     /// Tablas constantes usadas: la etiqueta de cada una y el orden en que se emiten.
     rom_labels: HashMap<usize, Label>,
     rom_order: Vec<usize>,
@@ -904,6 +916,7 @@ impl<'a> Gen<'a> {
             I::Timer { call, dst, arg } => self.timer(call, *dst, arg.as_ref()),
             I::Reg { call, dst, arg } => self.reg(call, *dst, arg.as_ref()),
             I::Bits { op, dst, src } => self.bits(*op, *dst, src.as_ref()),
+            I::Adc { call, dst } => self.adc(call, *dst),
             I::RomGet { dst, rom, index } => self.rom_get(*dst, *rom, index),
             I::PinCfg { pin, output } => self.pin_cfg(*pin, *output),
             I::PinSet { pin, value } => self.pin_set(*pin, value),
@@ -1101,7 +1114,7 @@ fn compile_mode(m: &Module, opts: &Options, multi: bool) -> Result<Compiled, Cod
     let isr_ctx = reach(m, &isrs);
 
     let al = allocate(m, &live, &isr_ctx, opts)?;
-    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new(), registers: opts.registers.clone(), rom_labels: HashMap::new(), rom_order: Vec::new(), rt_labels: HashMap::new(), rt_order: Vec::new(), force_isr: None, multi };
+    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new(), registers: opts.registers.clone(), analog_pins: opts.analog_pins.clone(), rom_labels: HashMap::new(), rom_order: Vec::new(), rt_labels: HashMap::new(), rt_order: Vec::new(), force_isr: None, multi };
     for &fi in &live {
         let l = g.asm.label(m.functions[fi].name.clone());
         g.fn_labels.insert(fi, l);
@@ -1463,6 +1476,74 @@ impl<'a> Gen<'a> {
                         self.asm.i(Incf(d, F));
                     }
                 }
+            }
+        }
+        Ok(())
+    }
+
+    // ---- ADC (pypic.periph.adc, docs/sdk-adc.md): los registros y bits salen del Device Pack por nombre ----
+    fn adc_select(&mut self, n: u8) -> Result<(), CodegenError> {
+        // el pin del canal como entrada analogica: TRIS = 1 y ANSEL = 1
+        let (port, bit) = *self.analog_pins.get(&n).ok_or_else(|| CodegenError::Device(format!("el Device Pack no tiene el canal AN{n}")))?;
+        let tris = self.reg_addr(&format!("TRIS{port}"))?;
+        self.banked(tris, |g, f| g.asm.i(Bsf(f, bit)));
+        self.bit_op(&format!("ANS{n}"), true)?;
+        // CHS<3:0> en ADCON0 sin tocar el reloj, GO ni ADON
+        let adcon0 = self.reg_bank0("ADCON0")?;
+        let chs0 = self.bit_pos("CHS0")?;
+        self.asm.i(Movf(adcon0, W));
+        self.asm.i(Andlw(!(0xF << chs0)));
+        self.asm.i(Iorlw(n << chs0));
+        self.asm.i(Movwf(adcon0));
+        Ok(())
+    }
+
+    fn adc_result(&mut self, dst: Place) -> Result<(), CodegenError> {
+        let d = self.regs(dst)?;
+        let adresh = self.reg_bank0("ADRESH")?;
+        let adresl = self.reg_addr("ADRESL")?;
+        self.asm.i(Movf(adresh, W));
+        self.st(d[1]);
+        self.banked(adresl, |g, f| g.asm.i(Movf(f, W)));
+        self.st(d[0]);
+        Ok(())
+    }
+
+    fn adc(&mut self, call: &AdcCall, dst: Option<Place>) -> Result<(), CodegenError> {
+        let (go_addr, go_bit) = self.bit_loc("GO_DONE")?;
+        match call.op {
+            AdcOp::Start(clock) => {
+                let clock = clock.expect("el frontend resuelve el reloj del ADC");
+                // ADCON1: resultado a la derecha (ADFM), referencias VDD y VSS; ADCON0: reloj, canal 0 y ADC encendido
+                let adcon1 = self.reg_addr("ADCON1")?;
+                let adfm = 1u8 << self.bit_pos("ADFM")?;
+                self.asm.i(Movlw(adfm));
+                self.banked(adcon1, |g, f| g.asm.i(Movwf(f)));
+                let adcon0 = self.reg_bank0("ADCON0")?;
+                let v = ((clock as u8) << self.bit_pos("ADCS0")?) | (1 << self.bit_pos("ADON")?);
+                self.asm.i(Movlw(v));
+                self.asm.i(Movwf(adcon0));
+            }
+            AdcOp::Select(n) => self.adc_select(n)?,
+            AdcOp::Go => self.bit_op("GO_DONE", true)?,
+            AdcOp::Done => {
+                let d = self.regs(dst.expect("Done lleva destino"))?[0];
+                self.asm.i(Clrf(d));
+                self.asm.i(Btfss(go_addr as u8, go_bit));
+                self.asm.i(Incf(d, F));
+            }
+            AdcOp::Result => self.adc_result(dst.expect("Result lleva destino"))?,
+            AdcOp::Read(n) => {
+                self.adc_select(n)?;
+                let hz = self.clock_hz.ok_or_else(|| CodegenError::Device("ADC.read necesita el reloj (CLOCK_HZ) para la espera de adquisicion".into()))?;
+                let cycles = pypic_frontend::adc::acquisition_cycles(hz, self.cpc);
+                self.delay(DelayUnit::Cycles, &Operand::Const { value: cycles as i128, ty: Type::Int { bits: 32, signed: false } })?;
+                self.bit_op("GO_DONE", true)?;
+                let top = self.asm.label("adc.espera");
+                self.asm.place(top);
+                self.asm.i(Btfsc(go_addr as u8, go_bit));
+                self.asm.goto(top);
+                self.adc_result(dst.expect("Read lleva destino"))?;
             }
         }
         Ok(())

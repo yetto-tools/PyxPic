@@ -42,6 +42,16 @@ pub struct Sim {
     t2_post: u32,
     /// Ciclo exacto en que cada temporizador activo su bandera ("T0IF", "TMR1IF", "TMR2IF"); se guardan los primeros 4096.
     pub timer_events: Vec<(&'static str, u64)>,
+    /// El ADC: el valor de 10 bits que lee cada canal, la frecuencia del oscilador (da TAD y el ciclo de instruccion) y
+    /// las reglas del datasheet que el programa incumplio (TAD fuera de 1,6..6,0 us, adquisicion menor de 5 us, GO con el ADC apagado).
+    pub adc_inputs: [u16; 16],
+    pub fosc_hz: u32,
+    pub adc_violations: Vec<String>,
+    adc_prev_go: bool,
+    adc_prev_on: bool,
+    adc_prev_chs: u8,
+    adc_acq_from: u64,
+    adc_remaining: u32,
 }
 
 impl Sim {
@@ -52,7 +62,7 @@ impl Sim {
                 flash[a as usize] = w;
             }
         }
-        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None, t0_pre: 0, t0_inhibit: 0, t1_pre: 0, t2_pre: 0, t2_post: 0, timer_events: Vec::new() };
+        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None, t0_pre: 0, t0_inhibit: 0, t1_pre: 0, t2_pre: 0, t2_post: 0, timer_events: Vec::new(), adc_inputs: [0; 16], fosc_hz: 4_000_000, adc_violations: Vec::new(), adc_prev_go: false, adc_prev_on: false, adc_prev_chs: 0, adc_acq_from: 0, adc_remaining: 0 };
         s.reset();
         s
     }
@@ -68,6 +78,7 @@ impl Sim {
         self.ram[0x81] = 0xFF; // OPTION_REG
         self.ram[0x92] = 0xFF; // PR2
         (self.t0_pre, self.t0_inhibit, self.t1_pre, self.t2_pre, self.t2_post) = (0, 0, 0, 0, 0);
+        (self.adc_prev_go, self.adc_prev_on, self.adc_prev_chs, self.adc_remaining) = (false, false, 0, 0);
         self.pc = 0;
         self.pclath = 0;
         self.sp = 0;
@@ -372,6 +383,7 @@ impl Sim {
     /// la compuerta de Timer1 y el modo asincrono no se modelan. Los ticks de la propia instruccion que escribe
     /// un contador se aplican despues de la escritura (error maximo de 1 ciclo en el valor absoluto, ninguno en los periodos).
     fn tick_timers(&mut self, now: u64) {
+        self.tick_adc(now);
         let (option, intcon) = (self.ram[0x81], 0x0B);
         // Timer0: T0CS = 0 (reloj interno); PSA = 0 asigna el preescalador a Timer0
         if option & 0x20 == 0 {
@@ -429,6 +441,59 @@ impl Sim {
                 }
             }
         }
+    }
+
+    /// ADCON0 (1Fh): conversion de 11 TAD + 1 ciclo tras poner GO/DONE con el ADC encendido; al terminar escribe ADRESH:ADRESL
+    /// segun ADFM (ADCON1<7>), borra GO y activa ADIF (PIR1<6>).
+    fn tick_adc(&mut self, now: u64) {
+        let a = self.ram[0x1F];
+        let (on, go, chs, adcs) = (a & 1 != 0, a & 2 != 0, a >> 2 & 0xF, a >> 6);
+        if chs != self.adc_prev_chs || (on && !self.adc_prev_on) {
+            self.adc_acq_from = now; // el condensador de muestreo empieza a cargarse con el canal nuevo
+        }
+        if go && !self.adc_prev_go {
+            let cycle_ns = 4e9 / self.fosc_hz as f64;
+            if !on {
+                self.adc_violations.push("GO/DONE puesto con el ADC apagado (ADON = 0): falta ADC.start()".into());
+            } else {
+                let acq_ns = (now - self.adc_acq_from) as f64 * cycle_ns;
+                if acq_ns < 5000.0 {
+                    self.adc_violations.push(format!("adquisicion de {acq_ns:.0} ns: el datasheet pide 5000 ns tras cambiar de canal"));
+                }
+                let tad_cycles = match adcs {
+                    0 => 2.0 / 4.0,
+                    1 => 8.0 / 4.0,
+                    2 => 32.0 / 4.0,
+                    _ => 4000.0 / cycle_ns,
+                };
+                if adcs != 3 {
+                    let tad_ns = tad_cycles * cycle_ns;
+                    if !(1600.0..=6000.0).contains(&tad_ns) {
+                        self.adc_violations.push(format!("TAD de {tad_ns:.0} ns: el datasheet exige 1600..6000 ns"));
+                    }
+                }
+                self.adc_remaining = (11.0 * tad_cycles).ceil() as u32 + 1;
+            }
+        }
+        if self.adc_remaining > 0 && !go {
+            self.adc_remaining = 0; // GO borrado por el programa: se aborta sin actualizar el resultado
+        } else if self.adc_remaining > 0 {
+            self.adc_remaining -= 1;
+            if self.adc_remaining == 0 {
+                let v = self.adc_inputs[chs as usize] & 0x3FF;
+                if self.ram[0x9F] & 0x80 != 0 {
+                    self.ram[0x1E] = (v >> 8) as u8;
+                    self.ram[0x9E] = v as u8;
+                } else {
+                    self.ram[0x1E] = (v >> 2) as u8;
+                    self.ram[0x9E] = ((v & 3) << 6) as u8;
+                }
+                self.ram[0x1F] &= !2;
+                self.ram[0x0C] |= 1 << 6;
+            }
+        }
+        let a = self.ram[0x1F];
+        (self.adc_prev_go, self.adc_prev_on, self.adc_prev_chs) = (a & 2 != 0, a & 1 != 0, a >> 2 & 0xF);
     }
 
     fn log(&mut self, flag: &'static str, now: u64) {

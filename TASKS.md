@@ -1,7 +1,7 @@
 # Backlog de implementación
 
 Estado verificado (2026-11-24). Leyenda: **[x]** hecho y probado · **[~]** parcial, con su límite y el issue que lo cierra · **[ ]** sin empezar.
-Hecho = hay código, pruebas que pasan (`cargo test`: 401) y, donde aplica, verificación contra el datasheet o el simulador del núcleo.
+Hecho = hay código, pruebas que pasan (`cargo test`: 418) y, donde aplica, verificación contra el datasheet o el simulador del núcleo.
 Nada de lo marcado [x] se ha probado todavía en **hardware real**: el blink y el pulsador se confirmaron en Proteus (#16).
 Los issues abiertos están en <https://github.com/yetto-tools/PyPic/issues>.
 
@@ -27,7 +27,7 @@ Los issues abiertos están en <https://github.com/yetto-tools/PyPic/issues>.
 - SDK
   - [x] GPIO (`pypic.periph.gpio`) · [x] temporizadores 0/1/2 (`pypic.periph.timer`) · [x] registros y bits (`pypic.regs`) · [x] bits y acarreo (`pypic.bits`)
   - [x] esperas exactas al ciclo (`pypic.system.time`) · [x] tablas en flash (`Rom[u8]`) · [x] `*`, `//`, `%` y desplazamientos (rutinas nativas)
-  - [ ] ADC, PWM/CCP, UART, SPI, I²C, comparadores, EEPROM (#45) · [ ] WDT, `sleep`/`nap`, reloj y energía (#46, #38) · [ ] protocolos por software (#47)
+  - [x] ADC de 10 bits (`pypic.periph.adc`, #45) · [ ] PWM/CCP, UART, SPI, I²C, comparadores, EEPROM (resto de #45) · [ ] WDT, `sleep`/`nap`, reloj y energía (#46, #38) · [ ] protocolos por software (#47)
 
 ## Fase 3 — Herramientas
 - [ ] VS Code y Project Wizard
@@ -47,7 +47,7 @@ Los issues abiertos están en <https://github.com/yetto-tools/PyPic/issues>.
 
 ## Cómo comprobar lo marcado como hecho
 ```
-cargo test --workspace                                              # 401 pruebas; las diferenciales comparan el intérprete de la IR con el simulador del núcleo
+cargo test --workspace                                              # 418 pruebas; las diferenciales comparan el intérprete de la IR con el simulador del núcleo
 cargo test -p pypic-pic14 --test runtime                            # *, //, %: todos los pares de u8/i8, bordes de 16 bits, interrupciones inyectadas, costos
 cargo test -p pypic-pic14 --test asm                                # ensamblador pic-as; el blink en pic-as reproduce byte a byte el .hex probado en Proteus
 cargo test -p pypic-device                                          # Device Pack del PIC16F887 contra sus propias reglas de coherencia

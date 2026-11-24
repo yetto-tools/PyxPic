@@ -111,59 +111,59 @@
       "pins": [
         {
           "function": "AN0",
-          "direction": "analog"
+          "direction": "analog", "claimed_by": ["ANS0"]
         },
         {
           "function": "AN1",
-          "direction": "analog"
+          "direction": "analog", "claimed_by": ["ANS1"]
         },
         {
           "function": "AN2",
-          "direction": "analog"
+          "direction": "analog", "claimed_by": ["ANS2"]
         },
         {
           "function": "AN3",
-          "direction": "analog"
+          "direction": "analog", "claimed_by": ["ANS3"]
         },
         {
           "function": "AN4",
-          "direction": "analog"
+          "direction": "analog", "claimed_by": ["ANS4"]
         },
         {
           "function": "AN5",
-          "direction": "analog"
+          "direction": "analog", "claimed_by": ["ANS5"]
         },
         {
           "function": "AN6",
-          "direction": "analog"
+          "direction": "analog", "claimed_by": ["ANS6"]
         },
         {
           "function": "AN7",
-          "direction": "analog"
+          "direction": "analog", "claimed_by": ["ANS7"]
         },
         {
           "function": "AN8",
-          "direction": "analog"
+          "direction": "analog", "claimed_by": ["ANS8"]
         },
         {
           "function": "AN9",
-          "direction": "analog"
+          "direction": "analog", "claimed_by": ["ANS9"]
         },
         {
           "function": "AN10",
-          "direction": "analog"
+          "direction": "analog", "claimed_by": ["ANS10"]
         },
         {
           "function": "AN11",
-          "direction": "analog"
+          "direction": "analog", "claimed_by": ["ANS11"]
         },
         {
           "function": "AN12",
-          "direction": "analog"
+          "direction": "analog", "claimed_by": ["ANS12"]
         },
         {
           "function": "AN13",
-          "direction": "analog"
+          "direction": "analog", "claimed_by": ["ANS13"]
         },
         {
           "function": "VREF+",

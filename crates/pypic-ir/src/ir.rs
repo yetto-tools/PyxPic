@@ -5,7 +5,7 @@
 //! registros virtuales que el backend asigna.
 
 pub use pypic_frontend::ast::{BinOp, CmpOp};
-pub use pypic_frontend::{BitsOp, DelayUnit, RegCall, RegOp, TimerCall, TimerId, TimerOp, TimerStart, Type};
+pub use pypic_frontend::{AdcCall, AdcOp, BitsOp, DelayUnit, RegCall, RegOp, TimerCall, TimerId, TimerOp, TimerStart, Type};
 
 pub type BlockId = usize;
 
@@ -63,6 +63,8 @@ pub enum Inst {
     /// `dst = TABLA[index]`: lectura de una tabla constante de la memoria de programa. Un indice mayor que el ultimo
     /// devuelve la ultima entrada (el backend lo comprueba; la consulta cuesta lo mismo con cualquier indice).
     RomGet { dst: Place, rom: usize, index: Operand },
+    /// Operacion del ADC (`ADC.start()`, `ADC.read(AN0)`...). `dst` recibe el resultado de `Done` (bool), `Result` y `Read` (u16).
+    Adc { call: AdcCall, dst: Option<Place> },
 }
 
 #[derive(Clone, Debug, PartialEq)]

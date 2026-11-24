@@ -97,6 +97,18 @@ fn verify_fn(m: &Module, f: &Function, errs: &mut Vec<String>) {
                         _ => {}
                     }
                 }
+                Inst::Adc { call, dst } => {
+                    let ty_ok = |t: Type| dst.is_some_and(|d| valid(d) && m.place_ty(f, d) == t);
+                    let bad = match call.op {
+                        AdcOp::Done => !ty_ok(Type::Bool),
+                        AdcOp::Result | AdcOp::Read(_) => !ty_ok(Type::Int { bits: 16, signed: false }),
+                        AdcOp::Start(c) => dst.is_some() || c.is_none(),
+                        AdcOp::Select(_) | AdcOp::Go => dst.is_some(),
+                    };
+                    if bad {
+                        e(format!("{}: Adc {:?} mal formado", at(i), call.op));
+                    }
+                }
                 Inst::RomGet { dst, rom, index } => {
                     let u8_ty = Type::Int { bits: 8, signed: false };
                     if *rom >= m.roms.len() || !valid(*dst) || m.place_ty(f, *dst) != u8_ty || ty(index) != u8_ty {

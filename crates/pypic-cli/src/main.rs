@@ -74,6 +74,23 @@ fn find_pack(name: &str, extra: Option<&str>) -> Result<DevicePack, ExitCode> {
     Err(ExitCode::from(1))
 }
 
+/// `ANn` -> (puerto, bit) de los pines del encapsulado del pack.
+fn analog_pins(pack: &DevicePack) -> std::collections::BTreeMap<u8, (char, u8)> {
+    let mut out = std::collections::BTreeMap::new();
+    if let Some(pk) = pack.pins.packages.first() {
+        for p in &pk.pins {
+            if let (Some(port), Some(bit)) = (&p.port, p.bit) {
+                for f in &p.functions {
+                    if let Some(n) = f.strip_prefix("AN").and_then(|n| n.parse::<u8>().ok()) {
+                        out.insert(n, (port.chars().next().unwrap_or('?'), bit as u8));
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Parametros del backend tomados del Device Pack: RAM util del banco 0, tamano de programa y direcciones de CONFIG.
 fn backend_options(pack: &DevicePack, settings: &[(String, String)]) -> Result<pypic_pic14::Options, String> {
     let d = &pack.memory.data;
@@ -98,6 +115,7 @@ fn backend_options(pack: &DevicePack, settings: &[(String, String)]) -> Result<p
         ram_end: (d.common.start.0 - 1) as u16,
         config,
         registers: pack.registers.clone(),
+        analog_pins: analog_pins(pack),
     })
 }
 

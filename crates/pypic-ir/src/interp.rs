@@ -34,6 +34,10 @@ pub struct Machine<'m> {
     pub regs: std::collections::BTreeMap<u16, u8>,
     /// La bandera C que modelan los intrinsecos de `pypic.bits`.
     pub carry: bool,
+    /// El ADC de referencia: el valor (0..=1023) que lee cada canal; lo fija la prueba con `set_adc`.
+    pub adc_inputs: [i128; 16],
+    adc_channel: u8,
+    adc_result: i128,
 }
 
 struct Frame {
@@ -56,6 +60,9 @@ impl<'m> Machine<'m> {
             delays: Vec::new(),
             regs: Default::default(),
             carry: false,
+            adc_inputs: [0; 16],
+            adc_channel: 0,
+            adc_result: 0,
         }
     }
 
@@ -213,6 +220,19 @@ impl<'m> Machine<'m> {
                 let v = self.read(fr, src);
                 self.write(f, fr, *dst, v);
             }
+            Inst::Adc { call, dst } => match call.op {
+                AdcOp::Start(_) => {}
+                AdcOp::Select(n) => self.adc_channel = n,
+                // la conversion es instantanea en el modelo de referencia: go captura la entrada del canal elegido
+                AdcOp::Go => self.adc_result = self.adc_inputs[self.adc_channel as usize],
+                AdcOp::Done => self.write(f, fr, dst.unwrap(), 1),
+                AdcOp::Result => self.write(f, fr, dst.unwrap(), self.adc_result),
+                AdcOp::Read(n) => {
+                    self.adc_channel = n;
+                    self.adc_result = self.adc_inputs[n as usize];
+                    self.write(f, fr, dst.unwrap(), self.adc_result);
+                }
+            },
             Inst::RomGet { dst, rom, index } => {
                 let t = &self.module.roms[*rom].1;
                 let i = (self.read(fr, index) as usize).min(t.len() - 1);

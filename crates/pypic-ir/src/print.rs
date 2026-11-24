@@ -79,6 +79,7 @@ pub fn print(m: &Module) -> String {
                         let d = dst.map(|d| format!("{} = ", place(m, f, d))).unwrap_or_default();
                         format!("{d}timer {} {:?}{a}", call.timer.name(), call.op)
                     }
+                    Inst::Adc { call, dst } => format!("{}adc {:?}", dst.map(|d| format!("{} = ", place(m, f, d))).unwrap_or_default(), call.op),
                     Inst::RomGet { dst, rom, index } => format!("{} = rom {}[{}]", place(m, f, *dst), m.roms[*rom].0, operand(m, f, index)),
                     Inst::Bits { op, dst, src } => {
                         let a = src.as_ref().map(|s| format!(" {}", operand(m, f, s))).unwrap_or_default();

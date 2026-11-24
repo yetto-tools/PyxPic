@@ -195,6 +195,14 @@ impl<'a> FnLower<'a> {
                 }
                 self.cur = join;
             }
+            ExprKind::MethodCall { .. } if self.prog.adc_calls.contains_key(&e.id) => {
+                let call = self.prog.adc_calls[&e.id];
+                // leer sin usar el resultado no tiene efecto: no se emite
+                let reads = matches!(call.op, pypic_frontend::AdcOp::Done | pypic_frontend::AdcOp::Result | pypic_frontend::AdcOp::Read(_));
+                if !reads || dst.is_some() {
+                    self.emit(Inst::Adc { call, dst: if reads { dst } else { None } });
+                }
+            }
             ExprKind::Index { index, .. } => {
                 let rom = self.prog.rom_gets[&e.id];
                 let index = self.value(index);
