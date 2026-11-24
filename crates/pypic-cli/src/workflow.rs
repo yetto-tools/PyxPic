@@ -275,8 +275,11 @@ fn json_report(project: &Project, reports: &[TargetReport]) -> serde_json::Value
 /// `pypic project check [--project pypic.toml] [--target perfil] [--format text|json]`
 pub fn project_cmd(args: &[String]) -> ExitCode {
     let Some(sub) = args.first() else { return crate::usage() };
+    if sub == "set" {
+        return set_cmd(&args[1..]);
+    }
     if sub != "check" {
-        eprintln!("'pypic project {sub}' no existe todavia (hay: check)");
+        eprintln!("'pypic project {sub}' no existe (hay: check, set)");
         return ExitCode::from(2);
     }
     let (mut project_arg, mut target_arg, mut json) = (None::<String>, None::<String>, false);
@@ -346,4 +349,253 @@ pub fn project_cmd(args: &[String]) -> ExitCode {
         }
     }
     if ok { ExitCode::SUCCESS } else { ExitCode::from(1) }
+}
+
+// ---- pypic project set ------------------------------------------------------------------------------------------------------------
+
+use toml_edit::{DocumentMut, InlineTable, Item, Table, Value};
+
+const SET_KEYS: &str = "device, clock, output, config.AJUSTE, project.name, project.main, project.devices_dir, project.default_target";
+
+/// Pone `val` en `key` conservando el comentario y el espacio que ya tenia el valor; devuelve el valor anterior como texto.
+fn put(tl: &mut dyn toml_edit::TableLike, key: &str, val: Value) -> Option<String> {
+    let old = tl.get(key).and_then(Item::as_value).map(|v| v.as_str().map(String::from).unwrap_or_else(|| v.to_string().trim().to_string()));
+    match tl.get_mut(key).and_then(Item::as_value_mut) {
+        Some(v) => {
+            let mut nv = val;
+            *nv.decor_mut() = v.decor().clone();
+            *v = nv;
+        }
+        None => {
+            tl.insert(key, Item::Value(val));
+        }
+    }
+    old
+}
+
+/// Un valor de configuracion: un entero si lo es (`BOREN = 1`), si no un texto (`WDTE = "ON"`).
+fn config_value(v: &str) -> Value {
+    v.parse::<i64>().map(Value::from).unwrap_or_else(|_| Value::from(v))
+}
+
+/// `pypic project set [--project f] [--target perfil] [--create] [--dry-run] [--unset CLAVE]... [CLAVE=VALOR]...`
+///
+/// Cambia el perfil sin tocar el resto del archivo (comentarios y formato se conservan). **Valida el resultado entero antes de escribir**:
+/// si el perfil queda con errores no se escribe nada. Antes de modificar guarda `pypic.toml.bak`.
+pub fn set_cmd(args: &[String]) -> ExitCode {
+    let (mut project_arg, mut target_arg, mut create, mut dry) = (None::<String>, None::<String>, false, false);
+    let mut sets: Vec<(String, String)> = Vec::new();
+    let mut unsets: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--project" => project_arg = it.next().cloned(),
+            "--target" => target_arg = it.next().cloned(),
+            "--create" => create = true,
+            "--dry-run" => dry = true,
+            "--unset" => match it.next() {
+                Some(k) => unsets.push(k.clone()),
+                None => return crate::usage(),
+            },
+            s if s.starts_with("--") => return crate::usage(),
+            _ => match a.split_once('=') {
+                Some((k, v)) => sets.push((k.trim().to_string(), v.trim().to_string())),
+                None => {
+                    eprintln!("'{a}': se escribe CLAVE=VALOR, por ejemplo clock=\"Crystal[20 * MHz]\" o config.WDTE=ON (claves: {SET_KEYS})");
+                    return ExitCode::from(2);
+                }
+            },
+        }
+    }
+    if sets.is_empty() && unsets.is_empty() {
+        eprintln!("no hay nada que cambiar: pasa CLAVE=VALOR o --unset CLAVE (claves: {SET_KEYS})");
+        return ExitCode::from(2);
+    }
+    let file = match project_arg.map(PathBuf::from).or_else(|| project::find(Path::new("."))) {
+        Some(f) => f,
+        None => {
+            eprintln!("no hay un {} en esta carpeta ni en las de arriba (crea uno con: pypic init)", project::FILE);
+            return ExitCode::from(2);
+        }
+    };
+    let text = match std::fs::read_to_string(&file) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("no se pudo leer '{}': {e}", file.display());
+            return ExitCode::from(2);
+        }
+    };
+    let project = match project::parse(&file, &text) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::from(2);
+        }
+    };
+    let mut doc: DocumentMut = match text.parse() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("{}: {e}", file.display());
+            return ExitCode::from(2);
+        }
+    };
+    // las claves de proyecto no necesitan perfil; las de perfil, si
+    let all: Vec<&str> = sets.iter().map(|(k, _)| k.as_str()).chain(unsets.iter().map(String::as_str)).collect();
+    let needs_target = all.iter().any(|k| !k.starts_with("project."));
+    let target_name = if !needs_target {
+        None
+    } else if let Some(t) = &target_arg {
+        if !project.targets.contains_key(t) && !create {
+            eprintln!("{}: no hay un perfil '{t}' ([target.{t}]); hay: {} (usa --create para crearlo)", file.display(), project.targets.keys().cloned().collect::<Vec<_>>().join(", "));
+            return ExitCode::from(2);
+        }
+        Some(t.clone())
+    } else {
+        match project.target(None) {
+            Ok(Some((n, _))) => Some(n),
+            Ok(None) => {
+                eprintln!("{}: no hay perfiles: crea uno con --target NOMBRE --create device=PIC16F887", file.display());
+                return ExitCode::from(2);
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                return ExitCode::from(2);
+            }
+        }
+    };
+    let mut changes: Vec<String> = Vec::new();
+    let show = |old: Option<String>, new: Option<&str>| match (old, new) {
+        (Some(o), Some(n)) => format!("{o} -> {n}"),
+        (None, Some(n)) => format!("(nuevo) {n}"),
+        (Some(o), None) => format!("{o} -> (quitado)"),
+        (None, None) => "(sin cambio)".to_string(),
+    };
+    let bad_key = |k: &str| {
+        eprintln!("la clave '{k}' no existe (claves: {SET_KEYS})");
+        ExitCode::from(2)
+    };
+
+    for (is_unset, key, value) in sets.iter().map(|(k, v)| (false, k.as_str(), Some(v.as_str()))).chain(unsets.iter().map(|k| (true, k.as_str(), None))) {
+        let _ = is_unset;
+        if let Some(pk) = key.strip_prefix("project.") {
+            if !["name", "main", "devices_dir", "default_target"].contains(&pk) {
+                return bad_key(key);
+            }
+            let root = doc.as_table_mut();
+            let proj = root.entry("project").or_insert_with(|| Item::Table(Table::new()));
+            let Some(tl) = proj.as_table_like_mut() else {
+                eprintln!("[project] no es una tabla");
+                return ExitCode::from(2);
+            };
+            let old = match value {
+                Some(v) => put(tl, pk, Value::from(v)),
+                None => tl.remove(pk).and_then(|i| i.as_str().map(String::from)),
+            };
+            changes.push(format!("project.{pk}: {}", show(old, value)));
+            continue;
+        }
+        let name = target_name.clone().expect("hay perfil para las claves de perfil");
+        let root = doc.as_table_mut();
+        let targets = root.entry("target").or_insert_with(|| {
+            let mut t = Table::new();
+            t.set_implicit(true);
+            Item::Table(t)
+        });
+        let Some(ttl) = targets.as_table_like_mut() else {
+            eprintln!("'target' no es una tabla");
+            return ExitCode::from(2);
+        };
+        if !ttl.contains_key(&name) {
+            ttl.insert(&name, Item::Table(Table::new()));
+            changes.push(format!("perfil {name}: (nuevo)"));
+        }
+        let Some(tl) = ttl.get_mut(&name).and_then(Item::as_table_like_mut) else {
+            eprintln!("[target.{name}] no es una tabla");
+            return ExitCode::from(2);
+        };
+        match key {
+            "device" | "clock" | "output" => {
+                let old = match value {
+                    Some(v) => put(tl, key, Value::from(v)),
+                    None => tl.remove(key).and_then(|i| i.as_str().map(String::from)),
+                };
+                changes.push(format!("{name}.{key}: {}", show(old, value)));
+            }
+            _ if key.starts_with("config.") && key.len() > 7 => {
+                let setting = &key[7..];
+                if !tl.contains_key("config") {
+                    if value.is_none() {
+                        changes.push(format!("{name}.{key}: (sin cambio)"));
+                        continue;
+                    }
+                    tl.insert("config", Item::Value(Value::InlineTable(InlineTable::new())));
+                }
+                let Some(cfg) = tl.get_mut("config").and_then(Item::as_table_like_mut) else {
+                    eprintln!("[target.{name}] config no es una tabla");
+                    return ExitCode::from(2);
+                };
+                let old = match value {
+                    Some(v) => put(cfg, setting, config_value(v)),
+                    None => cfg.remove(setting).and_then(|i| i.as_value().map(|v| v.as_str().map(String::from).unwrap_or_else(|| v.to_string().trim().to_string()))),
+                };
+                let empty = cfg.is_empty();
+                changes.push(format!("{name}.{key}: {}", show(old, value)));
+                if empty {
+                    tl.remove("config");
+                }
+            }
+            _ => return bad_key(key),
+        }
+    }
+
+    // se valida el resultado entero antes de escribir: estructura y el perfil cambiado
+    let new_text = doc.to_string();
+    let new_project = match project::parse(&file, &new_text) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("el cambio dejaria el archivo invalido, no se escribe nada:\n{e}");
+            return ExitCode::from(1);
+        }
+    };
+    let mut warnings: Vec<String> = Vec::new();
+    if let Some(name) = &target_name {
+        match new_project.targets.get(name) {
+            Some(t) => {
+                let r = check_target(&new_project, name, t);
+                if !r.ok() {
+                    eprintln!("el perfil '{name}' quedaria con errores, no se escribe nada:");
+                    for e in &r.errors {
+                        eprintln!("  error: {e}");
+                    }
+                    return ExitCode::from(1);
+                }
+                warnings = r.warnings;
+            }
+            None => {
+                eprintln!("el perfil '{name}' ya no existe tras el cambio, no se escribe nada");
+                return ExitCode::from(1);
+            }
+        }
+    }
+    for c in &changes {
+        println!("  {c}");
+    }
+    for w in &warnings {
+        println!("  aviso: {w}");
+    }
+    if dry {
+        println!("--dry-run: no se escribio nada ({})", file.display());
+        return ExitCode::SUCCESS;
+    }
+    if new_text == text {
+        println!("sin cambios en {}", file.display());
+        return ExitCode::SUCCESS;
+    }
+    let bak = file.with_file_name(format!("{}.bak", file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| project::FILE.to_string())));
+    if let Err(e) = std::fs::write(&bak, &text).and_then(|_| std::fs::write(&file, &new_text)) {
+        eprintln!("no se pudo escribir '{}': {e}", file.display());
+        return ExitCode::from(2);
+    }
+    println!("{} actualizado (la version anterior queda en {})", file.display(), bak.display());
+    ExitCode::SUCCESS
 }

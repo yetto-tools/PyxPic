@@ -677,7 +677,7 @@ fn project_check_json_is_versioned_and_machine_readable() {
 fn project_command_errors_are_clear() {
     let o = pypic(&root(), &["project", "borrar"]);
     assert_eq!(o.status.code(), Some(2));
-    assert!(text(&o).contains("no existe todavia") && text(&o).contains("check"), "{}", text(&o));
+    assert!(text(&o).contains("no existe") && text(&o).contains("check"), "{}", text(&o));
     let dir = fresh("check-none");
     std::fs::create_dir_all(&dir).unwrap();
     let o = pypic(&dir, &["project", "check"]);
@@ -686,4 +686,134 @@ fn project_command_errors_are_clear() {
     let o = pypic(&root(), &["project", "check", "--format", "yaml"]);
     assert_eq!(o.status.code(), Some(2));
     assert!(text(&o).contains("'text' o 'json'"), "{}", text(&o));
+}
+
+// ---- pypic project set ------------------------------------------------------------------------------------------------------
+
+const COMMENTED: &str = "# Mi proyecto (este comentario debe sobrevivir)\n[project]\nname = \"demo\"            # nombre\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n\n[target.placa]            # mi placa\ndevice = \"PIC16F887\"\nclock = \"Internal[4 * MHz]\"   # reloj actual\noutput = \"build/demo.hex\"\n";
+
+fn set_project(name: &str) -> PathBuf {
+    project_dir(name, COMMENTED, BARE_MAIN)
+}
+
+fn toml_of(dir: &Path) -> String {
+    std::fs::read_to_string(dir.join("pypic.toml")).unwrap()
+}
+
+#[test]
+fn set_changes_only_the_asked_keys_keeps_comments_and_leaves_a_backup() {
+    let dir = set_project("set-ok");
+    let before = toml_of(&dir);
+    let o = pypic(&dir, &["project", "set", "clock=Crystal[20 * MHz]", "config.WDTE=ON", "config.BOREN=1"]);
+    assert!(o.status.success(), "{}", text(&o));
+    let t = text(&o);
+    assert!(t.contains("placa.clock: Internal[4 * MHz] -> Crystal[20 * MHz]") && t.contains("placa.config.WDTE: (nuevo) ON") && t.contains("pypic.toml.bak"), "{t}");
+    let after = toml_of(&dir);
+    // los comentarios (los de linea y los del final de linea) y el resto del archivo no se tocan
+    for keep in ["# Mi proyecto (este comentario debe sobrevivir)", "name = \"demo\"            # nombre", "[target.placa]            # mi placa", "clock = \"Crystal[20 * MHz]\"   # reloj actual", "output = \"build/demo.hex\""] {
+        assert!(after.contains(keep), "falta {keep:?} en:\n{after}");
+    }
+    assert!(after.contains("config = { WDTE = \"ON\", BOREN = 1 }"), "{after}");
+    assert_eq!(std::fs::read_to_string(dir.join("pypic.toml.bak")).unwrap(), before, "la copia es la version anterior");
+    // el archivo resultante se revisa y se compila con el reloj nuevo
+    assert!(pypic(&dir, &["project", "check"]).status.success());
+    let o = pypic(&dir, &["build"]);
+    assert!(o.status.success() && text(&o).contains("Crystal 20 MHz (FOSC = HS)"), "{}", text(&o));
+}
+
+#[test]
+fn set_unset_removes_keys_and_an_empty_config_table_and_same_value_changes_nothing() {
+    let dir = set_project("set-unset");
+    assert!(pypic(&dir, &["project", "set", "config.WDTE=ON"]).status.success());
+    let o = pypic(&dir, &["project", "set", "--unset", "config.WDTE", "--unset", "output"]);
+    assert!(o.status.success() && text(&o).contains("config.WDTE: ON -> (quitado)") && text(&o).contains("output: build/demo.hex -> (quitado)"), "{}", text(&o));
+    let t = toml_of(&dir);
+    assert!(!t.contains("config") && !t.contains("output"), "{t}");
+    // el mismo valor: sin cambios y sin copia nueva
+    let _ = std::fs::remove_file(dir.join("pypic.toml.bak"));
+    let o = pypic(&dir, &["project", "set", "clock=Internal[4 * MHz]"]);
+    assert!(o.status.success() && text(&o).contains("sin cambios"), "{}", text(&o));
+    assert!(!dir.join("pypic.toml.bak").exists());
+}
+
+#[test]
+fn set_dry_run_shows_the_changes_and_writes_nothing() {
+    let dir = set_project("set-dry");
+    let before = toml_of(&dir);
+    let o = pypic(&dir, &["project", "set", "--dry-run", "clock=Crystal[8 * MHz]"]);
+    assert!(o.status.success() && text(&o).contains("Crystal[8 * MHz]") && text(&o).contains("--dry-run: no se escribio nada"), "{}", text(&o));
+    assert_eq!(toml_of(&dir), before);
+    assert!(!dir.join("pypic.toml.bak").exists());
+}
+
+#[test]
+fn set_refuses_a_change_that_would_leave_the_profile_invalid_and_writes_nothing() {
+    let dir = set_project("set-invalid");
+    let before = toml_of(&dir);
+    for (arg, frag) in [
+        ("clock=Internal[20 * MHz]", "PYP2194"),
+        ("clock=Crystal[24 * MHz]", "PYP2194"),
+        ("config.WDTE=QUIZAS", "WDTE"),
+        ("config.NOEXISTE=1", "NOEXISTE"),
+        ("device=PIC99X999", "desconocido"),
+    ] {
+        let o = pypic(&dir, &["project", "set", arg]);
+        assert_eq!(o.status.code(), Some(1), "{arg}: {}", text(&o));
+        assert!(text(&o).contains("no se escribe nada") && text(&o).contains(frag), "{arg}: {}", text(&o));
+        assert_eq!(toml_of(&dir), before, "{arg}: el archivo no cambia");
+        assert!(!dir.join("pypic.toml.bak").exists(), "{arg}: ni se crea la copia");
+    }
+    // el programa declara su dispositivo: el perfil no puede pedir otro
+    let dir = project_dir("set-mismatch", COMMENTED, &format!("from pypic.device import PIC16F887\n{BARE_MAIN}"));
+    let o = pypic(&dir, &["project", "set", "device=PIC16F886"]);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(text(&o).contains("el programa declara 'from pypic.device import PIC16F887'") && text(&o).contains("pide PIC16F886"), "{}", text(&o));
+}
+
+#[test]
+fn set_picks_the_profile_creates_new_ones_and_edits_project_keys() {
+    let toml = format!("{COMMENTED}\n[target.otra]\ndevice = \"PIC16F887\"\n");
+    let dir = project_dir("set-targets", &toml, BARE_MAIN);
+    // dos perfiles y ninguno por defecto: hay que elegir
+    let o = pypic(&dir, &["project", "set", "clock=Crystal[8 * MHz]"]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains("hay varios perfiles (otra, placa)"), "{}", text(&o));
+    let o = pypic(&dir, &["project", "set", "--target", "otra", "clock=Crystal[8 * MHz]"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(toml_of(&dir).contains("[target.otra]") && toml_of(&dir).contains("clock = \"Crystal[8 * MHz]\""), "{}", toml_of(&dir));
+    // un perfil que no existe: error, o se crea con --create
+    let o = pypic(&dir, &["project", "set", "--target", "nueva", "device=PIC16F887"]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains("no hay un perfil 'nueva'") && text(&o).contains("--create"), "{}", text(&o));
+    let o = pypic(&dir, &["project", "set", "--target", "nueva", "--create", "device=PIC16F887", "clock=Internal[8 * MHz]"]);
+    assert!(o.status.success() && text(&o).contains("perfil nueva: (nuevo)"), "{}", text(&o));
+    let o = pypic(&dir, &["project", "check", "--target", "nueva"]);
+    assert!(o.status.success() && text(&o).contains("Internal 8 MHz"), "{}", text(&o));
+    // claves del proyecto: no necesitan perfil
+    let o = pypic(&dir, &["project", "set", "project.default_target=placa", "project.name=otro"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(toml_of(&dir).contains("default_target = \"placa\"") && toml_of(&dir).contains("name = \"otro\"            # nombre"), "{}", toml_of(&dir));
+    // un default_target que no existe deja el archivo invalido: se rechaza
+    let before = toml_of(&dir);
+    let o = pypic(&dir, &["project", "set", "project.default_target=fantasma"]);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(text(&o).contains("invalido") && text(&o).contains("fantasma"), "{}", text(&o));
+    assert_eq!(toml_of(&dir), before);
+}
+
+#[test]
+fn set_usage_errors_say_the_valid_keys() {
+    let dir = set_project("set-usage");
+    let o = pypic(&dir, &["project", "set"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(text(&o).contains("no hay nada que cambiar") && text(&o).contains("config.AJUSTE"), "{}", text(&o));
+    let o = pypic(&dir, &["project", "set", "color=rojo"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(text(&o).contains("la clave 'color' no existe") && text(&o).contains("device, clock, output"), "{}", text(&o));
+    let o = pypic(&dir, &["project", "set", "clock"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(text(&o).contains("se escribe CLAVE=VALOR"), "{}", text(&o));
+    let o = pypic(&dir, &["project", "set", "project.fantasma=1"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(text(&o).contains("la clave 'project.fantasma' no existe"), "{}", text(&o));
 }

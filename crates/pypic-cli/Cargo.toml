@@ -14,3 +14,4 @@ pypic-device = { path = "../pypic-device" }
 pypic-pic14 = { path = "../pypic-pic14" }
 toml = "1"
 serde_json = "1"
+toml_edit = "0.25"

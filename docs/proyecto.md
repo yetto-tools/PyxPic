@@ -56,6 +56,27 @@ El formato `--format json` es **versionado** (`"version": 1`) para herramientas 
 
 Los Device Packs se buscan en `devices_dir` del proyecto, en `$PYPIC_DEVICES` y en `./devices`: un proyecto creado **fuera** de la carpeta del compilador necesita `--devices-dir` (o la variable de entorno) para encontrarlos.
 
+## Reconfigurar: `pypic project set`
+
+```
+pypic project set [--target perfil] [--create] [--dry-run] [--unset CLAVE]... [CLAVE=VALOR]...
+
+pypic project set clock="Crystal[20 * MHz]" config.WDTE=ON       # el perfil por defecto (o el único)
+pypic project set --target cristal device=PIC16F887               # un perfil concreto
+pypic project set --target nueva --create device=PIC16F887 clock="Internal[8 * MHz]"
+pypic project set --unset config.WDTE --unset output
+pypic project set project.default_target=cristal project.name=termometro
+pypic project set --dry-run clock="Crystal[8 * MHz]"              # solo muestra los cambios
+```
+
+Claves de perfil: `device`, `clock`, `output` y `config.AJUSTE` (un entero queda como entero: `config.BOREN=1`). Claves de proyecto (no necesitan perfil): `project.name`, `project.main`, `project.devices_dir`, `project.default_target`. `--create` crea el perfil si no existe y `--unset` quita una clave (al quitar la última `config.*` desaparece la tabla `config`).
+
+- **Edita, no reescribe:** el archivo se modifica con `toml_edit`: los **comentarios** (de línea y de final de línea), el orden y los espacios **se conservan**; solo cambia lo pedido.
+- **Valida el resultado entero antes de escribir:** estructura del archivo y el perfil cambiado con las mismas reglas de `project check` (dispositivo y pack, **el programa no declara otro dispositivo**, reloj, configuración, análisis del programa). Si algo queda inválido, **no se escribe nada**, ni la copia, y sale con código 1 explicando qué.
+- **Copia de seguridad:** antes de escribir guarda la versión anterior en `pypic.toml.bak` (se reemplaza en cada cambio). Un cambio que no cambia nada (`clock` al mismo valor) no escribe ni crea copia.
+- **`--dry-run`** muestra los cambios (`placa.clock: Internal[4 * MHz] -> Crystal[20 * MHz]`) y los avisos, y no escribe nada.
+- Códigos de salida: 0 bien, 1 el cambio dejaría el archivo o el perfil inválido, 2 uso incorrecto (clave desconocida, falta `CLAVE=VALOR`, varios perfiles sin `--target`, perfil inexistente sin `--create`) o error de lectura/escritura.
+
 ## Quién manda
 
 1. **La línea de comandos** manda sobre el perfil: `--config WDTE=OFF` gana al `config = { WDTE = "ON" }` del perfil (sin "se indica dos veces"), y `-o` gana a `output`.
@@ -84,7 +105,7 @@ Los errores de lectura salen con código de salida 2; los de contenido (disposit
 
 ## Lo que no está (todavía)
 
-- **`pypic project set`** (reconfigurar un perfil: reloj, dispositivo, configuración), **`pypic project migrate --dry-run`** y las pantallas del asistente de la extensión (ver `docs/spec/04_IDE_WIZARD.md`): `init` y `project check` ya son la base sobre la que se apoyarán.
+- **`pypic project migrate --dry-run`** (comparar el programa contra otro MCU, con propuesta de remapeo de pines) y las pantallas del asistente de la extensión (ver `docs/spec/04_IDE_WIZARD.md`): `init`, `project check` y `project set` ya son la base sobre la que se apoyarán. **Pedir confirmación interactiva** antes de escribir tampoco está: el equivalente es `--dry-run` más la copia `.bak`.
 - **`targets/*.toml` separados, lockfile, varios programas por proyecto, perfiles `Debug`/`Release`** y una opción global por usuario.
 - **`pypic migrate --dry-run`** para comparar el programa contra otro MCU.
 - **Compilar contra todos los perfiles** de una vez (`--target all`).
@@ -92,4 +113,4 @@ Los errores de lectura salen con código de salida 2; los de contenido (disposit
 
 ## Verificación
 
-`crates/pypic-cli/tests/cli.rs` prueba también `init` y `project check`: un proyecto recién creado que se revisa y compila sin editar nada, el alias del dispositivo y el reloj, que no se crea nada si algo no es válido ni se sobrescribe un archivo existente, todos los problemas por perfil (dispositivo contrario, reloj imposible, configuración inexistente o con valor inválido, programa ausente o con errores) sin modificar archivos, y el JSON versionado. `crates/pypic-cli/src/project.rs` (pruebas unitarias del análisis: un proyecto completo con rutas relativas, los errores con sus claves válidas y la elección de perfil) y `crates/pypic-cli/tests/cli.rs`: un proyecto que compila **sin argumentos** con dispositivo, reloj (`FOSC = HS`, 100 ms = 500 000 ciclos a 20 MHz), configuración (`WDTE`) y salida tomados del perfil y sin `from pypic.device import ...` en el fuente; el conflicto de dispositivo y el aviso de reloj; `--target`, `default_target` y `--config` sobre el perfil; los errores del archivo; y el ejemplo `examples/proyecto/` con sus dos destinos. **No probado en hardware.**
+`crates/pypic-cli/tests/cli.rs` prueba también `project set` (solo cambian las claves pedidas y se conservan los comentarios, `--unset`, `--dry-run`, los cambios inválidos que no escriben nada, perfiles nuevos, claves de proyecto y los errores de uso), y `init` y `project check`: un proyecto recién creado que se revisa y compila sin editar nada, el alias del dispositivo y el reloj, que no se crea nada si algo no es válido ni se sobrescribe un archivo existente, todos los problemas por perfil (dispositivo contrario, reloj imposible, configuración inexistente o con valor inválido, programa ausente o con errores) sin modificar archivos, y el JSON versionado. `crates/pypic-cli/src/project.rs` (pruebas unitarias del análisis: un proyecto completo con rutas relativas, los errores con sus claves válidas y la elección de perfil) y `crates/pypic-cli/tests/cli.rs`: un proyecto que compila **sin argumentos** con dispositivo, reloj (`FOSC = HS`, 100 ms = 500 000 ciclos a 20 MHz), configuración (`WDTE`) y salida tomados del perfil y sin `from pypic.device import ...` en el fuente; el conflicto de dispositivo y el aviso de reloj; `--target`, `default_target` y `--config` sobre el perfil; los errores del archivo; y el ejemplo `examples/proyecto/` con sus dos destinos. **No probado en hardware.**
