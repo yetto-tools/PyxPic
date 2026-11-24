@@ -47,6 +47,9 @@ pub struct Sim {
     pub adc_inputs: [u16; 16],
     pub fosc_hz: u32,
     pub adc_violations: Vec<String>,
+    /// Condiciones que vigila: adquisicion minima (por defecto el valor tipico AD132, 11,5 us) y alimentacion menor de 3,0 V (TAD >= 3,0 us).
+    pub adc_tacq_ns: f64,
+    pub adc_low_voltage: bool,
     adc_prev_go: bool,
     adc_prev_on: bool,
     adc_prev_chs: u8,
@@ -62,7 +65,7 @@ impl Sim {
                 flash[a as usize] = w;
             }
         }
-        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None, t0_pre: 0, t0_inhibit: 0, t1_pre: 0, t2_pre: 0, t2_post: 0, timer_events: Vec::new(), adc_inputs: [0; 16], fosc_hz: 4_000_000, adc_violations: Vec::new(), adc_prev_go: false, adc_prev_on: false, adc_prev_chs: 0, adc_acq_from: 0, adc_remaining: 0 };
+        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None, t0_pre: 0, t0_inhibit: 0, t1_pre: 0, t2_pre: 0, t2_post: 0, timer_events: Vec::new(), adc_inputs: [0; 16], fosc_hz: 4_000_000, adc_violations: Vec::new(), adc_tacq_ns: 11_500.0, adc_low_voltage: false, adc_prev_go: false, adc_prev_on: false, adc_prev_chs: 0, adc_acq_from: 0, adc_remaining: 0 };
         s.reset();
         s
     }
@@ -457,8 +460,8 @@ impl Sim {
                 self.adc_violations.push("GO/DONE puesto con el ADC apagado (ADON = 0): falta ADC.start()".into());
             } else {
                 let acq_ns = (now - self.adc_acq_from) as f64 * cycle_ns;
-                if acq_ns < 5000.0 {
-                    self.adc_violations.push(format!("adquisicion de {acq_ns:.0} ns: el datasheet pide 5000 ns tras cambiar de canal"));
+                if acq_ns < self.adc_tacq_ns {
+                    self.adc_violations.push(format!("adquisicion de {acq_ns:.0} ns: se esperaban al menos {:.0} ns tras cambiar de canal", self.adc_tacq_ns));
                 }
                 let tad_cycles = match adcs {
                     0 => 2.0 / 4.0,
@@ -468,8 +471,9 @@ impl Sim {
                 };
                 if adcs != 3 {
                     let tad_ns = tad_cycles * cycle_ns;
-                    if !(1600.0..=6000.0).contains(&tad_ns) {
-                        self.adc_violations.push(format!("TAD de {tad_ns:.0} ns: el datasheet exige 1600..6000 ns"));
+                    let min = if self.adc_low_voltage { 3000.0 } else { 1600.0 };
+                    if !(min..=9000.0).contains(&tad_ns) {
+                        self.adc_violations.push(format!("TAD de {tad_ns:.0} ns: AD130 exige {min:.0}..9000 ns"));
                     }
                 }
                 self.adc_remaining = (11.0 * tad_cycles).ceil() as u32 + 1;

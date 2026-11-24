@@ -15,6 +15,7 @@ pub fn lower(prog: &Program) -> Module {
     m.clock_hz = prog.clock_hz;
     m.clock_defaulted = prog.clock_defaulted;
     m.roms = prog.roms.clone();
+    m.adc_acq_ns = prog.adc_config.acq_ns;
     let mut gidx = HashMap::new();
     for it in &prog.module.items {
         if let Item::Var(v) = it {

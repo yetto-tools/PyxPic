@@ -82,7 +82,7 @@ fn simulate(src: &str, inputs: &[(usize, u16)], fosc_hz: u32) -> (Compiled, Sim)
 #[test]
 fn the_primitives_give_the_assembler_level_control() {
     // select, esperar la adquisicion, go, sondear done y leer el resultado: lo que hace read, paso a paso
-    let body = "    ADC.start()\n    ADC.select(AN5)\n    delay_us(5)\n    ADC.go()\n    while not ADC.done():\n        spins += 1\n    v = ADC.result()\n";
+    let body = "    ADC.start()\n    ADC.select(AN5)\n    delay_us(12)\n    ADC.go()\n    while not ADC.done():\n        spins += 1\n    v = ADC.result()\n";
     let src = format!("{}from pypic.system.time import delay_us\nv: u16 = 0\nspins: u8 = 0\ndef main() -> None:\n    global v, spins\n{body}", head(4_000_000));
     let (c, s) = simulate(&src, &[(5, 777)], 4_000_000);
     assert_eq!(global(&c, &s, "v"), 777);
@@ -99,7 +99,7 @@ fn the_primitives_give_the_assembler_level_control() {
 
 #[test]
 fn a_conversion_can_overlap_other_work() {
-    let src = format!("{}from pypic.system.time import delay_us\nv: u16 = 0\nwork: u8 = 0\ndef main() -> None:\n    global v, work\n    ADC.start()\n    ADC.select(AN0)\n    delay_us(5)\n    ADC.go()\n    work = 7\n    work += 1\n    while not ADC.done():\n        pass\n    v = ADC.result()\n", head(4_000_000));
+    let src = format!("{}from pypic.system.time import delay_us\nv: u16 = 0\nwork: u8 = 0\ndef main() -> None:\n    global v, work\n    ADC.start()\n    ADC.select(AN0)\n    delay_us(12)\n    ADC.go()\n    work = 7\n    work += 1\n    while not ADC.done():\n        pass\n    v = ADC.result()\n", head(4_000_000));
     let (c, s) = differential(&src, &[(0, 300)], 4_000_000);
     assert_eq!((global(&c, &s, "v"), global(&c, &s, "work")), (300, 8));
 }
@@ -153,7 +153,7 @@ fn an_explicit_clock_is_honoured_and_a_bad_one_is_warned() {
 // ---- adquisicion --------------------------------------------------------------------------------------------
 
 #[test]
-fn read_waits_at_least_five_microseconds_after_changing_channel_at_any_clock() {
+fn read_waits_the_acquisition_time_after_changing_channel_at_any_clock() {
     for hz in [1_000_000u32, 4_000_000, 8_000_000, 20_000_000] {
         let src = format!("{}v: u16 = 0\ndef main() -> None:\n    global v\n    ADC.start()\n    v = ADC.read(AN0)\n    v = ADC.read(AN5)\n    v = ADC.read(AN0)\n", head(hz));
         let (_, s) = differential(&src, &[(0, 1), (5, 2)], hz);
@@ -173,8 +173,8 @@ fn going_without_the_wait_is_caught_by_the_simulator() {
 fn the_timing_report_lists_the_acquisition_wait() {
     let src = format!("{}v: u16 = 0\ndef main() -> None:\n    global v\n    ADC.start()\n    v = ADC.read(AN0)\n", head(4_000_000));
     let (_, c) = build(&src);
-    // 5 us a 4 MHz son 5 ciclos de instruccion
-    assert!(c.timing.iter().any(|t| t.cycles == 5), "{:?}", c.timing.iter().map(|t| t.cycles).collect::<Vec<_>>());
+    // 11,5 us (AD132 tipico) a 4 MHz son 12 ciclos de instruccion
+    assert!(c.timing.iter().any(|t| t.cycles == 12), "{:?}", c.timing.iter().map(|t| t.cycles).collect::<Vec<_>>());
 }
 
 // ---- reglas del lenguaje ------------------------------------------------------------------------------------
@@ -284,9 +284,143 @@ fn the_documented_costs_are_what_the_simulator_measures() {
         assert_eq!(cycles_of("ADC.start()", hz), 6);
         assert_eq!(cycles_of("v = ADC.result()", hz), 6);
     }
-    // read = select + adquisicion de 5 us + go + espera de 11 TAD + result
-    assert_eq!(cycles_of("v = ADC.read(AN0)", 1_000_000), 29);
-    assert_eq!(cycles_of("v = ADC.read(AN0)", 4_000_000), 50);
-    assert_eq!(cycles_of("v = ADC.read(AN0)", 8_000_000), 121);
-    assert_eq!(cycles_of("v = ADC.read(AN0)", 20_000_000), 136);
+    // read = select + adquisicion de 11,5 us (AD132 tipico) + go + espera de 11 TAD + result
+    assert_eq!(cycles_of("v = ADC.read(AN0)", 1_000_000), 30);
+    assert_eq!(cycles_of("v = ADC.read(AN0)", 4_000_000), 57);
+    assert_eq!(cycles_of("v = ADC.read(AN0)", 8_000_000), 134);
+    assert_eq!(cycles_of("v = ADC.read(AN0)", 20_000_000), 169);
+}
+
+// ---- el contrato electrico (revision: las condiciones no son universales) -------------------------------------
+
+#[test]
+fn the_default_acquisition_is_the_typical_datasheet_value_not_a_universal_minimum() {
+    // AD132: 11,5 us tipicos. A 4 MHz (TCY = 1 us) son 12 ciclos; a 20 MHz (TCY = 200 ns), 58
+    let timing = |hz: u32| {
+        let src = format!("{}v: u16 = 0\ndef main() -> None:\n    global v\n    ADC.start()\n    v = ADC.read(AN0)\n", head(hz));
+        build(&src).1.timing.iter().map(|t| t.cycles).collect::<Vec<_>>()
+    };
+    assert_eq!(timing(4_000_000), vec![12]);
+    assert_eq!(timing(20_000_000), vec![58]);
+}
+
+#[test]
+fn the_acquisition_can_be_set_for_a_high_impedance_source() {
+    let src = format!("{}v: u16 = 0\ndef main() -> None:\n    global v\n    ADC.start(acquisition_us=40)\n    v = ADC.read(AN0)\n", head(4_000_000));
+    let (_, c) = build(&src);
+    assert_eq!(c.timing.iter().map(|t| t.cycles).collect::<Vec<_>>(), vec![40]);
+    // el simulador vigila lo que el programa declaro: con 40 us y 40 pedidos no hay violacion
+    let mut s = Sim::new(&c.image);
+    s.adc_tacq_ns = 40_000.0;
+    s.adc_inputs[0] = 5;
+    s.run_until(100_000, |s| s.halted);
+    assert!(s.adc_violations.is_empty(), "{:?}", s.adc_violations);
+}
+
+#[test]
+fn an_acquisition_below_the_amplifier_settling_time_warns() {
+    let src = format!("{}v: u16 = 0\ndef main() -> None:\n    global v\n    ADC.start(acquisition_us=3)\n    v = ADC.read(AN0)\n", head(4_000_000));
+    let (ok, t) = diagnostics(&src);
+    assert!(ok && t.contains("PYP3013") && t.contains("TAMP") && t.contains("11,5"), "{t}");
+    for bad in ["0", "2000", "True", "x"] {
+        let (ok, t) = diagnostics(&format!("{}x: u8 = 3\ndef main() -> None:\n    ADC.start(acquisition_us={bad})\n", head(4_000_000)));
+        assert!(!ok && t.contains("PYP2172"), "acquisition_us={bad}: {t}");
+    }
+}
+
+#[test]
+fn tad_is_judged_against_the_electrical_table_not_the_recommended_window() {
+    // FOSC/32 a 4 MHz son 8 us: fuera de la ventana recomendada (1,6-6) pero dentro de AD130 (1,6-9): sin aviso
+    let src = format!("{}v: u16 = 0\ndef main() -> None:\n    global v\n    ADC.start(clock=FOSC_32)\n    v = ADC.read(AN0)\n", head(4_000_000));
+    let (ok, t) = diagnostics(&src);
+    assert!(ok && !t.contains("PYP3012"), "{t}");
+    let (_, s) = differential(&src, &[(0, 5)], 4_000_000);
+    assert!(s.adc_violations.is_empty(), "{:?}", s.adc_violations);
+    // 10 us (FOSC/32 a 3,2 MHz) pasa de 9 us: aviso y violacion
+    let slow = format!("{}v: u16 = 0\ndef main() -> None:\n    global v\n    ADC.start(clock=FOSC_32)\n    v = ADC.read(AN0)\n", head(3_200_000));
+    let (ok, t) = diagnostics(&slow);
+    assert!(ok && t.contains("PYP3012") && t.contains("9000"), "{t}");
+    let (_, s) = differential(&slow, &[(0, 5)], 3_200_000);
+    assert!(s.adc_violations.iter().any(|v| v.contains("TAD")), "{:?}", s.adc_violations);
+}
+
+#[test]
+fn the_automatic_clock_prefers_the_recommended_window_then_the_electrical_limits_then_the_rc() {
+    let adcs = |hz: u32| {
+        let src = format!("{}v: u16 = 0\ndef main() -> None:\n    global v\n    ADC.start()\n    v = ADC.read(AN0)\n", head(hz));
+        let (_, c) = build(&src);
+        let mut s = Sim::new(&c.image);
+        s.fosc_hz = hz;
+        s.run_until(5_000_000, |s| s.halted);
+        s.read(0x1F) >> 6
+    };
+    // 250 kHz: FOSC/2 son 8 us, fuera de lo recomendado pero valido: se usa antes que el RC
+    assert_eq!(adcs(250_000), 0);
+    // 100 kHz: FOSC/2 son 20 us (> 9): ninguno vale, RC interno
+    assert_eq!(adcs(100_000), 3);
+}
+
+#[test]
+fn low_voltage_moves_the_tad_window_to_3_9_us() {
+    let run = |hz: u32, lv: bool| {
+        let src = format!("{}v: u16 = 0\ndef main() -> None:\n    global v\n    ADC.start(low_voltage={})\n    v = ADC.read(AN0)\n", head(hz), if lv { "True" } else { "False" });
+        let (_, c) = build(&src);
+        let mut s = Sim::new(&c.image);
+        s.fosc_hz = hz;
+        s.adc_low_voltage = lv;
+        s.adc_inputs[0] = 7;
+        s.run_until(1_000_000, |s| s.halted);
+        (s.read(0x1F) >> 6, s.adc_violations.clone())
+    };
+    // 4 MHz: con VDD > 3 V es FOSC/8 (2 us); con VDD < 3 V el minimo es 3 us: FOSC/32 (8 us)
+    assert_eq!(run(4_000_000, false), (1, vec![]));
+    assert_eq!(run(4_000_000, true), (2, vec![]));
+    // 1 MHz: FOSC/2 (2 us) vale con VDD alta y no con VDD baja (FOSC/8 = 8 us)
+    assert_eq!(run(1_000_000, false), (0, vec![]));
+    assert_eq!(run(1_000_000, true), (1, vec![]));
+}
+
+#[test]
+fn every_start_call_must_ask_for_the_same_conditions() {
+    let src = format!("{}def a() -> None:\n    ADC.start(acquisition_us=20)\n\n\ndef main() -> None:\n    ADC.start()\n    a()\n", head(4_000_000));
+    let (ok, t) = diagnostics(&src);
+    assert!(!ok && t.contains("PYP2176"), "{t}");
+    // varias llamadas iguales (con distinto clock) son correctas
+    let ok_src = format!("{}def a() -> None:\n    ADC.start(clock=FOSC_8)\n\n\ndef main() -> None:\n    ADC.start()\n    a()\n", head(4_000_000));
+    assert!(diagnostics(&ok_src).0);
+}
+
+// ---- ADC.start() debe poder ejecutarse (no solo existir) ---------------------------------------------------------
+
+#[test]
+fn a_start_in_a_function_nobody_calls_does_not_count() {
+    let src = format!("{}v: u16 = 0\ndef never() -> None:\n    ADC.start()\n\n\ndef main() -> None:\n    global v\n    v = ADC.read(AN0)\n", head(4_000_000));
+    let (ok, t) = diagnostics(&src);
+    assert!(!ok && t.contains("PYP2171") && t.contains("ni main ni @init_device"), "{t}");
+}
+
+#[test]
+fn a_start_reachable_from_main_or_init_device_counts() {
+    let via_call = format!("{}v: u16 = 0\ndef setup() -> None:\n    ADC.start()\n\n\ndef main() -> None:\n    global v\n    setup()\n    v = ADC.read(AN0)\n", head(4_000_000));
+    assert!(diagnostics(&via_call).0);
+    let via_init = format!("{}v: u16 = 0\n\n\n@init_device\ndef setup() -> None:\n    ADC.start()\n\n\ndef main() -> None:\n    global v\n    v = ADC.read(AN0)\n", head(4_000_000));
+    let (ok, t) = diagnostics(&via_init);
+    assert!(ok, "{t}");
+}
+
+#[test]
+fn the_limit_of_the_start_check_is_stated_and_the_simulator_catches_the_order() {
+    // el compilador comprueba que exista un start() alcanzable, no el orden: aqui main lee ANTES de iniciar
+    let src = format!("{}v: u16 = 0\ndef main() -> None:\n    global v\n    v = ADC.read(AN0)\n    ADC.start()\n", head(4_000_000));
+    let (ok, t) = diagnostics(&src);
+    assert!(ok, "{t}"); // el compilador no puede verlo
+    // sin ADON la conversion nunca termina (como en el chip): el programa se queda sondeando GO y no llega a parar
+    let (_, c) = build(&src);
+    let mut s = Sim::new(&c.image);
+    s.adc_inputs[0] = 5;
+    s.run_until(200_000, |_| false);
+    assert!(!s.halted, "debe quedarse esperando una conversion que no ocurre");
+    assert!(s.adc_violations.iter().any(|v| v.contains("ADON")), "el simulador debe verlo: {:?}", s.adc_violations);
+    let (_, t) = diagnostics(&format!("{}def main() -> None:\n    x: u16 = ADC.read(AN0)\n", head(4_000_000)));
+    assert!(t.contains("se comprueba que exista, no el orden"), "{t}");
 }

@@ -146,6 +146,8 @@ pub struct Program {
     pub rom_gets: BTreeMap<u32, usize>,
     /// Llamadas a metodos de `pypic.periph.adc`, por id de expresion.
     pub adc_calls: BTreeMap<u32, AdcCall>,
+    /// Condiciones electricas que asume el programa para el ADC (adquisicion y alimentacion).
+    pub adc_config: adc::AdcConfig,
 }
 
 pub struct Checked {
@@ -162,6 +164,7 @@ pub struct Checked {
     pub roms: Vec<(String, Vec<u8>)>,
     pub rom_gets: BTreeMap<u32, usize>,
     pub adc_calls: BTreeMap<u32, AdcCall>,
+    pub adc_config: adc::AdcConfig,
 }
 
 pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Checked {
@@ -204,6 +207,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         adc_started: false,
         adc_needs: None,
         adc_pending: Vec::new(),
+        adc_config: adc::AdcConfig::default(),
         roms: Vec::new(),
         rom_idx: HashMap::new(),
         rom_gets: BTreeMap::new(),
@@ -214,7 +218,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         stmt_top: None,
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, adc_calls: c.adc_calls }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, adc_calls: c.adc_calls, adc_config: c.adc_config }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -289,7 +293,8 @@ struct Checker<'a> {
     adc_calls: BTreeMap<u32, AdcCall>,
     adc_started: bool,
     adc_needs: Option<Span>,
-    adc_pending: Vec<(u32, Span, Option<adc::AdcClock>)>,
+    adc_pending: Vec<AdcStart>,
+    adc_config: adc::AdcConfig,
     /// Tablas constantes declaradas, su indice por nombre y las lecturas variables.
     roms: Vec<(String, Vec<u8>)>,
     rom_idx: HashMap<String, usize>,
@@ -313,6 +318,15 @@ struct Claim {
     span: Span,
     /// Viene de `TMRx.start(...)`: esos pines ya los comprueba `check_timer_usage` (PYP2125).
     via_timer: bool,
+}
+
+/// Una llamada a `ADC.start(...)` por resolver (reloj automatico) con las condiciones que pide.
+struct AdcStart {
+    id: u32,
+    span: Span,
+    clock: Option<adc::AdcClock>,
+    cfg: adc::AdcConfig,
+    func: Option<usize>,
 }
 
 struct TimerEvery {
@@ -1206,9 +1220,9 @@ impl<'a> Checker<'a> {
         match method {
             "start" => {
                 if !args.is_empty() {
-                    self.d.error("PYP2127", args[0].span, "ADC.start se escribe con argumentos con nombre: ADC.start() o ADC.start(clock=FOSC_8)");
+                    self.d.error("PYP2127", args[0].span, "ADC.start se escribe con argumentos con nombre: ADC.start(), ADC.start(clock=FOSC_8, acquisition_us=20, low_voltage=True)");
                 }
-                let mut clock = None;
+                let (mut clock, mut cfg) = (None, adc::AdcConfig::default());
                 for k in kwargs {
                     match (k.name.as_str(), &k.value.kind) {
                         ("clock", ExprKind::Name(n)) if self.adc_consts.contains(n) && adc::CLOCKS.iter().any(|(c, _)| c == n) => {
@@ -1219,14 +1233,28 @@ impl<'a> Checker<'a> {
                             self.expr(&k.value);
                             self.d.error("PYP2172", k.value.span, "ADC.start: clock es FOSC_2, FOSC_8, FOSC_32 o FRC (importados de pypic.periph.adc)");
                         }
+                        ("acquisition_us", _) => {
+                            self.expr(&k.value);
+                            match self.konst(&k.value) {
+                                Some(us) if (1..=1000).contains(&us) && self.ty(&k.value) != Type::Bool => cfg.acq_ns = (us * 1000) as u32,
+                                _ => self.d.error("PYP2172", k.value.span, "ADC.start: acquisition_us es una constante de 1 a 1000 (microsegundos de adquisicion tras cambiar de canal)"),
+                            }
+                        }
+                        ("low_voltage", _) => {
+                            self.expr(&k.value);
+                            match (self.konst(&k.value), self.ty(&k.value)) {
+                                (Some(v), Type::Bool) => cfg.low_voltage = v != 0,
+                                _ => self.d.error("PYP2172", k.value.span, "ADC.start: low_voltage es True o False (VDD menor de 3,0 V)"),
+                            }
+                        }
                         _ => {
                             self.expr(&k.value);
-                            self.d.error("PYP2172", k.name_span, format!("ADC.start no tiene el argumento '{}' (admite: clock)", k.name));
+                            self.d.error("PYP2172", k.name_span, format!("ADC.start no tiene el argumento '{}' (admite: clock, acquisition_us, low_voltage)", k.name));
                         }
                     }
                 }
                 self.adc_started = true;
-                self.adc_pending.push((e.id, e.span, clock));
+                self.adc_pending.push(AdcStart { id: e.id, span: e.span, clock, cfg, func: self.cur });
                 void(self)
             }
             "select" | "read" => {
@@ -1274,30 +1302,73 @@ impl<'a> Checker<'a> {
         }
     }
 
-    /// ADC usado sin `ADC.start()` y reloj automatico de `start()`.
-    fn check_adc_usage(&mut self) {
-        if let Some(sp) = self.adc_needs.take() {
-            if !self.adc_started {
-                self.d.error("PYP2171", sp, "el ADC se usa pero nunca se inicia: llama a ADC.start() en algun punto del programa");
+    /// Funciones alcanzables desde `main` y `@init_device` (o, sin `main`, desde las que nadie llama).
+    fn entry_reachable(&self) -> BTreeSet<usize> {
+        let called: BTreeSet<&String> = self.functions.iter().flat_map(|f| f.calls.iter()).collect();
+        let roots: Vec<usize> = if let Some(&m) = self.fidx.get("main") {
+            std::iter::once(m).chain((0..self.functions.len()).filter(|&i| self.functions[i].is_init)).collect()
+        } else {
+            (0..self.functions.len()).filter(|&i| !self.functions[i].is_interrupt && !called.contains(&self.functions[i].name)).collect()
+        };
+        let mut seen = BTreeSet::new();
+        let mut stack = roots;
+        while let Some(f) = stack.pop() {
+            if seen.insert(f) {
+                stack.extend(self.functions[f].calls.iter().filter_map(|c| self.fidx.get(c).copied()));
             }
         }
+        seen
+    }
+
+    /// ADC usado sin una `ADC.start()` alcanzable, condiciones de las llamadas y reloj automatico.
+    ///
+    /// Limite explicito: se comprueba que **exista** un `start()` en una funcion que `main` o `@init_device` pueden llamar, no el
+    /// orden en que se ejecutan; usar el ADC antes de iniciarlo lo detecta el simulador (GO con ADON apagado), no el compilador.
+    fn check_adc_usage(&mut self) {
         let pend = std::mem::take(&mut self.adc_pending);
-        for (id, span, clock) in pend {
-            let clock = match clock {
+        if let Some(sp) = self.adc_needs.take() {
+            let reach = self.entry_reachable();
+            if !pend.iter().any(|p| p.func.is_none_or(|f| reach.contains(&f))) {
+                let why = if pend.is_empty() { "nunca se llama a ADC.start()" } else { "las llamadas a ADC.start() estan en funciones que ni main ni @init_device pueden llamar" };
+                self.d.error("PYP2171", sp, format!("el ADC se usa pero {why}: inicialo con ADC.start() en main o en una funcion que main llame (se comprueba que exista, no el orden)"));
+            }
+        }
+        // el programa tiene una sola condicion electrica: todas las llamadas deben coincidir
+        if let Some(first) = pend.first() {
+            if let Some(other) = pend.iter().find(|p| p.cfg != first.cfg) {
+                self.d.error("PYP2176", other.span, "las llamadas a ADC.start() piden condiciones distintas (acquisition_us / low_voltage): el programa tiene una sola; repite los mismos valores");
+            }
+            self.adc_config = first.cfg;
+            if first.cfg.acq_ns < adc::TAMP_MAX_NS {
+                self.d.warning("PYP3013", first.span, format!("acquisition_us = {} us es menos que el TAMP maximo del datasheet (5 us, AD133): el amplificador no llega a asentarse en el peor caso; el valor tipico es 11,5 us", first.cfg.acq_ns as f64 / 1000.0));
+            }
+        }
+        for p in pend {
+            let cfg = p.cfg;
+            let clock = match p.clock {
                 Some(c) => c,
-                None => match self.effective_clock(span, "ADC.start") {
-                    Some(hz) => adc::auto_clock(hz),
+                None => match self.effective_clock(p.span, "ADC.start") {
+                    Some(hz) => adc::auto_clock(hz, &cfg),
                     None => continue,
                 },
             };
-            // un reloj elegido a mano que viola TAD es un aviso: el resultado dejaria de ser fiable
+            // un reloj elegido a mano fuera de AD130 es un aviso: el resultado dejaria de ser fiable
             if let (Some(hz), Some(_)) = (self.clock_hz, clock.divisor()) {
-                let t = adc::tad_ns(clock, hz);
-                if t < adc::TAD_MIN_NS as f64 || t > adc::TAD_MAX_NS as f64 {
-                    self.d.warning("PYP3012", span, format!("el reloj del ADC da TAD = {t:.0} ns y el datasheet exige 1600..6000 ns: la conversion no es fiable; omite clock= para que se elija solo"));
+                if !adc::tad_in_spec(clock, hz, &cfg) {
+                    let t = adc::tad_ns(clock, hz);
+                    self.d.warning(
+                        "PYP3012",
+                        p.span,
+                        format!(
+                            "el reloj del ADC da TAD = {t:.0} ns y el datasheet (AD130) exige {}..{} ns{}: la conversion no es fiable; omite clock= para que se elija solo",
+                            cfg.tad_min_ns(),
+                            adc::TAD_MAX_NS,
+                            if cfg.low_voltage { " con VDD < 3,0 V" } else { "" }
+                        ),
+                    );
                 }
             }
-            self.adc_calls.insert(id, AdcCall { op: AdcOp::Start(Some(clock)) });
+            self.adc_calls.insert(p.id, AdcCall { op: AdcOp::Start(Some(clock)) });
         }
     }
 

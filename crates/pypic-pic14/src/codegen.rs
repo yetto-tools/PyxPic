@@ -1536,7 +1536,7 @@ impl<'a> Gen<'a> {
             AdcOp::Read(n) => {
                 self.adc_select(n)?;
                 let hz = self.clock_hz.ok_or_else(|| CodegenError::Device("ADC.read necesita el reloj (CLOCK_HZ) para la espera de adquisicion".into()))?;
-                let cycles = pypic_frontend::adc::acquisition_cycles(hz, self.cpc);
+                let cycles = pypic_frontend::adc::acquisition_cycles(hz, self.cpc, self.m.adc_acq_ns);
                 self.delay(DelayUnit::Cycles, &Operand::Const { value: cycles as i128, ty: Type::Int { bits: 32, signed: false } })?;
                 self.bit_op("GO_DONE", true)?;
                 let top = self.asm.label("adc.espera");

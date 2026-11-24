@@ -135,6 +135,8 @@ pub struct Pin {
 #[derive(Clone, Debug, Default)]
 pub struct Module {
     pub globals: Vec<Global>,
+    /// Adquisicion del ADC en nanosegundos (`ADC.start(acquisition_us=...)`; por defecto el valor tipico de 11,5 us).
+    pub adc_acq_ns: u32,
     /// Tablas constantes: nombre y entradas (u8).
     pub roms: Vec<(String, Vec<u8>)>,
     pub functions: Vec<Function>,
