@@ -47,6 +47,7 @@ docs/
   sdk-gpio.md       acceso a pines (pypic.gpio): API, reglas y ejemplo
   sdk-time.md       esperas exactas al ciclo (pypic.time): pause, wait, delay_us, delay_cycles
   principios-de-diseno.md  ensamblador de alto nivel: reglas e inventario de lo que falta
+  catalogo-pic16f887.md    periféricos, protocolos y módulos del PIC16F887 (base de peripherals.json)
   proteus-blink.md  cómo probar el blink de muestra en Proteus
   abi-pic14.md      ABI de PIC14 (convención de llamada, banco, ISR, pila)
   ISSUES_BACKLOG.md backlog propuesto como issues
