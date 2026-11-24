@@ -77,6 +77,16 @@ fn verify_fn(m: &Module, f: &Function, errs: &mut Vec<String>) {
                         e(format!("{}: conversion invalida", at(i)));
                     }
                 }
+                Inst::Delay { unit, amount } => {
+                    let konst = matches!(amount, Operand::Const { .. });
+                    let ok = match unit {
+                        DelayUnit::Cycles | DelayUnit::Us => konst,
+                        DelayUnit::Ms | DelayUnit::S => konst || ty(amount) == (Type::Int { bits: 16, signed: false }),
+                    };
+                    if !ok {
+                        e(format!("{}: Delay mal tipado (ciclos/us: constante; ms/s: constante o u16)", at(i)));
+                    }
+                }
                 Inst::PinCfg { pin, .. } | Inst::PinToggle { pin } => {
                     if *pin >= m.pins.len() {
                         e(format!("{}: pin invalido", at(i)));

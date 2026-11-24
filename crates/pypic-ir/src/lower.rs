@@ -12,6 +12,7 @@ pub fn lower(prog: &Program) -> Module {
     let mut m = Module::default();
     m.device = prog.device.clone();
     m.clock_hz = prog.clock_hz;
+    m.clock_defaulted = prog.clock_defaulted;
     let mut gidx = HashMap::new();
     for it in &prog.module.items {
         if let Item::Var(v) = it {
@@ -188,7 +189,10 @@ impl<'a> FnLower<'a> {
                 self.cur = join;
             }
             ExprKind::Call { func, args, .. } => {
-                if let Some(_ty) = Type::from_name(func).filter(|t| t.is_int()) {
+                if let (Some(unit), false) = (pypic_frontend::time_unit(func), self.fidx.contains_key(func)) {
+                    let amount = self.value(&args[0]);
+                    self.emit(Inst::Delay { unit, amount });
+                } else if let Some(_ty) = Type::from_name(func).filter(|t| t.is_int()) {
                     let src = self.value(&args[0]);
                     self.emit(Inst::Cast { dst: dst.unwrap(), src });
                 } else {

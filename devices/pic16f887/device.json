@@ -8,7 +8,9 @@
     "data_bits": 8,
     "instruction_bits": 14,
     "instruction_count": 35,
-    "max_clock_hz": 20000000
+    "max_clock_hz": 20000000,
+    "clocks_per_instruction": 4,
+    "default_clock_hz": 4000000
   },
   "io_pins": 35,
   "peripherals": {

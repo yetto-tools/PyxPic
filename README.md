@@ -45,6 +45,7 @@ docs/
   device-packs.md   esquema y validación de Device Packs
   backend-pic14.md  generador de código PIC14: alcance, límites y verificación
   sdk-gpio.md       acceso a pines (pypic.gpio): API, reglas y ejemplo
+  sdk-time.md       esperas exactas al ciclo (pypic.time): pause, wait, delay_us, delay_cycles
   proteus-blink.md  cómo probar el blink de muestra en Proteus
   abi-pic14.md      ABI de PIC14 (convención de llamada, banco, ISR, pila)
   ISSUES_BACKLOG.md backlog propuesto como issues
@@ -61,6 +62,7 @@ cargo run -p pypic-cli -- check examples/counter.py
 cargo run -p pypic-cli -- ir examples/counter.py
 cargo run -p pypic-cli -- build examples/counter.py -o counter.hex --listing
 cargo run -p pypic-cli -- build examples/button_led.py -o button_led.hex   # el dispositivo lo declara el propio programa
+cargo run -p pypic-cli -- build examples/blink.py -o blink.hex --timing      # informe de tiempos: pedido, ciclos y error
 cargo run -p pypic-cli -- device validate devices/pic16f887
 cargo run -p pypic-cli -- disasm archivo.hex    # inspecciona un .hex (programa y palabras de configuracion)
 cargo run -p pypic-cli -- check examples/counter.py --device devices/pic16f887

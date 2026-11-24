@@ -29,6 +29,8 @@ fn pic16f887_matches_datasheet_numbers() {
     assert_eq!(p.device.cpu.instruction_bits, 14);
     assert_eq!(p.device.cpu.instruction_count, 35);
     assert_eq!(p.device.cpu.max_clock_hz, 20_000_000);
+    assert_eq!(p.device.cpu.clocks_per_instruction, 4); // 20 MHz -> 200 ns (p.1)
+    assert_eq!(p.device.cpu.default_clock_hz, 4_000_000); // OSCCON<IRCF> = 110 por defecto (p.64)
     assert_eq!(p.device.io_pins, 35);
     assert_eq!(p.memory.program.words, 8192);
     assert_eq!(p.memory.program.interrupt_vector, Num(4));

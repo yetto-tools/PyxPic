@@ -12,7 +12,7 @@ pub mod parser;
 pub mod target;
 pub mod types;
 
-pub use check::{PinDecl, Program};
+pub use check::{time_unit, DelayUnit, PinDecl, Program};
 pub use diag::{Diagnostic, Diagnostics, Severity, Span};
 pub use target::{PinInfo, TargetProfile};
 pub use types::Type;
@@ -42,6 +42,6 @@ pub fn analyze(source: &str, target: &TargetProfile) -> Analysis {
         return Analysis { program: None, diagnostics: d };
     }
     let c = check::check(&module, target, &mut d);
-    let program = (!d.has_errors()).then_some(Program { module, info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.device, clock_hz: c.clock_hz });
+    let program = (!d.has_errors()).then_some(Program { module, info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted });
     Analysis { program, diagnostics: d }
 }

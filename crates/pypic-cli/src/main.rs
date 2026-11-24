@@ -8,7 +8,7 @@ use pypic_pic14::{disassemble, Image};
 const USAGE: &str = "uso:
   pypic check <archivo.py> [opciones]
   pypic ir <archivo.py> [opciones]
-  pypic build <archivo.py> [-o salida.hex] [--listing] [opciones]
+  pypic build <archivo.py> [-o salida.hex] [--listing] [--timing] [opciones]
   pypic disasm <archivo.hex>
   pypic device validate <directorio-del-pack>
 
@@ -83,12 +83,56 @@ fn backend_options(pack: &DevicePack) -> Result<pypic_pic14::Options, String> {
     Ok(pypic_pic14::Options {
         device: pack.device.name.clone(),
         program_words: pack.memory.program.words,
+        clocks_per_cycle: pack.device.cpu.clocks_per_instruction,
         ram_start: first.start.0 as u16,
         ram_end: (d.common.start.0 - 1) as u16,
         config_addr: (cfg[0].address.0, cfg[1].address.0),
         // TODO: por nombre de campo desde el pack (#33)
         config: (pypic_pic14::samples::BLINK_CONFIG1, pypic_pic14::samples::BLINK_CONFIG2),
     })
+}
+
+fn fmt_ns(ns: f64) -> String {
+    let a = ns.abs();
+    if a >= 1e9 {
+        format!("{:.6} s", ns / 1e9)
+    } else if a >= 1e6 {
+        format!("{:.6} ms", ns / 1e6)
+    } else if a >= 1e3 {
+        format!("{:.3} us", ns / 1e3)
+    } else {
+        format!("{ns:.1} ns")
+    }
+}
+
+/// Informe de esperas: lo pedido, los ciclos emitidos y el tiempo real que dan (la precision, a la vista).
+fn print_timing(timing: &[pypic_pic14::DelayReport]) {
+    if timing.is_empty() {
+        println!("esperas: ninguna");
+        return;
+    }
+    println!("esperas ({}):", timing.len());
+    for r in timing {
+        let unit = match r.unit {
+            pypic_ir::ir::DelayUnit::Cycles => "ciclos",
+            pypic_ir::ir::DelayUnit::Us => "us",
+            pypic_ir::ir::DelayUnit::Ms => "ms",
+            pypic_ir::ir::DelayUnit::S => "s",
+        };
+        match r.requested {
+            Some(n) => {
+                let err = r.achieved_ns() - r.requested_ns().unwrap_or(0.0);
+                println!("  {}: {n} {unit} -> {} ciclos = {} (error {:+.1} ns)", r.function, r.cycles, fmt_ns(r.achieved_ns()), err);
+            }
+            None => println!(
+                "  {}: cantidad variable de {unit} -> {} ciclos por unidad ({}) + {} ciclos fijos de entrada",
+                r.function,
+                r.cycles,
+                fmt_ns(r.achieved_ns()),
+                r.fixed_cycles
+            ),
+        }
+    }
 }
 
 fn main() -> ExitCode {
@@ -166,11 +210,13 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     let mut stack = None;
     let mut out_path: Option<String> = None;
     let mut listing = false;
+    let mut timing = false;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "-o" => out_path = it.next().cloned(),
             "--listing" => listing = true,
+            "--timing" => timing = true,
             "--device" => device_dir = it.next().cloned(),
             "--devices-dir" => devices_dir = it.next().cloned(),
             "--native-bits" => native = it.next().and_then(|v| v.parse::<u32>().ok()),
@@ -264,7 +310,10 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     if listing {
         print!("{}", compiled.listing);
     }
-    let clock = module.clock_hz.map(|hz| format!(", reloj declarado {hz} Hz")).unwrap_or_default();
+    if timing {
+        print_timing(&compiled.timing);
+    }
+    let clock = module.clock_hz.map(|hz| if module.clock_defaulted { format!(", reloj {hz} Hz (por defecto)") } else { format!(", reloj declarado {hz} Hz") }).unwrap_or_default();
     println!(
         "{out_path}: para {}: {} palabras de programa, {} bytes de RAM (banco 0){clock}. Palabras de configuracion por defecto (INTOSCIO, WDT apagado, MCLR interno).",
         pack.device.name, compiled.flash_words, compiled.ram_bytes

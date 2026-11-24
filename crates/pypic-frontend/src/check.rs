@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::ast::*;
 use crate::diag::{Diagnostics, Span};
 use crate::target::{PinInfo, TargetProfile};
-use crate::types::{Type, INFERENCE_ORDER, U32, U8};
+use crate::types::{Type, INFERENCE_ORDER, U16, U32, U8};
 
 /// Nombres predeclarados (no requieren import; `from pypic import ...` es
 /// opcional para que el archivo siga siendo Python valido en otros editores).
@@ -55,6 +55,38 @@ pub struct FuncInfo {
     pub span: Span,
 }
 
+/// Unidad de una espera (`pypic.time`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DelayUnit {
+    /// Ciclos de instruccion: la unidad minima del hardware.
+    Cycles,
+    Us,
+    Ms,
+    S,
+}
+
+/// Funciones de `pypic.time` implementadas (nombre -> unidad). Una sola forma por operacion, sin sinonimos:
+/// `pause` = milisegundos (como PICAXE), `wait` = segundos, `delay_us` = microsegundos, `delay_cycles` = ciclos.
+pub fn time_unit(name: &str) -> Option<DelayUnit> {
+    match name {
+        "delay_cycles" => Some(DelayUnit::Cycles),
+        "delay_us" => Some(DelayUnit::Us),
+        "pause" => Some(DelayUnit::Ms),
+        "wait" => Some(DelayUnit::S),
+        _ => None,
+    }
+}
+
+/// Una llamada a una espera, para las comprobaciones de todo el programa.
+struct TimeUse {
+    func: usize,
+    span: Span,
+    name: String,
+    unit: DelayUnit,
+    /// Valor constante pedido; `None` si la cantidad es una variable.
+    amount: Option<i128>,
+}
+
 /// Un pin importado con `from pypic.gpio import RD0` (no ocupa memoria: se resuelve al compilar).
 #[derive(Clone, Debug)]
 pub struct PinDecl {
@@ -88,8 +120,10 @@ pub struct Program {
     pub pins: Vec<PinDecl>,
     /// Dispositivo declarado con `from pypic.device import PIC16F887`.
     pub device: Option<String>,
-    /// Valor de `CLOCK_HZ: Final[u32]`, si se declaro.
+    /// Reloj efectivo: el de `CLOCK_HZ: Final[u32]` o, si usa esperas y no lo declaro, el del dispositivo.
     pub clock_hz: Option<u32>,
+    /// `clock_hz` es el reloj por defecto del dispositivo (no se declaro `CLOCK_HZ`).
+    pub clock_defaulted: bool,
 }
 
 pub struct Checked {
@@ -99,6 +133,7 @@ pub struct Checked {
     pub pins: Vec<PinDecl>,
     pub device: Option<String>,
     pub clock_hz: Option<u32>,
+    pub clock_defaulted: bool,
 }
 
 pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Checked {
@@ -119,10 +154,13 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         pin_uses: Vec::new(),
         declared_device: None,
         clock_hz: None,
+        clock_defaulted: false,
         in_const_decl: false,
+        time_fns: HashMap::new(),
+        time_uses: Vec::new(),
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -165,8 +203,13 @@ struct Checker<'a> {
     pin_uses: Vec<PinUse>,
     declared_device: Option<String>,
     clock_hz: Option<u32>,
+    /// El reloj no se declaro y se uso el del dispositivo por defecto.
+    clock_defaulted: bool,
     /// Verdadero mientras se resuelve el tipo de una constante `Final`: no cuesta nada en el dispositivo.
     in_const_decl: bool,
+    /// Funciones de `pypic.time` importadas.
+    time_fns: HashMap<String, DelayUnit>,
+    time_uses: Vec<TimeUse>,
 }
 
 impl<'a> Checker<'a> {
@@ -200,6 +243,7 @@ impl<'a> Checker<'a> {
         self.check_interrupt_sharing();
         self.check_stack_depth();
         self.check_pin_usage();
+        self.check_time_usage();
     }
 
     /// `from pypic.device import PIC16F887`: declara el dispositivo destino; debe ser la primera linea.
@@ -250,6 +294,28 @@ impl<'a> Checker<'a> {
     }
 
     fn check_import(&mut self, span: Span, module: &str, names: &[Ident]) {
+        if module == "pypic.time" {
+            for n in names {
+                if let Some(u) = time_unit(&n.name) {
+                    self.time_fns.insert(n.name.clone(), u);
+                } else if n.name == "delay_ms" || n.name == "delay" {
+                    self.d.error(
+                        "PYP2104",
+                        n.span,
+                        format!("'{}' no existe: PyPIC tiene una sola forma por operacion. Usa 'pause' (milisegundos), 'wait' (segundos), 'delay_us' (microsegundos) o 'delay_cycles' (ciclos)", n.name),
+                    );
+                } else if n.name == "sleep" || n.name == "nap" {
+                    self.d.error(
+                        "PYP2103",
+                        n.span,
+                        format!("'{}' (espera de bajo consumo con el watchdog, aproximada) todavia no esta implementada; para una espera exacta usa pause o wait", n.name),
+                    );
+                } else {
+                    self.d.error("PYP1002", n.span, format!("'pypic.time' no exporta '{}' (exporta: delay_cycles, delay_us, pause, wait; reservadas: nap, sleep)", n.name));
+                }
+            }
+            return;
+        }
         if module == "pypic.gpio" {
             for n in names {
                 match self.pin_info(&n.name) {
@@ -281,12 +347,148 @@ impl<'a> Checker<'a> {
             self.d.error(
                 "PYP1002",
                 span,
-                format!("import de '{module}' no soportado; modulos disponibles: 'pypic' (tipos) y 'pypic.gpio' (pines)"),
+                format!("import de '{module}' no soportado; modulos disponibles: 'pypic' (tipos), 'pypic.gpio' (pines) y 'pypic.time' (esperas)"),
             );
         }
     }
 
     // ------------------------------------------------------------------ pines
+    fn time_call(&mut self, e: &Expr, func: &str, unit: DelayUnit, args: &[Expr]) -> Type {
+        if args.len() != 1 {
+            self.d.error("PYP2055", e.span, format!("'{func}' recibe exactamente 1 argumento"));
+            for a in args {
+                self.expr(a);
+            }
+            return self.set(e, Type::Void, None);
+        }
+        let a = &args[0];
+        let t = self.expr(a);
+        let konst = self.konst(a);
+        match unit {
+            DelayUnit::Cycles | DelayUnit::Us => match (t, konst) {
+                (Type::Error, _) => {}
+                (t, Some(v)) if matches!(t, Type::Literal | Type::Int { .. }) => {
+                    if v < 0 || v > U32.max() {
+                        self.d.error("PYP2040", a.span, format!("{func}({v}): el valor debe estar entre 0 y {}", U32.max()));
+                    } else if t == Type::Literal {
+                        self.coerce_literal(a, U32);
+                    }
+                }
+                _ => self.d.error("PYP2100", a.span, format!("{func}() necesita una constante: el tiempo se calcula al compilar, al ciclo; para una cantidad calculada usa pause o wait con un u16")),
+            },
+            DelayUnit::Ms | DelayUnit::S => match t {
+                Type::Error => {}
+                Type::Literal => {
+                    self.coerce_literal(a, U16);
+                }
+                t if t == U16 => {}
+                t => self.d.error("PYP2041", a.span, format!("{func}() recibe un u16 o una constante, no {t}")),
+            },
+        }
+        if let Some(cur) = self.cur {
+            self.time_uses.push(TimeUse { func: cur, span: e.span, name: func.to_string(), unit, amount: konst });
+        }
+        self.set(e, Type::Void, None)
+    }
+
+    /// Reglas globales de las esperas: necesitan CLOCK_HZ, no van en la interrupcion y avisan si el
+    /// tiempo pedido no cae en un numero entero de ciclos de instruccion.
+    fn check_time_usage(&mut self) {
+        let uses = std::mem::take(&mut self.time_uses);
+        let Some(first) = uses.first() else { return };
+        let hz = match self.clock_hz {
+            Some(hz) => hz,
+            None => match self.target.default_clock_hz {
+                Some(def) => {
+                    self.d.warning(
+                        "PYP3004",
+                        first.span,
+                        format!("no se declaro CLOCK_HZ: se usa el reloj por defecto de {} ({def} Hz); declara 'CLOCK_HZ: Final[u32] = {def}' para fijarlo y quitar este aviso", self.target.name),
+                    );
+                    self.clock_hz = Some(def);
+                    self.clock_defaulted = true;
+                    def
+                }
+                None => {
+                    self.d.error("PYP2101", first.span, format!("{} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK_HZ: Final[u32] = 4_000_000'", first.name));
+                    return;
+                }
+            },
+        };
+        if let (false, Some(def)) = (self.clock_defaulted, self.target.default_clock_hz) {
+            if hz != def {
+                self.d.warning(
+                    "PYP3005",
+                    first.span,
+                    format!(
+                        "CLOCK_HZ = {hz} Hz difiere del reloj que produce la configuracion por defecto de {} ({def} Hz, oscilador interno): el compilador todavia no configura el oscilador (OSCCON y palabras de configuracion, #33), asi que los tiempos solo seran correctos si el reloj real es {hz} Hz",
+                        self.target.name
+                    ),
+                );
+            }
+        }
+        // funciones alcanzables desde la interrupcion
+        let mut reach: BTreeSet<String> = BTreeSet::new();
+        let mut stack: Vec<String> = self.functions.iter().filter(|f| f.is_interrupt).map(|f| f.name.clone()).collect();
+        while let Some(n) = stack.pop() {
+            if let Some(&i) = self.fidx.get(&n) {
+                if reach.insert(n) {
+                    stack.extend(self.functions[i].calls.iter().cloned());
+                }
+            }
+        }
+        let cpc = self.target.clocks_per_cycle;
+        let mut warned_var: HashSet<&'static str> = HashSet::new();
+        for u in &uses {
+            if reach.contains(&self.functions[u.func].name) {
+                self.d.error("PYP2102", u.span, format!("{}() ocupa la CPU y no puede usarse en la interrupcion ni en las funciones que ella llama", u.name));
+            }
+            let Some(cpc) = cpc else { continue };
+            let div: u128 = match u.unit {
+                DelayUnit::Cycles => continue,
+                DelayUnit::Us => 1_000_000,
+                DelayUnit::Ms => 1_000,
+                DelayUnit::S => 1,
+            };
+            let den = cpc as u128 * div;
+            match u.amount {
+                Some(n) if n >= 0 => {
+                    let num = n as u128 * hz as u128;
+                    if num % den != 0 {
+                        let cycles = (num + den / 2) / den;
+                        let ideal_ns = num as f64 * 1e9 / den as f64 / (hz as f64 / cpc as f64) * (hz as f64 / cpc as f64) / hz as f64 * cpc as f64;
+                        let got_ns = cycles as f64 * cpc as f64 * 1e9 / hz as f64;
+                        let _ = ideal_ns;
+                        let want_ns = n as f64 * (1e9 / div as f64);
+                        self.d.warning(
+                            "PYP3003",
+                            u.span,
+                            format!(
+                                "{}({n}) no cae en un numero entero de ciclos a {hz} Hz (un ciclo dura {:.1} ns): se redondea a {cycles} ciclos, error de {:+.1} ns",
+                                u.name,
+                                cpc as f64 * 1e9 / hz as f64,
+                                got_ns - want_ns
+                            ),
+                        );
+                    }
+                }
+                None if (hz as u128) % den != 0 && warned_var.insert(if u.unit == DelayUnit::Ms { "ms" } else { "s" }) => {
+                    let exact = hz as f64 / den as f64;
+                    let ppm = (exact.round() - exact).abs() / exact * 1e6;
+                    self.d.warning(
+                        "PYP3002",
+                        u.span,
+                        format!(
+                            "a {hz} Hz una unidad de {} no es un numero entero de ciclos ({exact:.3}): con una cantidad variable el error es de {ppm:.0} ppm por unidad; con una constante la espera es exacta",
+                            if u.unit == DelayUnit::Ms { "milisegundo" } else { "segundo" }
+                        ),
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+
     fn pin_info(&self, name: &str) -> Option<PinInfo> {
         match &self.target.pins {
             Some(map) => map.get(name).cloned(),
@@ -446,8 +648,8 @@ impl<'a> Checker<'a> {
             self.d.error("PYP2002", f.name.span, format!("funcion '{}' ya definida", f.name.name));
             return;
         }
-        if self.pin_names.contains_key(&f.name.name) {
-            self.d.error("PYP2009", f.name.span, format!("'{}' ya esta declarado (es un pin importado)", f.name.name));
+        if self.pin_names.contains_key(&f.name.name) || self.time_fns.contains_key(&f.name.name) {
+            self.d.error("PYP2009", f.name.span, format!("'{}' ya esta declarado (es un pin o una funcion del SDK importados)", f.name.name));
             return;
         }
         let mut params = Vec::new();
@@ -523,7 +725,7 @@ impl<'a> Checker<'a> {
         let exists = if is_global { self.globals.contains_key(name) } else { self.locals.contains_key(name) };
         if !is_global && self.globals.contains_key(name) {
             self.d.error("PYP2008", v.name.span, format!("'{name}' oculta una variable global del mismo nombre"));
-        } else if exists || self.fidx.contains_key(name) || self.pin_names.contains_key(name) {
+        } else if exists || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.time_fns.contains_key(name) {
             self.d.error("PYP2009", v.name.span, format!("'{name}' ya esta declarado"));
         }
         let mut konst = None;
@@ -1131,6 +1333,9 @@ impl<'a> Checker<'a> {
     }
 
     fn call(&mut self, e: &Expr, func: &str, args: &[Expr]) -> Type {
+        if let Some(&unit) = self.time_fns.get(func) {
+            return self.time_call(e, func, unit, args);
+        }
         if let Some(t) = Type::from_name(func).filter(|t| t.is_int()) {
             return self.cast(e, t, args);
         }
@@ -1141,7 +1346,8 @@ impl<'a> Checker<'a> {
         } else if let Some(&i) = self.fidx.get(func) {
             return self.call_user(e, i, args);
         } else {
-            self.d.error("PYP2043", e.span, format!("funcion '{func}' no definida"));
+            let hint = if time_unit(func).is_some() { format!("; importala con 'from pypic.time import {func}'") } else { String::new() };
+            self.d.error("PYP2043", e.span, format!("funcion '{func}' no definida{hint}"));
         }
         for a in args {
             self.expr(a);

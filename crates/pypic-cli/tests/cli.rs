@@ -125,3 +125,36 @@ fn the_shipped_examples_all_build() {
         assert!(o.status.success(), "{ex}: {}", text(&o));
     }
 }
+
+// ---- esperas: reloj por defecto, una sola forma, informe de tiempos ----------------------------------
+
+#[test]
+fn blink_example_builds_and_the_timing_report_shows_exact_cycles() {
+    let out = tmp("blink").join("blink.hex");
+    let o = pypic(&root(), &["build", "examples/blink.py", "--timing", "-o", out.to_str().unwrap()]);
+    assert!(o.status.success(), "{}", text(&o));
+    let t = text(&o);
+    assert!(t.contains("500 ms -> 500000 ciclos") && t.contains("+0.0 ns"), "{t}");
+    assert!(out.exists());
+}
+
+#[test]
+fn a_missing_clock_hz_uses_the_device_default_and_says_so() {
+    let dir = tmp("noclock");
+    let src = dir.join("p.py");
+    std::fs::write(&src, "from pypic.device import PIC16F887\nfrom pypic.time import pause\ndef main() -> None:\n    pause(1)\n").unwrap();
+    let o = pypic(&root(), &["build", src.to_str().unwrap(), "-o", dir.join("p.hex").to_str().unwrap()]);
+    assert!(o.status.success(), "{}", text(&o));
+    let t = text(&o);
+    assert!(t.contains("PYP3004") && t.contains("(por defecto)") && t.contains("4000000"), "{t}");
+}
+
+#[test]
+fn removed_aliases_point_to_the_single_name() {
+    let dir = tmp("alias");
+    let src = dir.join("p.py");
+    std::fs::write(&src, "from pypic.device import PIC16F887\nfrom pypic.time import delay_ms\ndef main() -> None:\n    pass\n").unwrap();
+    let o = pypic(&root(), &["check", src.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(text(&o).contains("PYP2104") && text(&o).contains("pause"), "{}", text(&o));
+}

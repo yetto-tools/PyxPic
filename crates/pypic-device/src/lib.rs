@@ -65,6 +65,10 @@ pub struct Cpu {
     pub instruction_bits: u32,
     pub instruction_count: u32,
     pub max_clock_hz: u64,
+    /// Relojes del oscilador por ciclo de instruccion (4 en PIC16/PIC18; DS40001291H p.1: 20 MHz y 200 ns).
+    pub clocks_per_instruction: u32,
+    /// Reloj tras el reset con la configuracion por defecto (PIC16F887: OSCCON<IRCF> = 110 = 4 MHz, DS40001291H p.64).
+    pub default_clock_hz: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -263,6 +267,8 @@ impl DevicePack {
         TargetProfile::new(self.device.name.clone(), self.device.cpu.data_bits, self.device.pypic.max_int_bits)
             .with_stack_levels(self.memory.program.stack_levels)
             .with_pins(pins)
+            .with_clocks_per_cycle(self.device.cpu.clocks_per_instruction)
+            .with_default_clock(self.device.cpu.default_clock_hz)
             .with_device(self.device.name.clone(), self.device.cpu.max_clock_hz.min(u32::MAX as u64) as u32)
     }
 
@@ -307,6 +313,12 @@ impl DevicePack {
         const LEVELS: [&str; 5] = ["experimental", "compila", "simula", "probado en hardware", "depuracion fisica"];
         if !LEVELS.contains(&d.pypic.support_level.as_str()) {
             e.push(format!("device.json: pypic.support_level '{}' desconocido", d.pypic.support_level));
+        }
+        if d.cpu.default_clock_hz == 0 || d.cpu.default_clock_hz as u64 > d.cpu.max_clock_hz {
+            e.push("device.json: cpu.default_clock_hz debe ser > 0 y no mayor que max_clock_hz".into());
+        }
+        if d.cpu.clocks_per_instruction == 0 {
+            e.push("device.json: cpu.clocks_per_instruction debe ser >= 1".into());
         }
         if d.sources.is_empty() {
             e.push("device.json: falta al menos una fuente (datasheet)".into());

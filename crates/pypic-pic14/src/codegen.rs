@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
-use pypic_ir::ir::{BinOp, CmpOp, Function, Module, Operand, Pin, Place, Terminator, Type, UnaryOp};
+use pypic_ir::ir::{BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, Terminator, Type, UnaryOp};
 
 use crate::hex::Image;
 use crate::isa::{disassemble, Dest::{F, W}, Inst, Inst::*};
@@ -88,6 +88,8 @@ pub struct Options {
     /// Direcciones de palabra de CONFIG1 y CONFIG2.
     pub config_addr: (u32, u32),
     pub config: (u16, u16),
+    /// Relojes del oscilador por ciclo de instruccion (4 en PIC16): convierte tiempo en ciclos.
+    pub clocks_per_cycle: u32,
 }
 
 impl Default for Options {
@@ -101,6 +103,7 @@ impl Default for Options {
             ram_end: 0x6F,
             config_addr: (CONFIG1, CONFIG2),
             config: (BLINK_CONFIG1, BLINK_CONFIG2),
+            clocks_per_cycle: 4,
         }
     }
 }
@@ -117,8 +120,42 @@ pub struct GlobalSym {
     pub is_const: bool,
 }
 
+/// Una espera generada: lo pedido, los ciclos de instruccion emitidos y el tiempo real que dan.
+#[derive(Debug, Clone)]
+pub struct DelayReport {
+    pub function: String,
+    pub unit: DelayUnit,
+    /// Cantidad pedida; `None` si es una variable.
+    pub requested: Option<u64>,
+    /// Constante: ciclos totales de la espera. Variable: ciclos por unidad.
+    pub cycles: u64,
+    /// Variable: ciclos fijos de entrada que se suman a `n` unidades (0 en constantes).
+    pub fixed_cycles: u64,
+    /// Duracion de un ciclo de instruccion en ns.
+    pub cycle_ns: f64,
+}
+
+impl DelayReport {
+    pub fn unit_ns(&self) -> f64 {
+        match self.unit {
+            DelayUnit::Cycles => self.cycle_ns,
+            DelayUnit::Us => 1e3,
+            DelayUnit::Ms => 1e6,
+            DelayUnit::S => 1e9,
+        }
+    }
+    pub fn requested_ns(&self) -> Option<f64> {
+        self.requested.map(|n| n as f64 * self.unit_ns())
+    }
+    /// Constante: duracion total real. Variable: duracion real de una unidad.
+    pub fn achieved_ns(&self) -> f64 {
+        self.cycles as f64 * self.cycle_ns
+    }
+}
+
 #[derive(Debug)]
 pub struct Compiled {
+    pub timing: Vec<DelayReport>,
     pub image: Image,
     pub globals: Vec<GlobalSym>,
     /// (nombre, direccion de palabra del punto de entrada).
@@ -182,6 +219,8 @@ enum B {
 }
 
 struct Alloc {
+    /// 5 bytes de contadores para las esperas (solo si el programa las usa; solo contexto principal).
+    delay_ws: u8,
     globals: Vec<u8>,
     locals: HashMap<usize, Vec<u8>>,
     temps: HashMap<usize, Vec<u8>>,
@@ -211,12 +250,14 @@ fn allocate(m: &Module, live: &[usize], opts: &Options) -> Result<Alloc, Codegen
         locals.insert(fi, f.locals.iter().map(|l| size(l.ty).map(&mut take)).collect::<Result<Vec<_>, _>>()?);
         temps.insert(fi, f.temps.iter().map(|&t| size(t).map(&mut take)).collect::<Result<Vec<_>, _>>()?);
     }
+    let uses_delay = live.iter().any(|&fi| m.functions[fi].blocks.iter().any(|b| b.insts.iter().any(|i| matches!(i, pypic_ir::ir::Inst::Delay { .. }))));
+    let delay_ws = if uses_delay { take(5) } else { 0 };
     let used = next - opts.ram_start as usize;
     let available = (opts.ram_end - opts.ram_start + 1) as usize;
     if used > available {
         return Err(CodegenError::OutOfRam { needed: used, available });
     }
-    Ok(Alloc { globals, locals, temps, used })
+    Ok(Alloc { delay_ws, globals, locals, temps, used })
 }
 
 // ---- grafo de llamadas -----------------------------------------------------------------------
@@ -263,6 +304,9 @@ struct Gen<'a> {
     fn_labels: HashMap<usize, Label>,
     isr_ctx: HashSet<usize>,
     cur: usize,
+    clock_hz: Option<u32>,
+    cpc: u32,
+    timing: Vec<DelayReport>,
 }
 
 impl<'a> Gen<'a> {
@@ -617,6 +661,136 @@ impl<'a> Gen<'a> {
         Ok(())
     }
 
+    // ---- esperas: tiempo -> ciclos de instruccion exactos ------------------------------------------
+    fn cycles_for(&self, unit: DelayUnit, n: u128) -> Result<u128, CodegenError> {
+        let Some(hz) = self.clock_hz else {
+            return Err(CodegenError::Device("falta el reloj (CLOCK_HZ) para generar las esperas".into()));
+        };
+        let (hz, cpc) = (hz as u128, self.cpc as u128);
+        Ok(match unit {
+            DelayUnit::Cycles => n,
+            DelayUnit::Us => (n * hz + cpc * 500_000) / (cpc * 1_000_000),
+            DelayUnit::Ms => (n * hz + cpc * 500) / (cpc * 1_000),
+            DelayUnit::S => (n * hz + cpc / 2) / cpc,
+        })
+    }
+
+    /// `p` ciclos sin efecto: `GOTO` a la instruccion siguiente (2 ciclos) y un `NOP` si sobra uno.
+    fn pad(&mut self, mut p: u64) {
+        while p >= 2 {
+            let l = self.asm.label("relleno");
+            self.asm.goto(l);
+            self.asm.place(l);
+            p -= 2;
+        }
+        if p == 1 {
+            self.asm.i(Nop);
+        }
+    }
+
+    /// Cuenta atras con 1 a 3 contadores (valores efectivos 1..=256; el registro 0 vale 256) en `ws`.
+    /// Con una sola etiqueta de retorno: cada `DECFSZ` que no llega a 0 salta de vuelta al primero.
+    fn count_loops(&mut self, ws: u8, v: &[u64]) {
+        for (i, &k) in v.iter().enumerate() {
+            self.asm.i(Movlw((k & 0xFF) as u8));
+            self.asm.i(Movwf(ws + i as u8));
+        }
+        let l = self.asm.label("espera");
+        self.asm.place(l);
+        for i in 0..v.len() {
+            self.asm.i(Decfsz(ws + i as u8, F));
+            self.asm.goto(l);
+        }
+    }
+
+    /// Emite codigo que dura **exactamente** `n` ciclos. Formulas (derivadas del recuento de ciclos de
+    /// `DECFSZ`/`GOTO` y comprobadas contra el simulador): un contador `3a+1`, dos `4+3a+770b-769`,
+    /// tres `6+3a+770b+197122c-197889`; lo que sobra (hasta 6 ciclos) se completa con relleno.
+    fn exact_cycles(&mut self, mut n: u64, ws: u8) {
+        const BLOCK: u64 = 50_000_000;
+        while n > BLOCK {
+            self.exact_block(BLOCK, ws);
+            n -= BLOCK;
+        }
+        self.exact_block(n, ws);
+    }
+
+    fn exact_block(&mut self, n: u64, ws: u8) {
+        if n <= 16 {
+            return self.pad(n);
+        }
+        if n <= 3 * 256 + 1 + 6 {
+            let a = ((n - 1) / 3).clamp(1, 256);
+            self.count_loops(ws, &[a]);
+            return self.pad(n - (3 * a + 1));
+        }
+        if n <= 4 + (3 * 256 + 770 * 256 - 769) + 6 {
+            let r = n + 769 - 4; // = 3a + 770b + relleno
+            let b = ((r - 3) / 770).clamp(1, 256);
+            let rem = r - 770 * b;
+            let a = (rem / 3).clamp(1, 256);
+            self.count_loops(ws, &[a, b]);
+            return self.pad(rem - 3 * a);
+        }
+        let r = n + 197_889 - 6; // = 3a + 770b + 197122c + relleno
+        let c = ((r - 773) / 197_122).clamp(1, 256);
+        let r2 = r - 197_122 * c;
+        let b = ((r2 - 3) / 770).clamp(1, 256);
+        let rem = r2 - 770 * b;
+        let a = (rem / 3).clamp(1, 256);
+        self.count_loops(ws, &[a, b, c]);
+        self.pad(rem - 3 * a);
+    }
+
+    fn delay(&mut self, unit: DelayUnit, amount: &Operand) -> Result<(), CodegenError> {
+        if self.in_isr() {
+            return unsupported("esperas dentro de la interrupcion (ocupan la CPU y comparten memoria con el contexto principal)");
+        }
+        let ws = self.al.delay_ws;
+        let hz = self.clock_hz.ok_or_else(|| CodegenError::Device("falta el reloj (CLOCK_HZ) para generar las esperas".into()))?;
+        let cycle_ns = self.cpc as f64 * 1e9 / hz as f64;
+        let function = self.f().name.clone();
+        match *amount {
+            Operand::Const { value, .. } => {
+                let cyc = u64::try_from(self.cycles_for(unit, value as u128)?).map_err(|_| CodegenError::Device("la espera pedida no cabe en 64 bits de ciclos".into()))?;
+                self.timing.push(DelayReport { function, unit, requested: Some(value as u64), cycles: cyc, fixed_cycles: 0, cycle_ns });
+                self.exact_cycles(cyc, ws);
+            }
+            Operand::Place(_) => {
+                // cantidad variable (u16): n vueltas de exactamente 1 unidad + 8 ciclos fijos de entrada
+                let per = u64::try_from(self.cycles_for(unit, 1)?).unwrap_or(u64::MAX);
+                if per < 9 {
+                    return unsupported(format!("esperas con cantidad variable a este reloj: una unidad dura {per} ciclos y el bucle necesita al menos 9; usa una constante"));
+                }
+                self.timing.push(DelayReport { function, unit, requested: None, cycles: per, fixed_cycles: 8, cycle_ns });
+                let b = self.bytes(amount)?;
+                let (lo, hi) = (ws + 3, ws + 4);
+                self.ld(b[0]);
+                self.st(lo);
+                self.ld(b[1]);
+                self.st(hi);
+                let (done, top) = (self.asm.label("espera.fin"), self.asm.label("espera.vuelta"));
+                self.asm.i(Movf(lo, W));
+                self.asm.i(Iorwf(hi, W));
+                self.asm.i(Btfsc(STATUS, BIT_Z));
+                self.asm.goto(done); // cantidad 0: no espera
+                self.asm.place(top);
+                self.exact_cycles(per - 9, ws);
+                self.asm.i(Movlw(1));
+                self.asm.i(Subwf(lo, F));
+                self.asm.i(Btfss(STATUS, BIT_C));
+                self.asm.i(Decf(hi, F)); // 16 bits: el prestamo baja el byte alto
+                self.asm.i(Movf(lo, W));
+                self.asm.i(Iorwf(hi, W));
+                self.asm.i(Btfss(STATUS, BIT_Z));
+                self.asm.goto(top);
+                self.asm.i(Nop); // iguala la ultima vuelta: el salto no tomado cuesta 1 ciclo menos
+                self.asm.place(done);
+            }
+        }
+        Ok(())
+    }
+
     fn pin_set(&mut self, pin: usize, value: &Operand) -> Result<(), CodegenError> {
         let (reg, bit) = port_reg(&self.m.pins[pin])?;
         match self.bytes(value)?[0] {
@@ -646,6 +820,7 @@ impl<'a> Gen<'a> {
             I::Compare { dst, op, lhs, rhs } => self.compare(*dst, *op, lhs, rhs),
             I::Cast { dst, src } => self.cast(*dst, src),
             I::Call { dst, func, args } => self.call_inst(*dst, *func, args),
+            I::Delay { unit, amount } => self.delay(*unit, amount),
             I::PinCfg { pin, output } => self.pin_cfg(*pin, *output),
             I::PinSet { pin, value } => self.pin_set(*pin, value),
             I::PinToggle { pin } => {
@@ -790,7 +965,7 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
     let isr_ctx = reach(m, &isrs);
 
     let al = allocate(m, &live, opts)?;
-    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main };
+    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new() };
     for &fi in &live {
         let l = g.asm.label(m.functions[fi].name.clone());
         g.fn_labels.insert(fi, l);
@@ -911,5 +1086,5 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
         .map(|(i, gl)| GlobalSym { name: gl.name.clone(), addr: g.al.globals[i], ty: gl.ty, is_const: gl.is_const })
         .collect();
     let functions = live.iter().map(|&fi| (m.functions[fi].name.clone(), addr_of[g.fn_labels[&fi]].unwrap())).collect();
-    Ok(Compiled { image, globals, functions, listing, flash_words, ram_bytes: g.al.used })
+    Ok(Compiled { timing: g.timing, image, globals, functions, listing, flash_words, ram_bytes: g.al.used })
 }

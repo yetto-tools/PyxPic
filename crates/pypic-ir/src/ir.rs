@@ -5,7 +5,7 @@
 //! registros virtuales que el backend asigna.
 
 pub use pypic_frontend::ast::{BinOp, CmpOp};
-pub use pypic_frontend::Type;
+pub use pypic_frontend::{DelayUnit, Type};
 
 pub type BlockId = usize;
 
@@ -48,6 +48,9 @@ pub enum Inst {
     PinToggle { pin: usize },
     /// `RD0.value()`: lee el nivel del pin como u8 (0 o 1).
     PinGet { dst: Place, pin: usize },
+    /// Espera activa de `amount` en la unidad dada. Con `Cycles` y `Us` la cantidad es una constante; con `Ms` y `S`, una
+    /// constante o un u16. El backend la convierte en ciclos de instruccion exactos segun el reloj.
+    Delay { unit: DelayUnit, amount: Operand },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -112,8 +115,9 @@ pub struct Module {
     pub pins: Vec<Pin>,
     /// Dispositivo declarado en el programa (`from pypic.device import PIC16F887`).
     pub device: Option<String>,
-    /// `CLOCK_HZ: Final[u32]`, si se declaro.
+    /// Reloj efectivo (declarado o el del dispositivo por defecto).
     pub clock_hz: Option<u32>,
+    pub clock_defaulted: bool,
 }
 
 impl Module {

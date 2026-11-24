@@ -65,6 +65,15 @@ pub fn print(m: &Module) -> String {
                     Inst::Cast { dst, src } => {
                         format!("{}: {} = cast {}", place(m, f, *dst), m.place_ty(f, *dst), operand(m, f, src))
                     }
+                    Inst::Delay { unit, amount } => {
+                        let u = match unit {
+                            DelayUnit::Cycles => "cycles",
+                            DelayUnit::Us => "us",
+                            DelayUnit::Ms => "ms",
+                            DelayUnit::S => "s",
+                        };
+                        format!("delay {u} {}", operand(m, f, amount))
+                    }
                     Inst::PinCfg { pin, output } => format!("pin {} = {}", m.pins[*pin].name, if *output { "output" } else { "input" }),
                     Inst::PinSet { pin, value } => format!("pin {} <- {}", m.pins[*pin].name, operand(m, f, value)),
                     Inst::PinToggle { pin } => format!("pin {} toggle", m.pins[*pin].name),

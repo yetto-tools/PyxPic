@@ -25,6 +25,8 @@ pub struct Machine<'m> {
     pin_last: Vec<Option<bool>>,
     /// (pin, nivel) cada vez que un pin excitado cambia de estado (incluye el paso de entrada a salida).
     pub pin_events: Vec<(usize, bool)>,
+    /// Esperas ejecutadas (unidad, cantidad) en orden; el interprete no mide tiempo, solo las registra.
+    pub delays: Vec<(DelayUnit, i128)>,
 }
 
 struct Frame {
@@ -44,6 +46,7 @@ impl<'m> Machine<'m> {
             pin_input: vec![false; n],
             pin_last: vec![None; n],
             pin_events: Vec::new(),
+            delays: Vec::new(),
         }
     }
 
@@ -195,6 +198,10 @@ impl<'m> Machine<'m> {
             Inst::Cast { dst, src } => {
                 let v = self.read(fr, src);
                 self.write(f, fr, *dst, v);
+            }
+            Inst::Delay { unit, amount } => {
+                let v = self.read(fr, amount);
+                self.delays.push((*unit, v));
             }
             Inst::PinCfg { pin, output } => {
                 self.pin_out[*pin] = *output;

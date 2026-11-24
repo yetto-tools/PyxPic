@@ -35,16 +35,30 @@ pub struct TargetProfile {
     pub device: Option<String>,
     /// Reloj maximo del dispositivo, en Hz.
     pub max_clock_hz: Option<u32>,
+    /// Relojes por ciclo de instruccion (4 en PIC16): necesario para convertir tiempo en ciclos.
+    pub clocks_per_cycle: Option<u32>,
+    /// Reloj del dispositivo tras el reset con la configuracion por defecto (p. ej. 4 MHz con el oscilador interno).
+    pub default_clock_hz: Option<u32>,
 }
 
 impl TargetProfile {
     pub fn new(name: impl Into<String>, native_bits: u32, max_int_bits: u32) -> Self {
-        TargetProfile { name: name.into(), native_bits, max_int_bits, stack_levels: None, pins: None, device: None, max_clock_hz: None }
+        TargetProfile { name: name.into(), native_bits, max_int_bits, stack_levels: None, pins: None, device: None, max_clock_hz: None, clocks_per_cycle: None, default_clock_hz: None }
     }
 
     pub fn with_device(mut self, name: impl Into<String>, max_clock_hz: u32) -> Self {
         self.device = Some(name.into());
         self.max_clock_hz = Some(max_clock_hz);
+        self
+    }
+
+    pub fn with_clocks_per_cycle(mut self, n: u32) -> Self {
+        self.clocks_per_cycle = Some(n);
+        self
+    }
+
+    pub fn with_default_clock(mut self, hz: u32) -> Self {
+        self.default_clock_hz = Some(hz);
         self
     }
 
