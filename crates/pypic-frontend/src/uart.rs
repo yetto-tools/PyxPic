@@ -112,6 +112,8 @@ pub enum UartOp {
     Read9,
     /// `UART.recv9()`: lo mismo sin esperar.
     Recv9,
+    /// `UART.write_text(texto)`: envia los bytes de la tabla `Rom` (indice en `Program.roms`) con `write`; la IR lo desarma en un bucle.
+    WriteText(usize),
 }
 
 impl UartOp {
@@ -122,13 +124,41 @@ impl UartOp {
 
     /// Operaciones de caracteres de 8 bits (las que no valen con `bits=9`).
     pub fn is_8bit_data(self) -> bool {
-        matches!(self, UartOp::Write | UartOp::Send | UartOp::Read | UartOp::Recv)
+        matches!(self, UartOp::Write | UartOp::Send | UartOp::Read | UartOp::Recv | UartOp::WriteText(_))
     }
 
     /// Operaciones que devuelven un valor sin efectos laterales: sin destino no se emiten.
     pub fn is_pure_read(self) -> bool {
         matches!(self, UartOp::TxReady | UartOp::RxReady | UartOp::Sending | UartOp::Overrun | UartOp::FramingError)
     }
+}
+
+/// Decodifica el contenido de un literal de texto a bytes ASCII: escapes `\n`, `\r`, `\t`, `\0`, `\\`, `\"` y `\'`; cualquier
+/// otro escape o caracter fuera de ASCII es un error (UTF-8 necesitaria un contrato propio).
+pub fn decode_text(raw: &str) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    let mut it = raw.chars();
+    while let Some(c) = it.next() {
+        let b = if c == '\\' {
+            match it.next() {
+                Some('n') => b'\n',
+                Some('r') => b'\r',
+                Some('t') => b'\t',
+                Some('0') => 0,
+                Some('\\') => b'\\',
+                Some('"') => b'"',
+                Some('\'') => b'\'',
+                Some(o) => return Err(format!("el escape '\\{o}' no existe (admite: \\n \\r \\t \\0 \\\\ \\\" \\')")),
+                None => return Err("el texto termina en una barra invertida".into()),
+            }
+        } else if c.is_ascii() {
+            c as u8
+        } else {
+            return Err(format!("el caracter '{c}' no es ASCII: por ahora el texto es ASCII (UTF-8 necesita un contrato propio)"));
+        };
+        out.push(b);
+    }
+    Ok(out)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

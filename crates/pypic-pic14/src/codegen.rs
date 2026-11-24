@@ -1524,6 +1524,7 @@ impl<'a> Gen<'a> {
                 self.uart_send(arg.expect("Write lleva un byte"))?;
             }
             UartOp::Send => self.uart_send(arg.expect("Send lleva un byte"))?,
+            UartOp::WriteText(_) => unreachable!("la IR desarma write_text en un bucle"),
             UartOp::Write9 => {
                 self.uart_wait("TXIF")?;
                 self.uart_send9(arg.expect("Write9 lleva un valor"))?;

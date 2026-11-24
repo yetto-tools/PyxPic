@@ -161,7 +161,7 @@ fn the_body_must_be_one_string() {
 #[test]
 fn strings_are_still_rejected_anywhere_else() {
     let c = frontend_codes(&format!("{HEAD}def main() -> None:\n    x = \"hola\"\n"));
-    assert!(c.contains(&"PYP1021".to_string()), "{c:?}");
+    assert!(c.contains(&"PYP2164".to_string()), "{c:?}");
 }
 
 #[test]

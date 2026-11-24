@@ -728,7 +728,10 @@ impl<'a> Parser<'a> {
                 self.expect(Tok::RParen, "')'")?;
                 e
             }
-            Tok::Str(..) => return self.err("PYP1021", sp, "las cadenas solo se admiten como cuerpo de una funcion @asm_function"),
+            Tok::Str(text, _) => {
+                self.bump();
+                self.mk(sp, ExprKind::Str(text))
+            }
             Tok::LBracket => {
                 self.bump();
                 let mut items = Vec::new();

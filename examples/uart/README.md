@@ -26,6 +26,8 @@ Los `.hex` ya generados están en `examples/hex/uart_*.hex`. Para verlos funcion
 | Archivo | Qué hace | Ante lo inesperado |
 |---|---|---|
 | `saludo.py` | Envía `Hola PyPIC` + CR LF cada segundo (solo transmite) | No recibe, nada que tratar |
+| `saludo_texto.py` | Lo mismo con `UART.write_text("Hola PyPIC
+")` | No recibe, nada que tratar |
 | `eco.py` | Devuelve cada byte sin modificar (incluidos `0x00` y `0xFF`) | Borra `OERR`; los bytes perdidos no se recuperan |
 | `led_comandos.py` | `A` enciende RD0, `B` lo apaga | Ignora cualquier otro byte; borra `OERR` |
 | `no_bloqueante.py` | Parpadea RD0 mientras consulta la UART, con eco | El parpadeo no se detiene; borra `OERR` |

@@ -94,6 +94,8 @@ pub enum ExprKind {
     /// Con `attr`, es `REG.BIT.metodo(args)` (p. ej. `STATUS.RP0.set()`).
     /// `[a, b, c]`: solo como valor de una tabla `Rom[u8]`.
     List(Vec<Expr>),
+    /// `"texto"`: solo como argumento de `UART.write_text`; el contenido va sin decodificar (con sus escapes).
+    Str(String),
     /// `TABLA[indice]`.
     Index { obj: String, obj_span: Span, index: Box<Expr> },
     MethodCall { obj: String, obj_span: Span, attr: Option<Ident>, method: String, args: Vec<Expr>, kwargs: Vec<Kwarg> },

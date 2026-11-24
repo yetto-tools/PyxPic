@@ -1356,6 +1356,9 @@ impl<'a> Checker<'a> {
                 self.d.error("PYP2182", k.name_span, format!("UART.{method} no acepta argumentos con nombre"));
             }
         }
+        if method == "write_text" {
+            return self.uart_write_text(e, args);
+        }
         let (want, op, ret): (usize, UartOp, Type) = match method {
             "start" => {
                 if !args.is_empty() {
@@ -1410,7 +1413,7 @@ impl<'a> Checker<'a> {
             "read9" => (0, UartOp::Read9, U16),
             "recv9" => (0, UartOp::Recv9, U16),
             other => {
-                self.d.error("PYP2183", e.span, format!("UART no tiene el metodo '{other}' (disponibles: start, write, read, send, recv, write9, read9, send9, recv9, tx_ready, rx_ready, sending, overrun, framing_error, clear_overrun)"));
+                self.d.error("PYP2183", e.span, format!("UART no tiene el metodo '{other}' (disponibles: start, write, read, send, recv, write_text, write9, read9, send9, recv9, tx_ready, rx_ready, sending, overrun, framing_error, clear_overrun)"));
                 for a in args {
                     self.expr(a);
                 }
@@ -1439,6 +1442,68 @@ impl<'a> Checker<'a> {
         self.uart_needs.get_or_insert(e.span);
         self.uart_calls.insert(e.id, UartCall { op });
         self.set(e, ret, None)
+    }
+
+    /// `UART.write_text("Hola\r\n")` o `UART.write_text(TABLA)`: el texto se resuelve al compilar y vive en la memoria de programa (una
+    /// `Rom` anonima, compartida entre literales iguales); no se reserva ningun bufer en RAM.
+    fn uart_write_text(&mut self, e: &Expr, args: &[Expr]) -> Type {
+        if args.len() != 1 {
+            self.d.error("PYP2055", e.span, "'UART.write_text' recibe 1 argumento: un texto entre comillas o una tabla Rom[uint8]");
+            for a in args {
+                if !matches!(a.kind, ExprKind::Str(_)) {
+                    self.expr(a);
+                }
+            }
+            return self.set(e, Type::Error, None);
+        }
+        let a = &args[0];
+        let rom = match &a.kind {
+            ExprKind::Str(raw) => match uart::decode_text(raw) {
+                Ok(b) if b.is_empty() => {
+                    self.d.error("PYP2165", a.span, "UART.write_text con un texto vacio no envia nada: quita la llamada");
+                    None
+                }
+                Ok(b) => Some(self.text_rom(b)),
+                Err(msg) => {
+                    self.d.error("PYP2165", a.span, msg);
+                    None
+                }
+            },
+            ExprKind::Name(n) if self.rom_idx.contains_key(n) => Some(self.rom_idx[n]),
+            _ => {
+                if !matches!(a.kind, ExprKind::Str(_)) {
+                    self.expr(a);
+                }
+                self.d.error("PYP2166", a.span, "UART.write_text recibe un texto entre comillas o el nombre de una tabla Rom[uint8]: el texto se conoce al compilar y se guarda en la memoria de programa");
+                None
+            }
+        };
+        let Some(rom) = rom else { return self.set(e, Type::Error, None) };
+        let len = self.roms[rom].1.len();
+        if len > 255 {
+            self.d.error("PYP2165", a.span, format!("UART.write_text envia hasta 255 bytes de una vez, este texto tiene {len}: divídelo en varias llamadas"));
+            return self.set(e, Type::Error, None);
+        }
+        if let Some(cur) = self.cur {
+            self.functions[cur].uses_rom = true;
+        }
+        self.uart_uses8.get_or_insert(e.span);
+        self.uart_needs.get_or_insert(e.span);
+        self.uart_calls.insert(e.id, UartCall { op: UartOp::WriteText(rom) });
+        self.set(e, Type::Void, None)
+    }
+
+    /// La tabla anonima de un literal de texto: dos literales iguales comparten los mismos bytes en flash.
+    fn text_rom(&mut self, bytes: Vec<u8>) -> usize {
+        if let Some(i) = self.roms.iter().position(|(n, v)| n.starts_with("texto_") && !self.rom_idx.contains_key(n) && *v == bytes) {
+            return i;
+        }
+        let mut k = self.roms.len();
+        while self.rom_idx.contains_key(&format!("texto_{k}")) || self.roms.iter().any(|(n, _)| *n == format!("texto_{k}")) {
+            k += 1;
+        }
+        self.roms.push((format!("texto_{k}"), bytes));
+        self.roms.len() - 1
     }
 
     /// UART usada sin un `UART.start(baud=...)` alcanzable, una sola velocidad y el generador de baudios resuelto con el reloj.
@@ -2341,6 +2406,10 @@ impl<'a> Checker<'a> {
             ExprKind::Bool(b) => self.set(e, Type::Bool, Some(*b as i128)),
             ExprKind::Name(n) => self.name(e, n),
             ExprKind::Index { obj, obj_span, index } => self.index_expr(e, obj, *obj_span, index),
+            ExprKind::Str(_) => {
+                self.d.error("PYP2164", e.span, "un texto entre comillas solo se admite como argumento de UART.write_text");
+                self.set(e, Type::Error, None)
+            }
             ExprKind::List(items) => {
                 for it in items {
                     self.expr(it);

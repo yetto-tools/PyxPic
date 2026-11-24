@@ -198,6 +198,10 @@ impl<'a> FnLower<'a> {
             }
             ExprKind::MethodCall { args, .. } if self.prog.uart_calls.contains_key(&e.id) => {
                 let call = self.prog.uart_calls[&e.id];
+                if let pypic_frontend::UartOp::WriteText(rom) = call.op {
+                    self.write_text(rom);
+                    return;
+                }
                 let arg = matches!(call.op, pypic_frontend::UartOp::Write | pypic_frontend::UartOp::Send | pypic_frontend::UartOp::Write9 | pypic_frontend::UartOp::Send9).then(|| self.value(&args[0]));
                 // las consultas de bandera sin usar no hacen nada; read/recv sacan un byte del FIFO aunque se descarte
                 if call.op.is_pure_read() && dst.is_none() {
@@ -224,6 +228,7 @@ impl<'a> FnLower<'a> {
                 let index = self.value(index);
                 self.emit(Inst::RomGet { dst: dst.unwrap(), rom, index });
             }
+            ExprKind::Str(_) => unreachable!("el frontend rechaza el texto fuera de UART.write_text"),
             ExprKind::List(_) => unreachable!("el frontend rechaza las listas fuera de una tabla"),
             ExprKind::Call { func, args, .. } => {
                 if self.prog.bits_calls.contains_key(&e.id) {
@@ -399,6 +404,28 @@ impl<'a> FnLower<'a> {
     /// el contador daria la vuelta (250 + 10 = 4) y el bucle no terminaria. Al final de
     /// cada iteracion se comprueba el recorrido restante (en el tipo sin signo del mismo
     /// ancho, donde la resta es exacta) y solo se avanza si queda al menos un paso.
+    /// `UART.write_text`: `i = 0; mientras i < n: UART.write(TABLA[i]); i += 1`. Dos temporales de un byte y nada mas en RAM.
+    fn write_text(&mut self, rom: usize) {
+        let u8t = Type::Int { bits: 8, signed: false };
+        let n = self.prog.roms[rom].1.len() as i128;
+        let i = self.new_temp(u8t);
+        let byte = self.new_temp(u8t);
+        self.emit(Inst::Copy { dst: i, src: Operand::Const { value: 0, ty: u8t } });
+        let (header, body, exit) = (self.new_block(), self.new_block(), self.new_block());
+        self.terminate(Terminator::Jump(header));
+        self.cur = header;
+        let c = self.new_temp(Type::Bool);
+        self.emit(Inst::Compare { dst: c, op: CmpOp::Lt, lhs: Operand::Place(i), rhs: Operand::Const { value: n, ty: u8t } });
+        self.terminate(Terminator::Branch { cond: Operand::Place(c), then_bb: body, else_bb: exit });
+        self.cur = body;
+        self.emit(Inst::RomGet { dst: byte, rom, index: Operand::Place(i) });
+        let call = pypic_frontend::UartCall { op: pypic_frontend::UartOp::Write };
+        self.emit(Inst::Uart { call, dst: None, arg: Some(Operand::Place(byte)) });
+        self.emit(Inst::Binary { dst: i, op: BinOp::Add, lhs: Operand::Place(i), rhs: Operand::Const { value: 1, ty: u8t } });
+        self.terminate(Terminator::Jump(header));
+        self.cur = exit;
+    }
+
     fn for_range(&mut self, var: &Ident, args: &[Expr], body: &[Stmt]) {
         let vt = self.info(&args[0]).ty;
         let place = match self.lmap.get(&var.name) {

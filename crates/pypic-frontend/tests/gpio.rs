@@ -71,7 +71,7 @@ fn pins_are_not_values_and_names_cannot_clash() {
 #[test]
 fn attributes_strings_and_old_syntax_are_rejected() {
     err(&format!("{HEAD}def main() -> None:\n    x: u8 = RD0.mode\n"), "PYP1026");
-    err(&format!("{HEAD}def main() -> None:\n    RD0.output()\n    RD0.value(\"a\")\n"), "PYP1021");
+    err(&format!("{HEAD}def main() -> None:\n    RD0.output()\n    RD0.value(\"a\")\n"), "PYP2164");
     // el estilo con objeto (Pin(...)) no existe: no hay constructor
     err("from pypic.periph.gpio import Pin\n", "PYP2074");
     err("led = Pin(\"RD0\", 1)\n", "PYP1001");
