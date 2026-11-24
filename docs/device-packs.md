@@ -10,9 +10,10 @@ devices/<mcu>/
   pins.json     encapsulados con número de pin, puerto/bit y funciones alternas
   config.json   palabras de configuración (dirección, valor por defecto, campos y significado de cada valor)
   registers.json mapa SFR: nombre, direcciones en cada banco, nombre de cada bit, valor tras POR y página del datasheet
+  peripherals.json periféricos: registros, bits de encendido, interrupciones, funciones de pin y dependencias
 ```
 
-Pendiente (issues abiertos): `peripherals.json` (#23), más encapsulados (#24) y PIC12F625 (#25).
+Pendiente (issues abiertos): más encapsulados (#24) y PIC12F625 (#25).
 
 ## Reglas del esquema
 
@@ -36,6 +37,9 @@ Comprueba la coherencia interna, no solo el formato:
   la comparten dos registros salvo el par con condición de selección (SSPADD/SSPMSK en `93h`); nombres de registro y de bit únicos; 8 bits por registro;
   un registro conserva el mismo desplazamiento en todos los bancos; los bits RP0/RP1 de STATUS existen; cada pin tiene su bit en `PORTx` y `TRISx`
   y cada `ANSn` su bit en ANSEL/ANSELH.
+- **Periféricos:** los registros y bits (encendido, banderas y habilitaciones de interrupción) que cita cada uno existen en `registers.json`; cada función
+  alterna de `pins.json` la posee **exactamente un** periferico y cada función de un periférico está en algún pin; los modos que usan los pines están declarados;
+  `uses` apunta a periféricos que existen; y las cantidades coinciden con `device.json` (temporizadores, canales y bits del ADC, comparadores, CCP/ECCP/EUSART/MSSP).
 - **Configuración:** direcciones dentro del espacio de configuración y sin repetir; campos dentro de los 14 bits y sin
   solaparse; cada campo define todos sus valores posibles; `default` cabe en la palabra.
 - **Dispositivo:** `data_bits` y `max_int_bits` válidos (8/16/32, `max_int_bits >= data_bits`), nivel de soporte
@@ -78,3 +82,13 @@ Los nombres de bit dudosos del datasheet se escriben como identificadores (`GO/D
 
 El ensamblador en línea ([asm-inline.md](asm-inline.md)) toma de aquí todos los nombres: cada registro vale su **desplazamiento de 7 bits** (`TRISD` = `0x08`; el banco
 lo elige el código con `RP0`/`RP1`) y cada bit su número (`RP0` = 5, `GO_DONE` = 1). Un nombre de parámetro o global solo choca si el bloque lo usa.
+
+### Periféricos (`peripherals.json`)
+
+17 entradas con la página de su capítulo: `TIMER0`, `TIMER1`, `TIMER2`, `ADC`, `COMPARATORS`, `VREF`, `EEPROM`, `ECCP` (CCP1), `CCP2`, `EUSART`, `MSSP`, `OSCILLATOR`, `ULPWU`,
+`EXT_INT`, `PORTB_IOC`, `WDT` y `PROGRAMMING` (MCLR/ICSP). Cada una dice qué registros la controlan, qué bits la encienden, sus pares bandera/habilitación de interrupción,
+las funciones de pin que posee (con dirección `in`/`out`/`io`/`analog`) y de qué otros periféricos depende (`ECCP` y `CCP2` usan Timer1 y Timer2). `MSSP` declara los modos
+`SPI` e `I2C`, que se excluyen y se reparten los pines (`SCK`/`SDI`/`SDO`/`SS` frente a `SCL`/`SDA`).
+
+`DevicePack::pin_uses("RA4")` devuelve lo que un pin cedería a periféricos: `T0CKI:TIMER0` y `C1OUT:COMPARATORS`. Es la base de los avisos de conflicto de pines
+y de que el SDK de periféricos ([sdk-modulos.md](sdk-modulos.md)) sepa qué pines reclama cada módulo.

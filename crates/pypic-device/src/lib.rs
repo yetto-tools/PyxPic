@@ -2,7 +2,7 @@
 //!
 //! Un pack describe un MCU con datos verificados contra su datasheet oficial.
 //! Directorio `devices/<mcu>/` con `device.json`, `memory.json`, `pins.json` y
-//! `config.json` y `registers.json` (los perifericos llegaran en un pack posterior).
+//! `config.json`, `registers.json` y `peripherals.json`.
 //! Todo corre en el host; nada de esto va al MCU.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -293,6 +293,71 @@ impl Registers {
     }
 }
 
+// -------------------------------------------------------------- peripherals.json
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Peripherals {
+    pub schema_version: u32,
+    pub source: String,
+    pub peripherals: Vec<Peripheral>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Peripheral {
+    pub name: String,
+    /// `timer`, `analog`, `memory`, `ccp`, `serial`, `system` o `interrupt`.
+    pub kind: String,
+    pub description: String,
+    pub page: u32,
+    /// Ancho del contador o del resultado, si tiene sentido.
+    pub bits: Option<u32>,
+    /// Registros que lo controlan (nombres de `registers.json`).
+    pub registers: Vec<String>,
+    /// Bits que lo encienden (uno por cada instancia: los comparadores tienen dos).
+    #[serde(default)]
+    pub enable: Vec<String>,
+    #[serde(default)]
+    pub interrupts: Vec<Interrupt>,
+    #[serde(default)]
+    pub pins: Vec<PeripheralPin>,
+    /// Otros perifericos de los que depende (los CCP usan Timer1 y Timer2).
+    #[serde(default)]
+    pub uses: Vec<String>,
+    /// Modos que se excluyen entre si y reparten sus pines (MSSP: SPI o I2C).
+    #[serde(default)]
+    pub modes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Interrupt {
+    /// Bit de bandera (PIR1.TMR1IF...) y bit de habilitacion (PIE1.TMR1IE...), por nombre.
+    pub flag: String,
+    pub enable: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PeripheralPin {
+    /// Funcion alterna tal como figura en `pins.json` (`T1CKI`, `SCK`...).
+    pub function: String,
+    /// `in`, `out`, `io` o `analog`.
+    pub direction: String,
+    pub mode: Option<String>,
+}
+
+impl Peripherals {
+    pub fn get(&self, name: &str) -> Option<&Peripheral> {
+        self.peripherals.iter().find(|p| p.name == name)
+    }
+
+    /// Periferico que posee una funcion alterna de pin.
+    pub fn owner_of(&self, function: &str) -> Option<&Peripheral> {
+        self.peripherals.iter().find(|p| p.pins.iter().any(|x| x.function == function))
+    }
+}
+
 // ------------------------------------------------------------------------ pack
 #[derive(Debug, Clone)]
 pub struct DevicePack {
@@ -301,6 +366,7 @@ pub struct DevicePack {
     pub pins: Pins,
     pub config: Config,
     pub registers: Registers,
+    pub peripherals: Peripherals,
 }
 
 #[derive(Debug)]
@@ -326,6 +392,7 @@ impl DevicePack {
             pins: read(dir, "pins.json")?,
             config: read(dir, "config.json")?,
             registers: read(dir, "registers.json")?,
+            peripherals: read(dir, "peripherals.json")?,
         })
     }
 
@@ -348,6 +415,14 @@ impl DevicePack {
             .with_device(self.device.name.clone(), self.device.cpu.max_clock_hz.min(u32::MAX as u64) as u32)
     }
 
+    /// Funciones alternas de un pin y el periferico que las posee: `(funcion, periferico)`.
+    /// Un pin usado por un periferico no puede ser a la vez E/S digital del programa.
+    pub fn pin_uses(&self, pin: &str) -> Vec<(String, String)> {
+        let Some(pk) = self.pins.packages.first() else { return Vec::new() };
+        let Some(p) = pk.pins.iter().find(|p| p.name == pin) else { return Vec::new() };
+        p.functions.iter().filter_map(|f| self.peripherals.owner_of(f).map(|o| (f.clone(), o.name.clone()))).collect()
+    }
+
     /// Comprobaciones de coherencia interna. Vacio = pack valido.
     pub fn validate(&self) -> Vec<String> {
         let mut e = Vec::new();
@@ -357,6 +432,7 @@ impl DevicePack {
         self.validate_pins(&mut e);
         self.validate_config(&mut e);
         self.validate_registers(&mut e);
+        self.validate_peripherals(&mut e);
         e
     }
 
@@ -367,6 +443,7 @@ impl DevicePack {
             ("pins.json", self.pins.schema_version),
             ("config.json", self.config.schema_version),
             ("registers.json", self.registers.schema_version),
+            ("peripherals.json", self.peripherals.schema_version),
         ] {
             if v != SCHEMA_VERSION {
                 e.push(format!("{file}: schema_version {v} no soportada (se espera {SCHEMA_VERSION})"));
@@ -647,6 +724,100 @@ impl DevicePack {
                     }
                 }
             }
+        }
+    }
+
+    fn validate_peripherals(&self, e: &mut Vec<String>) {
+        const KINDS: [&str; 7] = ["timer", "analog", "memory", "ccp", "serial", "system", "interrupt"];
+        const DIRS: [&str; 4] = ["in", "out", "io", "analog"];
+        let pr = &self.peripherals;
+        let rg = &self.registers;
+        let has_bit = |name: &str| rg.registers.iter().any(|r| r.bits.iter().any(|b| b.as_deref() == Some(name)));
+        let mut names: BTreeSet<&str> = BTreeSet::new();
+        let mut claimed: BTreeMap<&str, &str> = BTreeMap::new();
+        for p in &pr.peripherals {
+            let ctx = format!("peripherals.json: {}", p.name);
+            if p.name.is_empty() || !names.insert(&p.name) {
+                e.push(format!("{ctx}: nombre vacio o repetido"));
+            }
+            if !KINDS.contains(&p.kind.as_str()) {
+                e.push(format!("{ctx}: tipo '{}' desconocido", p.kind));
+            }
+            if p.page == 0 {
+                e.push(format!("{ctx}: falta la pagina del datasheet"));
+            }
+            for r in &p.registers {
+                if rg.get(r).is_none() {
+                    e.push(format!("{ctx}: el registro {r} no existe en registers.json"));
+                }
+            }
+            for b in &p.enable {
+                if !has_bit(b) {
+                    e.push(format!("{ctx}: el bit de habilitacion {b} no existe en registers.json"));
+                }
+            }
+            for i in &p.interrupts {
+                for b in [&i.flag, &i.enable] {
+                    if !has_bit(b) {
+                        e.push(format!("{ctx}: el bit de interrupcion {b} no existe en registers.json"));
+                    }
+                }
+            }
+            for x in &p.pins {
+                if !DIRS.contains(&x.direction.as_str()) {
+                    e.push(format!("{ctx}: direccion '{}' invalida en {}", x.direction, x.function));
+                }
+                if let Some(m) = &x.mode {
+                    if !p.modes.contains(m) {
+                        e.push(format!("{ctx}: el pin {} usa el modo '{m}' que el periferico no declara", x.function));
+                    }
+                }
+                if let Some(other) = claimed.insert(&x.function, &p.name) {
+                    e.push(format!("{ctx}: la funcion {} ya la posee {other}", x.function));
+                }
+            }
+        }
+        for p in &pr.peripherals {
+            for u in &p.uses {
+                if !names.contains(u.as_str()) {
+                    e.push(format!("peripherals.json: {} usa {u}, que no existe", p.name));
+                }
+            }
+        }
+        // cada funcion alterna de pins.json la posee un periferico y viceversa
+        let mut functions: BTreeSet<&str> = BTreeSet::new();
+        for pk in &self.pins.packages {
+            for p in &pk.pins {
+                for f in &p.functions {
+                    functions.insert(f);
+                    if !claimed.contains_key(f.as_str()) {
+                        e.push(format!("peripherals.json: la funcion {f} del pin {} no la posee ningun periferico", p.name));
+                    }
+                }
+            }
+        }
+        for f in claimed.keys() {
+            if !functions.contains(f) {
+                e.push(format!("peripherals.json: la funcion {f} no esta en ningun pin de pins.json"));
+            }
+        }
+        // coherencia con las cantidades de device.json
+        let d = &self.device.peripherals;
+        let want = |k: &str| d.get(k).copied().unwrap_or(0);
+        let count = |kind: &str, bits: u32| pr.peripherals.iter().filter(|p| p.kind == kind && p.bits == Some(bits)).count() as u32;
+        if count("timer", 8) != want("timers_8bit") || count("timer", 16) != want("timers_16bit") {
+            e.push("peripherals.json/device.json: la cantidad de temporizadores no coincide".into());
+        }
+        let adc_pins = pr.get("ADC").map_or(0, |a| a.pins.iter().filter(|x| x.function.starts_with("AN")).count() as u32);
+        if adc_pins != want("adc_channels") || pr.get("ADC").and_then(|a| a.bits) != Some(want("adc_bits")) {
+            e.push("peripherals.json/device.json: canales o bits del ADC no coinciden".into());
+        }
+        if pr.get("COMPARATORS").map_or(0, |c| c.enable.len() as u32) != want("comparators") {
+            e.push("peripherals.json/device.json: la cantidad de comparadores no coincide".into());
+        }
+        let n = |name: &str| u32::from(pr.get(name).is_some());
+        if n("ECCP") != want("eccp") || n("CCP2") != want("ccp") || n("EUSART") != want("eusart") || n("MSSP") != want("mssp") {
+            e.push("peripherals.json/device.json: CCP, ECCP, EUSART o MSSP no coinciden con device.json".into());
         }
     }
 

@@ -297,3 +297,83 @@ fn unknown_fields_in_registers_json_are_rejected() {
     let r = pypic_device::Registers::parse(r#"{"schema_version":1,"source":"x","unimplemented":[],"registers":[],"extra":1}"#);
     assert!(r.is_err());
 }
+
+// ---- peripherals.json ----------------------------------------------------------------------------------
+
+#[test]
+fn peripherals_match_datasheet_chapters() {
+    let p = pack();
+    let pr = &p.peripherals;
+    assert_eq!(pr.peripherals.len(), 17);
+    let t1 = pr.get("TIMER1").unwrap();
+    assert_eq!((t1.bits, t1.page), (Some(16), 78));
+    assert_eq!(t1.enable, ["TMR1ON"]);
+    assert_eq!((t1.interrupts[0].flag.as_str(), t1.interrupts[0].enable.as_str()), ("TMR1IF", "TMR1IE"));
+    assert_eq!(pr.get("TIMER0").unwrap().bits, Some(8));
+    assert_eq!(pr.get("ADC").unwrap().bits, Some(10));
+    assert_eq!(pr.get("ADC").unwrap().pins.iter().filter(|x| x.function.starts_with("AN")).count(), 14);
+    assert_eq!(pr.get("COMPARATORS").unwrap().enable, ["C1ON", "C2ON"]);
+    assert_eq!(pr.get("MSSP").unwrap().modes, ["SPI", "I2C"]);
+    assert_eq!(pr.get("ECCP").unwrap().uses, ["TIMER1", "TIMER2"]);
+    // cada funcion alterna la posee un solo periferico
+    assert_eq!(pr.owner_of("SCL").unwrap().name, "MSSP");
+    assert_eq!(pr.owner_of("TX").unwrap().name, "EUSART");
+    assert_eq!(pr.owner_of("P1B").unwrap().name, "ECCP");
+    assert_eq!(pr.owner_of("CCP2").unwrap().name, "CCP2");
+    assert_eq!(pr.owner_of("INT").unwrap().name, "EXT_INT");
+    assert!(pr.owner_of("NOPE").is_none());
+}
+
+#[test]
+fn pin_uses_report_what_a_pin_would_give_up() {
+    let p = pack();
+    let uses = |pin: &str| p.pin_uses(pin).into_iter().map(|(f, o)| format!("{f}:{o}")).collect::<Vec<_>>();
+    assert!(uses("RD0").is_empty()); // RD0 solo es E/S digital
+    assert_eq!(uses("RC3"), ["SCK:MSSP", "SCL:MSSP"]);
+    assert_eq!(uses("RA4"), ["T0CKI:TIMER0", "C1OUT:COMPARATORS"]); // un pin, dos perifericos: conflicto posible
+    assert_eq!(uses("RC2"), ["P1A:ECCP", "CCP1:ECCP"]);
+    assert_eq!(uses("RB0"), ["AN12:ADC", "INT:EXT_INT"]);
+    assert!(uses("RZ9").is_empty());
+}
+
+#[test]
+fn peripherals_validation_catches_inconsistencies() {
+    let e = mutated(|p| p.peripherals.peripherals.iter_mut().find(|x| x.name == "TIMER1").unwrap().registers.push("T9CON".into()));
+    assert!(has(&e, "el registro T9CON no existe"), "{e:?}");
+    let e = mutated(|p| p.peripherals.peripherals.iter_mut().find(|x| x.name == "TIMER1").unwrap().enable = vec!["TMR9ON".into()]);
+    assert!(has(&e, "TMR9ON no existe"), "{e:?}");
+    let e = mutated(|p| p.peripherals.peripherals.iter_mut().find(|x| x.name == "TIMER2").unwrap().interrupts[0].flag = "NOPEIF".into());
+    assert!(has(&e, "NOPEIF no existe"), "{e:?}");
+    // un periferico que no existe en pins.json, y una funcion de pin sin dueno
+    let e = mutated(|p| p.peripherals.peripherals.iter_mut().find(|x| x.name == "TIMER0").unwrap().pins[0].function = "T0XYZ".into());
+    assert!(has(&e, "T0XYZ no esta en ningun pin") && has(&e, "la funcion T0CKI del pin RA4 no la posee"), "{e:?}");
+    // dos perifericos con la misma funcion
+    let e = mutated(|p| {
+        let f = p.peripherals.peripherals.iter().find(|x| x.name == "TIMER1").unwrap().pins[0].clone();
+        p.peripherals.peripherals.iter_mut().find(|x| x.name == "TIMER0").unwrap().pins.push(f);
+    });
+    assert!(has(&e, "ya la posee"), "{e:?}");
+    // modo no declarado, tipo y direccion invalidos, dependencia inexistente
+    let e = mutated(|p| p.peripherals.peripherals.iter_mut().find(|x| x.name == "MSSP").unwrap().modes.clear());
+    assert!(has(&e, "el modo 'SPI'"), "{e:?}");
+    let e = mutated(|p| p.peripherals.peripherals.iter_mut().find(|x| x.name == "WDT").unwrap().kind = "raro".into());
+    assert!(has(&e, "tipo 'raro'"), "{e:?}");
+    let e = mutated(|p| p.peripherals.peripherals.iter_mut().find(|x| x.name == "EUSART").unwrap().pins[0].direction = "sideways".into());
+    assert!(has(&e, "direccion 'sideways'"), "{e:?}");
+    let e = mutated(|p| p.peripherals.peripherals.iter_mut().find(|x| x.name == "CCP2").unwrap().uses.push("TIMER9".into()));
+    assert!(has(&e, "usa TIMER9, que no existe"), "{e:?}");
+}
+
+#[test]
+fn peripherals_must_agree_with_device_json_counts() {
+    let e = mutated(|p| p.peripherals.peripherals.retain(|x| x.name != "TIMER2"));
+    assert!(has(&e, "cantidad de temporizadores"), "{e:?}");
+    let e = mutated(|p| {
+        p.peripherals.peripherals.iter_mut().find(|x| x.name == "ADC").unwrap().pins.pop();
+    });
+    assert!(has(&e, "canales o bits del ADC") || has(&e, "VREF-"), "{e:?}");
+    let e = mutated(|p| p.peripherals.peripherals.iter_mut().find(|x| x.name == "COMPARATORS").unwrap().enable.pop().map(|_| ()).unwrap());
+    assert!(has(&e, "cantidad de comparadores"), "{e:?}");
+    let e = mutated(|p| p.peripherals.peripherals.retain(|x| x.name != "MSSP"));
+    assert!(has(&e, "CCP, ECCP, EUSART o MSSP"), "{e:?}");
+}
