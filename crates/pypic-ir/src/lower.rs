@@ -196,6 +196,20 @@ impl<'a> FnLower<'a> {
                 }
                 self.cur = join;
             }
+            ExprKind::MethodCall { args, .. } if self.prog.uart_calls.contains_key(&e.id) => {
+                let call = self.prog.uart_calls[&e.id];
+                let arg = matches!(call.op, pypic_frontend::UartOp::Write | pypic_frontend::UartOp::Send).then(|| self.value(&args[0]));
+                // las consultas de bandera sin usar no hacen nada; read/recv sacan un byte del FIFO aunque se descarte
+                if call.op.is_pure_read() && dst.is_none() {
+                    return;
+                }
+                let dst = match call.op {
+                    pypic_frontend::UartOp::Read | pypic_frontend::UartOp::Recv => Some(dst.unwrap_or_else(|| self.new_temp(Type::Int { bits: 8, signed: false }))),
+                    op if op.is_pure_read() => dst,
+                    _ => None,
+                };
+                self.emit(Inst::Uart { call, dst, arg });
+            }
             ExprKind::MethodCall { .. } if self.prog.adc_calls.contains_key(&e.id) => {
                 let call = self.prog.adc_calls[&e.id];
                 // leer sin usar el resultado no tiene efecto: no se emite

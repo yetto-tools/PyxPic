@@ -15,6 +15,8 @@ pub enum Trap {
     AsmFunction(String),
     /// Los temporizadores son hardware: el interprete de referencia no los modela (se prueban en el simulador del nucleo).
     Timer(String),
+    /// Se leyo la UART sin ningun byte recibido: el modelo de referencia no puede esperar (en el chip `read` se quedaria sondeando).
+    UartEmpty,
 }
 
 pub struct Machine<'m> {
@@ -38,6 +40,9 @@ pub struct Machine<'m> {
     pub adc_inputs: [i128; 16],
     adc_channel: u8,
     adc_result: i128,
+    /// La UART de referencia: lo que el programa envio y lo que se le va a dar a leer (la prueba lo carga con `uart_input`).
+    pub uart_tx: Vec<u8>,
+    pub uart_rx: std::collections::VecDeque<u8>,
 }
 
 struct Frame {
@@ -63,6 +68,8 @@ impl<'m> Machine<'m> {
             adc_inputs: [0; 16],
             adc_channel: 0,
             adc_result: 0,
+            uart_tx: Vec::new(),
+            uart_rx: Default::default(),
         }
     }
 
@@ -220,6 +227,20 @@ impl<'m> Machine<'m> {
                 let v = self.read(fr, src);
                 self.write(f, fr, *dst, v);
             }
+            Inst::Uart { call, dst, arg } => match call.op {
+                UartOp::Start(_) | UartOp::ClearOverrun => {}
+                UartOp::Write | UartOp::Send => {
+                    let v = self.read(fr, arg.as_ref().unwrap());
+                    self.uart_tx.push(v as u8);
+                }
+                UartOp::Read | UartOp::Recv => {
+                    let b = self.uart_rx.pop_front().ok_or(Trap::UartEmpty)?;
+                    self.write(f, fr, dst.unwrap(), b as i128);
+                }
+                UartOp::TxReady => self.write(f, fr, dst.unwrap(), 1),
+                UartOp::RxReady => self.write(f, fr, dst.unwrap(), !self.uart_rx.is_empty() as i128),
+                UartOp::Sending | UartOp::Overrun | UartOp::FramingError => self.write(f, fr, dst.unwrap(), 0),
+            },
             Inst::Adc { call, dst } => match call.op {
                 AdcOp::Start(_) => {}
                 AdcOp::Select(n) => self.adc_channel = n,

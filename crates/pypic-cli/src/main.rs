@@ -435,6 +435,15 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     }
     if timing {
         print_timing(&compiled.timing);
+        if let Some(u) = &compiled.uart {
+            let modo = match (u.brg16, u.brgh) {
+                (false, false) => "8 bits, BRGH = 0",
+                (false, true) => "8 bits, BRGH = 1",
+                (true, false) => "16 bits, BRGH = 0",
+                (true, true) => "16 bits, BRGH = 1",
+            };
+            println!("uart: {} baudios pedidos -> {:.1} ({:+.2} %), generador de {modo}, SPBRG = {} a {} Hz", u.baud, u.achieved, u.error_pct, u.n, u.fosc_hz);
+        }
     }
     let cfg_text = {
         let names: Vec<String> = pack.config.words.iter().zip(&opts.config).map(|(w, (_, v))| format!("{}={v:#06X}", w.name)).collect();

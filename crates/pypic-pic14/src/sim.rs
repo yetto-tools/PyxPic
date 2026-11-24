@@ -9,6 +9,15 @@
 use crate::hex::Image;
 use crate::isa::{Dest, Inst};
 
+/// Registro `f` que lee la instruccion (las escrituras puras, MOVWF y CLRF, no leen).
+fn file_read(inst: Inst) -> Option<u8> {
+    use Inst::*;
+    match inst {
+        Movf(f, _) | Addwf(f, _) | Andwf(f, _) | Comf(f, _) | Decf(f, _) | Decfsz(f, _) | Incf(f, _) | Incfsz(f, _) | Iorwf(f, _) | Rlf(f, _) | Rrf(f, _) | Subwf(f, _) | Swapf(f, _) | Xorwf(f, _) | Btfsc(f, _) | Btfss(f, _) => Some(f),
+        _ => None,
+    }
+}
+
 pub const STATUS: usize = 0x03;
 const C: u8 = 0x01;
 const DC: u8 = 0x02;
@@ -50,6 +59,15 @@ pub struct Sim {
     /// Condiciones que vigila: adquisicion minima (por defecto el valor tipico AD132, 11,5 us) y alimentacion menor de 3,0 V (TAD >= 3,0 us).
     pub adc_tacq_ns: f64,
     pub adc_low_voltage: bool,
+    /// El EUSART: los bytes que el programa envio (con el ciclo en que pasaron al registro de desplazamiento), los que se le van a
+    /// dar a leer (`uart_feed`: ciclo en que termina su bit de parada) y lo que el programa hizo mal con el.
+    pub uart_tx: Vec<(u8, u64)>,
+    pub uart_violations: Vec<String>,
+    uart_rx_pending: std::collections::VecDeque<(u64, u8, bool)>,
+    uart_fifo: std::collections::VecDeque<(u8, bool)>,
+    uart_txreg: Option<(u8, u64)>,
+    uart_tsr_left: u64,
+    uart_prev_cren: bool,
     adc_prev_go: bool,
     adc_prev_on: bool,
     adc_prev_chs: u8,
@@ -65,7 +83,7 @@ impl Sim {
                 flash[a as usize] = w;
             }
         }
-        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None, t0_pre: 0, t0_inhibit: 0, t1_pre: 0, t2_pre: 0, t2_post: 0, timer_events: Vec::new(), adc_inputs: [0; 16], fosc_hz: 4_000_000, adc_violations: Vec::new(), adc_tacq_ns: 11_500.0, adc_low_voltage: false, adc_prev_go: false, adc_prev_on: false, adc_prev_chs: 0, adc_acq_from: 0, adc_remaining: 0 };
+        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None, t0_pre: 0, t0_inhibit: 0, t1_pre: 0, t2_pre: 0, t2_post: 0, timer_events: Vec::new(), adc_inputs: [0; 16], fosc_hz: 4_000_000, adc_violations: Vec::new(), adc_tacq_ns: 11_500.0, adc_low_voltage: false, uart_tx: Vec::new(), uart_violations: Vec::new(), uart_rx_pending: Default::default(), uart_fifo: Default::default(), uart_txreg: None, uart_tsr_left: 0, uart_prev_cren: false, adc_prev_go: false, adc_prev_on: false, adc_prev_chs: 0, adc_acq_from: 0, adc_remaining: 0 };
         s.reset();
         s
     }
@@ -82,6 +100,9 @@ impl Sim {
         self.ram[0x92] = 0xFF; // PR2
         (self.t0_pre, self.t0_inhibit, self.t1_pre, self.t2_pre, self.t2_post) = (0, 0, 0, 0, 0);
         (self.adc_prev_go, self.adc_prev_on, self.adc_prev_chs, self.adc_remaining) = (false, false, 0, 0);
+        (self.uart_txreg, self.uart_tsr_left, self.uart_prev_cren) = (None, 0, false);
+        self.uart_fifo.clear();
+        self.ram[0x98] = 0x02; // TXSTA: TRMT = 1 tras el reset
         self.pc = 0;
         self.pclath = 0;
         self.sp = 0;
@@ -149,6 +170,9 @@ impl Sim {
                 if a == 0x01 {
                     self.t0_inhibit = 2;
                 }
+                if a == 0x19 {
+                    self.uart_tx_write(v);
+                }
             }
         }
     }
@@ -212,6 +236,8 @@ impl Sim {
         }
         let word = self.flash[self.pc as usize & 0x1FFF];
         let inst = Inst::decode(word).unwrap_or(Inst::Nop);
+        // una instruccion que lee RCREG (1Ah, banco 0) saca el caracter del FIFO
+        let pops_rcreg = self.bank_base() == 0 && file_read(inst) == Some(0x1A);
         self.pcl_write = None;
         let mut cyc = 1u64;
         let mut skip = false;
@@ -374,6 +400,9 @@ impl Sim {
             next = target & 0x1FFF;
             cyc = 2;
         }
+        if pops_rcreg {
+            self.uart_pop();
+        }
         self.pc = next;
         self.cycles += cyc;
         for i in 0..cyc {
@@ -387,6 +416,7 @@ impl Sim {
     /// un contador se aplican despues de la escritura (error maximo de 1 ciclo en el valor absoluto, ninguno en los periodos).
     fn tick_timers(&mut self, now: u64) {
         self.tick_adc(now);
+        self.tick_uart(now);
         let (option, intcon) = (self.ram[0x81], 0x0B);
         // Timer0: T0CS = 0 (reloj interno); PSA = 0 asigna el preescalador a Timer0
         if option & 0x20 == 0 {
@@ -498,6 +528,106 @@ impl Sim {
         }
         let a = self.ram[0x1F];
         (self.adc_prev_go, self.adc_prev_on, self.adc_prev_chs) = (a & 2 != 0, a & 1 != 0, a >> 2 & 0xF);
+    }
+
+    /// Ciclos de instruccion de una trama de 10 bits con el generador de baudios actual (tabla 12-3).
+    fn uart_frame_cycles(&self) -> u64 {
+        let (brg16, brgh) = (self.ram[0x187] & 0x08 != 0, self.ram[0x98] & 0x04 != 0);
+        let n = if brg16 { (self.ram[0x9A] as u64) << 8 | self.ram[0x99] as u64 } else { self.ram[0x99] as u64 };
+        let div = match (brg16, brgh) {
+            (false, false) => 64,
+            (false, true) | (true, false) => 16,
+            (true, true) => 4,
+        };
+        (10 * div * (n + 1)).div_ceil(4)
+    }
+
+    fn uart_tx_write(&mut self, v: u8) {
+        let at = self.cycles + 1;
+        if self.ram[0x98] & 0x20 == 0 || self.ram[0x18] & 0x80 == 0 {
+            self.uart_violations.push("TXREG escrito con el transmisor apagado (TXEN o SPEN en 0): falta UART.start".into());
+        }
+        if self.uart_txreg.is_some() {
+            self.uart_violations.push("TXREG escrito antes de que el byte anterior pasara al registro de desplazamiento: se pierde un byte (TXIF aun no era valido)".into());
+        }
+        self.uart_txreg = Some((v, at));
+    }
+
+    /// Da un caracter al receptor: `complete_at` es el ciclo en que termina su bit de parada; `framing_ok = false` simula una
+    /// trama sin bit de parada.
+    pub fn uart_feed(&mut self, byte: u8, complete_at: u64, framing_ok: bool) {
+        self.uart_rx_pending.push_back((complete_at, byte, framing_ok));
+    }
+
+    fn uart_pop(&mut self) {
+        if self.uart_fifo.pop_front().is_none() {
+            self.uart_violations.push("RCREG leido sin ningun caracter recibido".into());
+        }
+        self.uart_expose();
+    }
+
+    /// RCREG, RCIF y FERR muestran el primer caracter del FIFO.
+    fn uart_expose(&mut self) {
+        let rx_en = self.ram[0x18] & 0x80 != 0 && self.ram[0x18] & 0x10 != 0;
+        match self.uart_fifo.front() {
+            Some(&(b, ok)) => {
+                self.ram[0x1A] = b;
+                if ok { self.ram[0x18] &= !0x04 } else { self.ram[0x18] |= 0x04 }
+                if rx_en { self.ram[0x0C] |= 0x20 } else { self.ram[0x0C] &= !0x20 }
+            }
+            None => {
+                self.ram[0x18] &= !0x04;
+                self.ram[0x0C] &= !0x20;
+            }
+        }
+    }
+
+    fn tick_uart(&mut self, now: u64) {
+        let tx_en = self.ram[0x98] & 0x20 != 0 && self.ram[0x18] & 0x80 != 0;
+        // transmisor: TXREG pasa al registro de desplazamiento un ciclo despues si este esta libre
+        if let Some((b, at)) = self.uart_txreg {
+            if now > at && self.uart_tsr_left == 0 {
+                let frame = self.uart_frame_cycles();
+                self.uart_tx.push((b, now));
+                self.uart_txreg = None;
+                self.uart_tsr_left = frame;
+            }
+        }
+        if self.uart_tsr_left > 0 {
+            self.uart_tsr_left -= 1;
+        }
+        // TXIF (PIR1<4>, solo lectura): vale 1 con el transmisor encendido y TXREG vacio. Es valido a partir del segundo ciclo
+        // tras la escritura (p.150): la instruccion que sigue a la escritura lee todavia el valor viejo, la siguiente ya el nuevo
+        let stale = self.uart_txreg.is_some_and(|(_, at)| now < at + 1);
+        let txif = tx_en && (self.uart_txreg.is_none() || stale);
+        if txif { self.ram[0x0C] |= 0x10 } else { self.ram[0x0C] &= !0x10 }
+        // TRMT (TXSTA<1>)
+        if self.uart_tsr_left == 0 && self.uart_txreg.is_none() { self.ram[0x98] |= 0x02 } else { self.ram[0x98] &= !0x02 }
+        // receptor
+        let (spen, cren) = (self.ram[0x18] & 0x80 != 0, self.ram[0x18] & 0x10 != 0);
+        while let Some(&(at, b, ok)) = self.uart_rx_pending.front() {
+            if at > now {
+                break;
+            }
+            self.uart_rx_pending.pop_front();
+            if !(spen && cren) || self.ram[0x18] & 0x02 != 0 {
+                continue; // receptor apagado o con un desbordamiento sin borrar: el caracter se pierde
+            }
+            if self.uart_fifo.len() >= 2 {
+                self.ram[0x18] |= 0x02; // OERR: un tercer caracter completo antes de leer el FIFO
+            } else {
+                self.uart_fifo.push_back((b, ok));
+            }
+        }
+        if self.uart_prev_cren && !cren {
+            self.ram[0x18] &= !0x02; // apagar CREN borra OERR (12.1.2.5)
+        }
+        self.uart_prev_cren = cren;
+        if !spen {
+            self.uart_fifo.clear();
+            self.ram[0x18] &= !0x06;
+        }
+        self.uart_expose();
     }
 
     fn log(&mut self, flag: &'static str, now: u64) {

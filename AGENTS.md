@@ -7,3 +7,5 @@ Actúa como ingeniero de compiladores y firmware embebido. Este repositorio defi
 
 ## Principio de diseño
 **PyPIC es un ensamblador de alto nivel**: lleva el código de ensamblador a alto nivel conservando la flexibilidad y la precisión de las instrucciones. Antes de añadir una función pregunta qué instrucción o idioma de ensamblador reemplaza y si conserva su control y su costo en ciclos; una sola forma por operación. Ver `docs/principios-de-diseno.md`.
+
+Busca una experiencia de inicio comparable a Arduino sin renunciar al control del PIC: combina operaciones cómodas, primitivas, registros y ASM en sintaxis PIC-AS. Documenta esperas, efectos, recursos, costos y supuestos; no prometas ciclos exactos donde no exista tal contrato. Los valores automáticos deben poder ajustarse cuando el hardware lo requiera. Explica conflictos y límites sin ocultar recursos. Estas capacidades son objetivos, no pruebas de que estén implementadas. Ver `docs/spec/01_VISION.md`.

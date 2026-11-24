@@ -4,6 +4,10 @@
 La sintaxis es Python; el resultado son instrucciones nativas del PIC (nunca un intérprete ni un runtime en el MCU, ver `docs/spec/00_PRINCIPIOS_NO_INTERPRETE.md`).
 Quien hoy escribe en ensamblador debe poder escribir lo mismo aquí, con menos errores y más legible.
 
+La experiencia inicial debe ser accesible como en Arduino, sin renunciar a las capacidades del PIC. Una operación completa y sus primitivas no son sinónimos si ofrecen contratos distintos: por ejemplo, una lectura que espera y las operaciones separadas para iniciar y consultar la conversión. La API debe indicar efectos, bloqueos, supuestos eléctricos y recursos, y ofrecer configuración explícita cuando corresponda.
+
+El acceso a registros y a ensamblador en sintaxis PIC-AS permite un control progresivo. Como objetivo, el listado, el mapa de memoria y el informe de tiempos deben ayudar a inspeccionar el firmware generado. No se promete que una construcción de alto nivel produzca siempre una secuencia fija o ciclos exactos; eso debe especificarse y verificarse por operación. Ninguna de estas metas implica soporte completo ya implementado ni requiere GPASM o XC8.
+
 ## Reglas que se derivan
 
 1. **Precisión.** El costo en ciclos es predecible, se puede conocer y se reporta. Una espera constante dura exactamente lo pedido (`docs/sdk-time.md`); `pypic build --timing` muestra lo emitido y el error.

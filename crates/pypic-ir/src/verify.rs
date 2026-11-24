@@ -97,6 +97,20 @@ fn verify_fn(m: &Module, f: &Function, errs: &mut Vec<String>) {
                         _ => {}
                     }
                 }
+                Inst::Uart { call, dst, arg } => {
+                    let u8_ty = Type::Int { bits: 8, signed: false };
+                    let dst_is = |t: Type| dst.is_some_and(|d| valid(d) && m.place_ty(f, d) == t);
+                    let bad = match call.op {
+                        UartOp::Write | UartOp::Send => dst.is_some() || arg.as_ref().is_none_or(|a| ty(a) != u8_ty),
+                        UartOp::Read | UartOp::Recv => arg.is_some() || !dst_is(u8_ty),
+                        UartOp::TxReady | UartOp::RxReady | UartOp::Sending | UartOp::Overrun | UartOp::FramingError => arg.is_some() || !dst_is(Type::Bool),
+                        UartOp::Start(s) => dst.is_some() || arg.is_some() || s.brg.is_none(),
+                        UartOp::ClearOverrun => dst.is_some() || arg.is_some(),
+                    };
+                    if bad {
+                        e(format!("{}: Uart {:?} mal formado", at(i), call.op));
+                    }
+                }
                 Inst::Adc { call, dst } => {
                     let ty_ok = |t: Type| dst.is_some_and(|d| valid(d) && m.place_ty(f, d) == t);
                     let bad = match call.op {

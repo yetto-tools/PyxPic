@@ -30,7 +30,7 @@ fn the_old_flat_paths_no_longer_exist_and_say_the_new_one() {
 
 #[test]
 fn reserved_modules_are_recognised_but_not_implemented_yet() {
-    for m in ["pypic.periph.uart", "pypic.system.wdt", "pypic.system.irq", "pypic.system.clock", "pypic.soft.spi", "pypic.soft.i2c", "pypic.soft.onewire"] {
+    for m in ["pypic.periph.spi", "pypic.system.wdt", "pypic.system.irq", "pypic.system.clock", "pypic.soft.spi", "pypic.soft.i2c", "pypic.soft.onewire"] {
         let (c, out) = diag(&format!("from {m} import X\n"));
         assert_eq!(c, vec!["PYP2105"], "{m}");
         assert!(out.contains("todavia no esta implementado") && out.contains("catalogo-pic16f887"), "{out}");

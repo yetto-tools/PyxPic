@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
-use pypic_ir::ir::{AdcCall, AdcOp, BitsOp, BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, RegCall, RegOp, Terminator, TimerCall, TimerId, TimerOp, TimerStart, Type, UnaryOp};
+use pypic_ir::ir::{AdcCall, AdcOp, BitsOp, UartCall, UartOp, BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, RegCall, RegOp, Terminator, TimerCall, TimerId, TimerOp, TimerStart, Type, UnaryOp};
 use pypic_frontend::timer::{GateSource, TimerSource};
 
 use crate::asm::{assemble_fragment, AsmError, FragItem};
@@ -149,6 +149,18 @@ pub struct GlobalSym {
     pub is_const: bool,
 }
 
+/// El generador de baudios de la UART: lo pedido, lo que da y su configuracion.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct UartReport {
+    pub baud: u32,
+    pub achieved: f64,
+    pub error_pct: f64,
+    pub brgh: bool,
+    pub brg16: bool,
+    pub n: u16,
+    pub fosc_hz: u32,
+}
+
 /// Una espera generada: lo pedido, los ciclos de instruccion emitidos y el tiempo real que dan.
 #[derive(Debug, Clone)]
 pub struct DelayReport {
@@ -185,6 +197,8 @@ impl DelayReport {
 #[derive(Debug)]
 pub struct Compiled {
     pub timing: Vec<DelayReport>,
+    /// La velocidad que dio el generador de baudios de la UART (`UART.start`), si el programa la usa.
+    pub uart: Option<UartReport>,
     pub image: Image,
     pub globals: Vec<GlobalSym>,
     /// (nombre, direccion de palabra del punto de entrada).
@@ -365,6 +379,7 @@ struct Gen<'a> {
     timing: Vec<DelayReport>,
     registers: pypic_device::Registers,
     analog_pins: BTreeMap<u8, (char, u8)>,
+    uart_report: Option<UartReport>,
     /// Tablas constantes usadas: la etiqueta de cada una y el orden en que se emiten.
     rom_labels: HashMap<usize, Label>,
     rom_order: Vec<usize>,
@@ -917,6 +932,7 @@ impl<'a> Gen<'a> {
             I::Reg { call, dst, arg } => self.reg(call, *dst, arg.as_ref()),
             I::Bits { op, dst, src } => self.bits(*op, *dst, src.as_ref()),
             I::Adc { call, dst } => self.adc(call, *dst),
+            I::Uart { call, dst, arg } => self.uart(call, *dst, arg.as_ref()),
             I::RomGet { dst, rom, index } => self.rom_get(*dst, *rom, index),
             I::PinCfg { pin, output } => self.pin_cfg(*pin, *output),
             I::PinSet { pin, value } => self.pin_set(*pin, value),
@@ -1114,7 +1130,7 @@ fn compile_mode(m: &Module, opts: &Options, multi: bool) -> Result<Compiled, Cod
     let isr_ctx = reach(m, &isrs);
 
     let al = allocate(m, &live, &isr_ctx, opts)?;
-    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new(), registers: opts.registers.clone(), analog_pins: opts.analog_pins.clone(), rom_labels: HashMap::new(), rom_order: Vec::new(), rt_labels: HashMap::new(), rt_order: Vec::new(), force_isr: None, multi };
+    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new(), registers: opts.registers.clone(), analog_pins: opts.analog_pins.clone(), uart_report: None, rom_labels: HashMap::new(), rom_order: Vec::new(), rt_labels: HashMap::new(), rt_order: Vec::new(), force_isr: None, multi };
     for &fi in &live {
         let l = g.asm.label(m.functions[fi].name.clone());
         g.fn_labels.insert(fi, l);
@@ -1306,7 +1322,7 @@ fn compile_mode(m: &Module, opts: &Options, multi: bool) -> Result<Compiled, Cod
         .map(|(i, gl)| GlobalSym { name: gl.name.clone(), addr: g.al.globals[i], ty: gl.ty, is_const: gl.is_const })
         .collect();
     let functions = live.iter().map(|&fi| (m.functions[fi].name.clone(), addr_of[g.fn_labels[&fi]].unwrap())).collect();
-    Ok(Compiled { timing: g.timing, image, globals, functions, listing, flash_words, ram_bytes: g.al.used })
+    Ok(Compiled { timing: g.timing, uart: g.uart_report, image, globals, functions, listing, flash_words, ram_bytes: g.al.used })
 }
 
 // ---- temporizadores (pypic.periph.timer) ---------------------------------------------------------------
@@ -1424,6 +1440,94 @@ impl<'a> Gen<'a> {
                 self.asm.i(Retlw(v));
             }
         }
+    }
+
+    // ---- UART (pypic.periph.uart, docs/sdk-uart.md): los registros y bits salen del Device Pack por nombre ----
+    fn write_banked(&mut self, name: &str, value: u8) -> Result<(), CodegenError> {
+        let addr = self.reg_addr(name)?;
+        self.asm.i(Movlw(value));
+        self.banked(addr, |g, f| g.asm.i(Movwf(f)));
+        Ok(())
+    }
+
+    /// `MOVF TXREG` + `NOP`: el NOP es obligatorio, TXIF solo es valido dos ciclos despues de escribir TXREG (p.150).
+    fn uart_send(&mut self, arg: &Operand) -> Result<(), CodegenError> {
+        let b = self.bytes(arg)?[0];
+        let txreg = self.reg_bank0("TXREG")?;
+        self.ld(b);
+        self.asm.i(Movwf(txreg));
+        self.asm.i(Nop);
+        Ok(())
+    }
+
+    fn uart_flag(&mut self, flag: &str, dst: Place) -> Result<(), CodegenError> {
+        let (addr, bit) = self.bit_loc(flag)?;
+        let d = self.regs(dst)?[0];
+        self.asm.i(Clrf(d));
+        self.asm.i(Btfsc(addr as u8, bit));
+        self.asm.i(Incf(d, F));
+        Ok(())
+    }
+
+    fn uart_wait(&mut self, flag: &str) -> Result<(), CodegenError> {
+        let (addr, bit) = self.bit_loc(flag)?;
+        let top = self.asm.label("uart.espera");
+        self.asm.place(top);
+        self.asm.i(Btfss(addr as u8, bit));
+        self.asm.goto(top);
+        Ok(())
+    }
+
+    fn uart(&mut self, call: &UartCall, dst: Option<Place>, arg: Option<&Operand>) -> Result<(), CodegenError> {
+        match call.op {
+            UartOp::Start(st) => {
+                let brg = st.brg.expect("el frontend resuelve el generador de baudios");
+                let hz = self.clock_hz.ok_or_else(|| CodegenError::Device("UART.start necesita el reloj (CLOCK_HZ)".into()))?;
+                self.uart_report = Some(UartReport { baud: st.baud, achieved: brg.achieved(hz), error_pct: brg.error_pct(hz), brgh: brg.brgh, brg16: brg.brg16, n: brg.n, fosc_hz: hz });
+                // 12.1.1.6 y 12.1.2.8: baudios, modo asincrono (SYNC = 0), SPEN, TXEN y CREN
+                self.write_banked("BAUDCTL", (brg.brg16 as u8) << self.bit_pos("BRG16")?)?;
+                self.write_banked("SPBRGH", (brg.n >> 8) as u8)?;
+                self.write_banked("SPBRG", brg.n as u8)?;
+                let txsta = (1u8 << self.bit_pos("TXEN")?) | ((brg.brgh as u8) << self.bit_pos("BRGH")?);
+                self.write_banked("TXSTA", txsta)?;
+                let rcsta = (1u8 << self.bit_pos("SPEN")?) | (1u8 << self.bit_pos("CREN")?);
+                self.write_banked("RCSTA", rcsta)?;
+            }
+            UartOp::Write => {
+                self.uart_wait("TXIF")?;
+                self.uart_send(arg.expect("Write lleva un byte"))?;
+            }
+            UartOp::Send => self.uart_send(arg.expect("Send lleva un byte"))?,
+            UartOp::Read | UartOp::Recv => {
+                if call.op == UartOp::Read {
+                    self.uart_wait("RCIF")?;
+                }
+                let d = self.regs(dst.expect("Read/Recv llevan destino"))?[0];
+                let rcreg = self.reg_bank0("RCREG")?;
+                self.asm.i(Movf(rcreg, W));
+                self.st(d);
+            }
+            UartOp::TxReady => self.uart_flag("TXIF", dst.expect("TxReady lleva destino"))?,
+            UartOp::RxReady => self.uart_flag("RCIF", dst.expect("RxReady lleva destino"))?,
+            UartOp::Overrun => self.uart_flag("OERR", dst.expect("Overrun lleva destino"))?,
+            UartOp::FramingError => self.uart_flag("FERR", dst.expect("FramingError lleva destino"))?,
+            UartOp::Sending => {
+                // TRMT esta en el banco 1: se lee con MOVF y se aisla con ANDLW (no se puede saltar entre bancos)
+                let d = self.regs(dst.expect("Sending lleva destino"))?[0];
+                let (addr, bit) = self.bit_loc("TRMT")?;
+                self.asm.i(Clrf(d));
+                self.banked(addr, |g, f| g.asm.i(Movf(f, W)));
+                self.asm.i(Andlw(1 << bit));
+                self.asm.i(Btfsc(STATUS, BIT_Z)); // TRMT = 0: el registro de desplazamiento esta ocupado
+                self.asm.i(Incf(d, F));
+            }
+            UartOp::ClearOverrun => {
+                // OERR solo se borra apagando y volviendo a encender CREN (12.1.2.5)
+                self.bit_op("CREN", false)?;
+                self.bit_op("CREN", true)?;
+            }
+        }
+        Ok(())
     }
 
     /// Intrinsecos de `pypic.bits`: cada uno es una instruccion (mas guardar el resultado).

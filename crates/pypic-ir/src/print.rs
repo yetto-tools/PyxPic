@@ -79,6 +79,10 @@ pub fn print(m: &Module) -> String {
                         let d = dst.map(|d| format!("{} = ", place(m, f, d))).unwrap_or_default();
                         format!("{d}timer {} {:?}{a}", call.timer.name(), call.op)
                     }
+                    Inst::Uart { call, dst, arg } => {
+                        let a = arg.as_ref().map(|a| format!(" {}", operand(m, f, a))).unwrap_or_default();
+                        format!("{}uart {:?}{a}", dst.map(|d| format!("{} = ", place(m, f, d))).unwrap_or_default(), call.op)
+                    }
                     Inst::Adc { call, dst } => format!("{}adc {:?}", dst.map(|d| format!("{} = ", place(m, f, d))).unwrap_or_default(), call.op),
                     Inst::RomGet { dst, rom, index } => format!("{} = rom {}[{}]", place(m, f, *dst), m.roms[*rom].0, operand(m, f, index)),
                     Inst::Bits { op, dst, src } => {

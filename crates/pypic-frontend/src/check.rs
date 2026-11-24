@@ -10,6 +10,7 @@
 //!  * Sin recursion: la memoria es estatica y la pila de hardware es limitada.
 
 use crate::adc::{self, AdcCall, AdcOp};
+use crate::uart::{self, UartCall, UartOp, UartStart};
 use crate::bits::{self, BitsOp};
 use crate::regs::{RegCall, RegOp, BANK_BITS, WRITE_PROTECTED};
 use crate::target::RegInfo;
@@ -148,6 +149,8 @@ pub struct Program {
     pub adc_calls: BTreeMap<u32, AdcCall>,
     /// Condiciones electricas que asume el programa para el ADC (adquisicion y alimentacion).
     pub adc_config: adc::AdcConfig,
+    /// Llamadas a metodos de `pypic.periph.uart`, por id de expresion.
+    pub uart_calls: BTreeMap<u32, UartCall>,
 }
 
 pub struct Checked {
@@ -165,6 +168,7 @@ pub struct Checked {
     pub rom_gets: BTreeMap<u32, usize>,
     pub adc_calls: BTreeMap<u32, AdcCall>,
     pub adc_config: adc::AdcConfig,
+    pub uart_calls: BTreeMap<u32, UartCall>,
 }
 
 pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Checked {
@@ -208,6 +212,11 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         adc_needs: None,
         adc_pending: Vec::new(),
         adc_config: adc::AdcConfig::default(),
+        uart_name: false,
+        uart_calls: BTreeMap::new(),
+        uart_started: false,
+        uart_needs: None,
+        uart_pending: Vec::new(),
         roms: Vec::new(),
         rom_idx: HashMap::new(),
         rom_gets: BTreeMap::new(),
@@ -218,7 +227,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         stmt_top: None,
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, adc_calls: c.adc_calls, adc_config: c.adc_config }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, adc_calls: c.adc_calls, adc_config: c.adc_config, uart_calls: c.uart_calls }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -295,6 +304,12 @@ struct Checker<'a> {
     adc_needs: Option<Span>,
     adc_pending: Vec<AdcStart>,
     adc_config: adc::AdcConfig,
+    /// UART: importada, llamadas, si se inicio y los `start` por resolver (necesitan el reloj).
+    uart_name: bool,
+    uart_calls: BTreeMap<u32, UartCall>,
+    uart_started: bool,
+    uart_needs: Option<Span>,
+    uart_pending: Vec<UartPending>,
     /// Tablas constantes declaradas, su indice por nombre y las lecturas variables.
     roms: Vec<(String, Vec<u8>)>,
     rom_idx: HashMap<String, usize>,
@@ -326,6 +341,14 @@ struct AdcStart {
     span: Span,
     clock: Option<adc::AdcClock>,
     cfg: adc::AdcConfig,
+    func: Option<usize>,
+}
+
+/// Una llamada a `UART.start(baud=...)` por resolver (necesita el reloj del sistema).
+struct UartPending {
+    id: u32,
+    span: Span,
+    baud: u32,
     func: Option<usize>,
 }
 
@@ -372,6 +395,7 @@ impl<'a> Checker<'a> {
         self.check_timer_usage();
         self.check_pin_claims();
         self.check_adc_usage();
+        self.check_uart_usage();
         self.check_time_usage();
         self.check_asm_usage();
     }
@@ -456,6 +480,22 @@ impl<'a> Checker<'a> {
                     self.bits_fns.insert(n.name.clone());
                 } else {
                     self.d.error("PYP2140", n.span, format!("'pypic.bits' no exporta '{}' (exporta: {})", n.name, bits::FUNCTIONS.join(", ")));
+                }
+            }
+            return;
+        }
+        if module == "pypic.periph.uart" {
+            for n in names {
+                if n.name == "UART" {
+                    if let Some(set) = &self.target.peripherals {
+                        if !set.contains("EUSART") {
+                            self.d.error("PYP2180", n.span, format!("'{}' no tiene UART: el dispositivo no trae el EUSART", self.target.name));
+                            continue;
+                        }
+                    }
+                    self.uart_name = true;
+                } else {
+                    self.d.error("PYP2180", n.span, format!("'pypic.periph.uart' no exporta '{}' (exporta: UART)", n.name));
                 }
             }
             return;
@@ -1302,6 +1342,115 @@ impl<'a> Checker<'a> {
         }
     }
 
+    // ------------------------------------------------------ EUSART asincrono 8N1 (pypic.periph.uart)
+    fn uart_method(&mut self, e: &Expr, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
+        let void = |this: &mut Self| this.set(e, Type::Void, None);
+        if method != "start" {
+            if let Some(k) = kwargs.first() {
+                self.d.error("PYP2182", k.name_span, format!("UART.{method} no acepta argumentos con nombre"));
+            }
+        }
+        let (want, op, ret): (usize, UartOp, Type) = match method {
+            "start" => {
+                if !args.is_empty() {
+                    self.d.error("PYP2127", args[0].span, "UART.start se escribe con un argumento con nombre: UART.start(baud=9600)");
+                }
+                let mut baud = None;
+                for k in kwargs {
+                    if k.name != "baud" {
+                        self.expr(&k.value);
+                        self.d.error("PYP2182", k.name_span, format!("UART.start no tiene el argumento '{}' (admite: baud)", k.name));
+                        continue;
+                    }
+                    self.expr(&k.value);
+                    match self.konst(&k.value) {
+                        Some(b) if (50..=3_000_000).contains(&b) && self.ty(&k.value) != Type::Bool => baud = Some(b as u32),
+                        _ => self.d.error("PYP2182", k.value.span, "UART.start: baud es una constante de 50 a 3000000 (baudios): se calcula al compilar"),
+                    }
+                }
+                let Some(baud) = baud else {
+                    if kwargs.iter().all(|k| k.name != "baud") {
+                        self.d.error("PYP2182", e.span, "UART.start necesita baud=...: UART.start(baud=9600)");
+                    }
+                    return void(self);
+                };
+                self.note_claims("SPEN", e.span);
+                self.uart_started = true;
+                self.uart_pending.push(UartPending { id: e.id, span: e.span, baud, func: self.cur });
+                return void(self);
+            }
+            "write" => (1, UartOp::Write, Type::Void),
+            "send" => (1, UartOp::Send, Type::Void),
+            "read" => (0, UartOp::Read, U8),
+            "recv" => (0, UartOp::Recv, U8),
+            "tx_ready" => (0, UartOp::TxReady, Type::Bool),
+            "rx_ready" => (0, UartOp::RxReady, Type::Bool),
+            "sending" => (0, UartOp::Sending, Type::Bool),
+            "overrun" => (0, UartOp::Overrun, Type::Bool),
+            "framing_error" => (0, UartOp::FramingError, Type::Bool),
+            "clear_overrun" => (0, UartOp::ClearOverrun, Type::Void),
+            other => {
+                self.d.error("PYP2183", e.span, format!("UART no tiene el metodo '{other}' (disponibles: start, write, read, tx_ready, rx_ready, send, recv, sending, overrun, framing_error, clear_overrun)"));
+                for a in args {
+                    self.expr(a);
+                }
+                return self.set(e, Type::Error, None);
+            }
+        };
+        if args.len() != want {
+            self.d.error("PYP2055", e.span, format!("'UART.{method}' recibe {want} argumento(s)"));
+            for a in args {
+                self.expr(a);
+            }
+            return self.set(e, Type::Error, None);
+        }
+        if want == 1 {
+            self.expect(&args[0], U8, Some(&format!("UART.{method} envia un u8: convierte con u8(...)")));
+        }
+        self.uart_needs.get_or_insert(e.span);
+        self.uart_calls.insert(e.id, UartCall { op });
+        self.set(e, ret, None)
+    }
+
+    /// UART usada sin un `UART.start(baud=...)` alcanzable, una sola velocidad y el generador de baudios resuelto con el reloj.
+    ///
+    /// Igual que con el ADC, se comprueba que el `start()` **exista** y se pueda ejecutar desde `main` o `@init_device`, no el orden.
+    fn check_uart_usage(&mut self) {
+        let pend = std::mem::take(&mut self.uart_pending);
+        if let Some(sp) = self.uart_needs.take() {
+            let reach = self.entry_reachable();
+            if !pend.iter().any(|p| p.func.is_none_or(|f| reach.contains(&f))) {
+                let why = if pend.is_empty() { "nunca se llama a UART.start(baud=...)" } else { "las llamadas a UART.start() estan en funciones que ni main ni @init_device pueden llamar" };
+                self.d.error("PYP2181", sp, format!("la UART se usa pero {why}: inicializala en main o en una funcion que main llame (se comprueba que exista, no el orden)"));
+            }
+        }
+        if let Some(first) = pend.first() {
+            if let Some(other) = pend.iter().find(|p| p.baud != first.baud) {
+                self.d.error("PYP2186", other.span, format!("UART.start pide {} baudios y otra llamada {}: el EUSART tiene un solo generador; repite la misma velocidad", other.baud, first.baud));
+            }
+        }
+        for p in pend {
+            let Some(hz) = self.effective_clock(p.span, "UART.start") else { continue };
+            let Some(brg) = uart::solve(hz, p.baud) else {
+                self.d.error("PYP2182", p.span, format!("{} baudios no se pueden generar con un reloj de {hz} Hz: ni con SPBRG = 0 y BRGH = BRG16 = 1 (FOSC/4) se llega tan alto", p.baud));
+                continue;
+            };
+            let err = brg.error_pct(hz);
+            if err.abs() > uart::MAX_PCT {
+                self.d.error(
+                    "PYP2182",
+                    p.span,
+                    format!("a {hz} Hz el generador de baudios da {:.0} baudios para los {} pedidos (error {err:+.2} %): pasa de {} % y la comunicacion fallaria aunque el otro extremo fuera exacto; cambia el reloj o la velocidad", brg.achieved(hz), p.baud, uart::MAX_PCT),
+                );
+                continue;
+            }
+            if err.abs() > uart::WARN_PCT {
+                self.d.warning("PYP3014", p.span, format!("error de baudios de {err:+.2} % ({:.0} baudios para los {} pedidos): pasa de {} % y el otro extremo suma el suyo; un reloj distinto lo mejora", brg.achieved(hz), p.baud, uart::WARN_PCT));
+            }
+            self.uart_calls.insert(p.id, UartCall { op: UartOp::Start(UartStart { baud: p.baud, brg: Some(brg) }) });
+        }
+    }
+
     /// Funciones alcanzables desde `main` y `@init_device` (o, sin `main`, desde las que nadie llama).
     fn entry_reachable(&self) -> BTreeSet<usize> {
         let called: BTreeSet<&String> = self.functions.iter().flat_map(|f| f.calls.iter()).collect();
@@ -1373,6 +1522,9 @@ impl<'a> Checker<'a> {
     }
 
     fn method_call(&mut self, e: &Expr, obj: &str, obj_span: Span, attr: Option<&Ident>, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
+        if obj == "UART" && self.uart_name {
+            return self.uart_method(e, method, args, kwargs);
+        }
         if obj == "ADC" && self.adc_name {
             return self.adc_method(e, method, args, kwargs);
         }
@@ -2177,6 +2329,8 @@ impl<'a> Checker<'a> {
         }
         if self.timer_consts.contains(n) {
             self.d.error("PYP2128", e.span, format!("'{n}' es una constante de configuracion de temporizadores: solo se usa como argumento de TMRx.start(...)"));
+        } else if self.uart_name && n == "UART" {
+            self.d.error("PYP2185", e.span, "'UART' es el puerto serie: usa sus metodos (UART.start(baud=9600), UART.write(x), UART.read()...)");
         } else if self.adc_name && n == "ADC" {
             self.d.error("PYP2175", e.span, "'ADC' es el convertidor: usa sus metodos (ADC.start(), ADC.read(AN0), ADC.result()...)");
         } else if self.adc_consts.contains(n) {
@@ -2617,7 +2771,7 @@ const PERIPH_MODULES: &[&str] = &["gpio", "adc", "timer", "pwm", "ccp", "eccp", 
 const SYSTEM_MODULES: &[&str] = &["time", "irq", "wdt", "clock", "power", "flash"];
 /// `pypic.soft.*`: implementaciones por software sobre cualquier GPIO (cuestan ciclos de CPU).
 const SOFT_MODULES: &[&str] = &["spi", "i2c", "uart", "onewire"];
-const IMPLEMENTED_MODULES: &[&str] = &["pypic.periph.adc", "pypic.periph.gpio", "pypic.periph.timer", "pypic.regs", "pypic.bits", "pypic.system.time"];
+const IMPLEMENTED_MODULES: &[&str] = &["pypic.periph.uart", "pypic.periph.adc", "pypic.periph.gpio", "pypic.periph.timer", "pypic.regs", "pypic.bits", "pypic.system.time"];
 
 /// Problema con la ruta de un modulo `pypic.*` (renombrado, categoria sin modulo, inexistente o aun no implementado).
 /// `None` si es un modulo implementado o no es del arbol de categorias.

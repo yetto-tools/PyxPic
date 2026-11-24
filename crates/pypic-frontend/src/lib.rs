@@ -16,11 +16,13 @@ pub mod runtime;
 pub mod target;
 pub mod timer;
 pub mod types;
+pub mod uart;
 
 pub use check::{time_unit, DelayUnit, PinDecl, Program};
 pub use diag::{Diagnostic, Diagnostics, Severity, Span};
 pub use adc::{AdcCall, AdcClock, AdcConfig, AdcOp};
 pub use bits::BitsOp;
+pub use uart::{UartBrg, UartCall, UartOp, UartStart};
 pub use regs::{RegCall, RegOp};
 pub use runtime::{pow2_exp, routine_for, RtKind};
 pub use target::{PinClaim, PinInfo, RegInfo, TargetProfile};
@@ -59,6 +61,6 @@ pub fn analyze(source: &str, target: &TargetProfile) -> Analysis {
         }
     }
     let c = check::check(&module, target, &mut d);
-    let program = (!d.has_errors()).then_some(Program { module, info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, adc_calls: c.adc_calls, adc_config: c.adc_config });
+    let program = (!d.has_errors()).then_some(Program { module, info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, adc_calls: c.adc_calls, adc_config: c.adc_config, uart_calls: c.uart_calls });
     Analysis { program, diagnostics: d }
 }
