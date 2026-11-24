@@ -270,3 +270,26 @@ fn config_errors_say_what_is_valid_and_write_nothing() {
     let o = pypic(&root(), &["build", src.to_str().unwrap(), "--config", "WDTE", "-o", out.to_str().unwrap()]);
     assert_eq!(o.status.code(), Some(2));
 }
+
+// ---- Intel HEX mal formado (#61) -----------------------------------------------------------------------
+
+#[test]
+fn disasm_rejects_malformed_control_records_with_a_failing_exit_status() {
+    let dir = tmp("hexbad");
+    // los dos archivos del issue: checksum correcto, pero un EOF con datos y un tipo 04 con direccion
+    for (name, body, needle) in [
+        ("eof_con_datos.hex", ":0100000100FE\n", "registro 01"),
+        ("ext_con_direccion.hex", ":020002040000F8\n:00000001FF\n", "registro 04"),
+    ] {
+        let f = dir.join(name);
+        std::fs::write(&f, body).unwrap();
+        let o = pypic(&root(), &["disasm", f.to_str().unwrap()]);
+        assert_eq!(o.status.code(), Some(1), "{name}: {}", text(&o));
+        assert!(text(&o).contains(needle) && text(&o).contains(":1") || text(&o).contains(needle), "{name}: {}", text(&o));
+        assert!(!text(&o).contains("0 palabras"), "{name}: no debe informar una imagen vacia como exito");
+    }
+    // un archivo valido y vacio sigue siendo correcto
+    let ok = dir.join("vacio.hex");
+    std::fs::write(&ok, ":00000001FF\n").unwrap();
+    assert!(pypic(&root(), &["disasm", ok.to_str().unwrap()]).status.success());
+}

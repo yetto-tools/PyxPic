@@ -175,9 +175,14 @@ impl Image {
                         img.set((base / 2) as u32 + k as u32, word).map_err(|e| err(&e.to_string()))?;
                     }
                 }
+                // el fin de archivo es exactamente `:00000001FF`: sin datos y con la direccion en cero
+                0x01 if len != 0 => return Err(err("registro 01 (fin de archivo) con datos: la longitud debe ser 0")),
+                0x01 if addr != 0 => return Err(err("registro 01 (fin de archivo) con direccion distinta de 0000")),
                 0x01 => seen_eof = true,
-                0x04 if len == 2 => upper = u16::from_be_bytes([data[0], data[1]]) as u64,
-                0x04 => return Err(err("registro 04 con longitud distinta de 2")),
+                // direccion lineal extendida: dos bytes de datos y el campo de direccion en 0000
+                0x04 if len != 2 => return Err(err("registro 04 con longitud distinta de 2")),
+                0x04 if addr != 0 => return Err(err("registro 04 (direccion lineal extendida) con direccion distinta de 0000")),
+                0x04 => upper = u16::from_be_bytes([data[0], data[1]]) as u64,
                 t => return Err(err(&format!("tipo de registro {t:#04x} no soportado"))),
             }
         }
