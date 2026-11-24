@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "program": {
+    "words": 8192,
+    "word_bits": 14,
+    "reset_vector": "0x0000",
+    "interrupt_vector": "0x0004",
+    "stack_levels": 8,
+    "source": "DS40001291H p.22 (Figura 2-3)"
+  },
+  "data": {
+    "banks": 4,
+    "bank_size": 128,
+    "sfr": [
+      { "start": "0x000", "end": "0x01F" },
+      { "start": "0x080", "end": "0x09F" },
+      { "start": "0x100", "end": "0x10F" },
+      { "start": "0x180", "end": "0x18F" }
+    ],
+    "bank_select": { "register": "STATUS", "bits": ["RP0", "RP1"] },
+    "gpr": [
+      { "start": "0x020", "end": "0x07F" },
+      { "start": "0x0A0", "end": "0x0EF" },
+      { "start": "0x110", "end": "0x16F" },
+      { "start": "0x190", "end": "0x1EF" }
+    ],
+    "common": { "start": "0x070", "end": "0x07F", "mirrors": ["0x0F0", "0x170", "0x1F0"] },
+    "ram_bytes": 368,
+    "source": "DS40001291H p.23 (seccion 2.2) y p.26 (Figura 2-6): los bancos 2 y 3 tienen 16 SFR y 16 bytes extra de GPR (110h-11Fh, 190h-19Fh)"
+  },
+  "eeprom": { "bytes": 256 }
+}

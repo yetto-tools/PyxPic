@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/pypic-frontend", "crates/pypic-ir", "crates/pypic-cli"]
+members = ["crates/pypic-frontend", "crates/pypic-ir", "crates/pypic-device", "crates/pypic-cli"]
 
 [workspace.package]
 version = "0.0.1"

@@ -33,11 +33,15 @@ Los prototipos UI y snippets anteriores son ilustrativos. Las APIs, versiones y 
 ```
 crates/
   pypic-frontend/   lexer, parser, tipos y constantes (src/, tests/)
-  pypic-ir/         IR tipada, lowering, verificador (src/, tests/)
-  pypic-cli/        binario `pypic` (check, ir)
+  pypic-ir/         IR tipada, lowering, verificador, intérprete de referencia (src/, tests/)
+  pypic-device/     Device Packs: esquema, cargador y validador (src/, tests/)
+  pypic-cli/        binario `pypic` (check, ir, device validate)
+devices/
+  pic16f887/        Device Pack verificado contra DS40001291H
 docs/
   spec/             especificación (docx, ZIP y módulos 00–09)
   frontend.md       diseño y semántica del frontend
+  device-packs.md   esquema y validación de Device Packs
   ISSUES_BACKLOG.md backlog propuesto como issues
 examples/           programas PyPIC de ejemplo (.py)
 AGENTS.md  TASKS.md
@@ -50,4 +54,6 @@ extensión de VS Code se añadirán como nuevos crates/carpetas.
 cargo test
 cargo run -p pypic-cli -- check examples/counter.py
 cargo run -p pypic-cli -- ir examples/counter.py
+cargo run -p pypic-cli -- device validate devices/pic16f887
+cargo run -p pypic-cli -- check examples/counter.py --device devices/pic16f887
 ```

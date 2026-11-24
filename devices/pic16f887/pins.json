@@ -1,0 +1,373 @@
+{
+  "schema_version": 1,
+  "packages": [
+    {
+      "name": "PDIP40",
+      "pin_count": 40,
+      "source": "DS40001291H p.7 (Pin Diagrams - PIC16F884/887, 40-Pin PDIP)",
+      "pins": [
+        {
+          "number": 1,
+          "name": "RE3",
+          "port": "E",
+          "bit": 3,
+          "input_only": true,
+          "functions": [
+            "MCLR",
+            "VPP"
+          ]
+        },
+        {
+          "number": 2,
+          "name": "RA0",
+          "port": "A",
+          "bit": 0,
+          "functions": [
+            "AN0",
+            "ULPWU",
+            "C12IN0-"
+          ]
+        },
+        {
+          "number": 3,
+          "name": "RA1",
+          "port": "A",
+          "bit": 1,
+          "functions": [
+            "AN1",
+            "C12IN1-"
+          ]
+        },
+        {
+          "number": 4,
+          "name": "RA2",
+          "port": "A",
+          "bit": 2,
+          "functions": [
+            "AN2",
+            "VREF-",
+            "CVREF",
+            "C2IN+"
+          ]
+        },
+        {
+          "number": 5,
+          "name": "RA3",
+          "port": "A",
+          "bit": 3,
+          "functions": [
+            "AN3",
+            "VREF+",
+            "C1IN+"
+          ]
+        },
+        {
+          "number": 6,
+          "name": "RA4",
+          "port": "A",
+          "bit": 4,
+          "functions": [
+            "T0CKI",
+            "C1OUT"
+          ]
+        },
+        {
+          "number": 7,
+          "name": "RA5",
+          "port": "A",
+          "bit": 5,
+          "functions": [
+            "AN4",
+            "SS",
+            "C2OUT"
+          ]
+        },
+        {
+          "number": 8,
+          "name": "RE0",
+          "port": "E",
+          "bit": 0,
+          "functions": [
+            "AN5"
+          ]
+        },
+        {
+          "number": 9,
+          "name": "RE1",
+          "port": "E",
+          "bit": 1,
+          "functions": [
+            "AN6"
+          ]
+        },
+        {
+          "number": 10,
+          "name": "RE2",
+          "port": "E",
+          "bit": 2,
+          "functions": [
+            "AN7"
+          ]
+        },
+        {
+          "number": 11,
+          "name": "VDD",
+          "power": true
+        },
+        {
+          "number": 12,
+          "name": "VSS",
+          "power": true
+        },
+        {
+          "number": 13,
+          "name": "RA7",
+          "port": "A",
+          "bit": 7,
+          "functions": [
+            "OSC1",
+            "CLKIN"
+          ]
+        },
+        {
+          "number": 14,
+          "name": "RA6",
+          "port": "A",
+          "bit": 6,
+          "functions": [
+            "OSC2",
+            "CLKOUT"
+          ]
+        },
+        {
+          "number": 15,
+          "name": "RC0",
+          "port": "C",
+          "bit": 0,
+          "functions": [
+            "T1OSO",
+            "T1CKI"
+          ]
+        },
+        {
+          "number": 16,
+          "name": "RC1",
+          "port": "C",
+          "bit": 1,
+          "functions": [
+            "T1OSI",
+            "CCP2"
+          ]
+        },
+        {
+          "number": 17,
+          "name": "RC2",
+          "port": "C",
+          "bit": 2,
+          "functions": [
+            "P1A",
+            "CCP1"
+          ]
+        },
+        {
+          "number": 18,
+          "name": "RC3",
+          "port": "C",
+          "bit": 3,
+          "functions": [
+            "SCK",
+            "SCL"
+          ]
+        },
+        {
+          "number": 19,
+          "name": "RD0",
+          "port": "D",
+          "bit": 0,
+          "functions": []
+        },
+        {
+          "number": 20,
+          "name": "RD1",
+          "port": "D",
+          "bit": 1,
+          "functions": []
+        },
+        {
+          "number": 21,
+          "name": "RD2",
+          "port": "D",
+          "bit": 2,
+          "functions": []
+        },
+        {
+          "number": 22,
+          "name": "RD3",
+          "port": "D",
+          "bit": 3,
+          "functions": []
+        },
+        {
+          "number": 23,
+          "name": "RC4",
+          "port": "C",
+          "bit": 4,
+          "functions": [
+            "SDI",
+            "SDA"
+          ]
+        },
+        {
+          "number": 24,
+          "name": "RC5",
+          "port": "C",
+          "bit": 5,
+          "functions": [
+            "SDO"
+          ]
+        },
+        {
+          "number": 25,
+          "name": "RC6",
+          "port": "C",
+          "bit": 6,
+          "functions": [
+            "TX",
+            "CK"
+          ]
+        },
+        {
+          "number": 26,
+          "name": "RC7",
+          "port": "C",
+          "bit": 7,
+          "functions": [
+            "RX",
+            "DT"
+          ]
+        },
+        {
+          "number": 27,
+          "name": "RD4",
+          "port": "D",
+          "bit": 4,
+          "functions": []
+        },
+        {
+          "number": 28,
+          "name": "RD5",
+          "port": "D",
+          "bit": 5,
+          "functions": [
+            "P1B"
+          ]
+        },
+        {
+          "number": 29,
+          "name": "RD6",
+          "port": "D",
+          "bit": 6,
+          "functions": [
+            "P1C"
+          ]
+        },
+        {
+          "number": 30,
+          "name": "RD7",
+          "port": "D",
+          "bit": 7,
+          "functions": [
+            "P1D"
+          ]
+        },
+        {
+          "number": 31,
+          "name": "VSS",
+          "power": true
+        },
+        {
+          "number": 32,
+          "name": "VDD",
+          "power": true
+        },
+        {
+          "number": 33,
+          "name": "RB0",
+          "port": "B",
+          "bit": 0,
+          "functions": [
+            "AN12",
+            "INT"
+          ]
+        },
+        {
+          "number": 34,
+          "name": "RB1",
+          "port": "B",
+          "bit": 1,
+          "functions": [
+            "AN10",
+            "C12IN3-"
+          ]
+        },
+        {
+          "number": 35,
+          "name": "RB2",
+          "port": "B",
+          "bit": 2,
+          "functions": [
+            "AN8"
+          ]
+        },
+        {
+          "number": 36,
+          "name": "RB3",
+          "port": "B",
+          "bit": 3,
+          "functions": [
+            "AN9",
+            "PGM",
+            "C12IN2-"
+          ]
+        },
+        {
+          "number": 37,
+          "name": "RB4",
+          "port": "B",
+          "bit": 4,
+          "functions": [
+            "AN11"
+          ]
+        },
+        {
+          "number": 38,
+          "name": "RB5",
+          "port": "B",
+          "bit": 5,
+          "functions": [
+            "AN13",
+            "T1G"
+          ]
+        },
+        {
+          "number": 39,
+          "name": "RB6",
+          "port": "B",
+          "bit": 6,
+          "functions": [
+            "ICSPCLK"
+          ]
+        },
+        {
+          "number": 40,
+          "name": "RB7",
+          "port": "B",
+          "bit": 7,
+          "functions": [
+            "ICSPDAT"
+          ]
+        }
+      ]
+    }
+  ]
+}

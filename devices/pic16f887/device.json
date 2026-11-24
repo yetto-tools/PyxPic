@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "name": "PIC16F887",
+  "vendor": "Microchip",
+  "family": "PIC16 mid-range (PIC14)",
+  "cpu": {
+    "core": "pic14",
+    "data_bits": 8,
+    "instruction_bits": 14,
+    "instruction_count": 35,
+    "max_clock_hz": 20000000
+  },
+  "io_pins": 35,
+  "peripherals": {
+    "eeprom_bytes": 256,
+    "adc_channels": 14,
+    "adc_bits": 10,
+    "ccp": 1,
+    "eccp": 1,
+    "eusart": 1,
+    "mssp": 1,
+    "comparators": 2,
+    "timers_8bit": 2,
+    "timers_16bit": 1
+  },
+  "pypic": {
+    "support_level": "experimental",
+    "max_int_bits": 32
+  },
+  "sources": [
+    "DS40001291H: https://ww1.microchip.com/downloads/aemDocuments/documents/OTH/ProductDocuments/DataSheets/40001291H.pdf (p.1-2: caracteristicas y tabla de familia)"
+  ]
+}
