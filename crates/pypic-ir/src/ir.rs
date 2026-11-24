@@ -155,6 +155,8 @@ pub struct Module {
     /// Reloj efectivo (declarado o el del dispositivo por defecto).
     pub clock_hz: Option<u32>,
     pub clock_defaulted: bool,
+    /// La fuente del reloj declarada con `CLOCK: Internal[...]` (y las demas): fija `FOSC` y `OSCCON`.
+    pub clock_source: Option<pypic_frontend::ClockSource>,
 }
 
 impl Module {

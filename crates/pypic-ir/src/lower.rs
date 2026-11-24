@@ -14,6 +14,7 @@ pub fn lower(prog: &Program) -> Module {
     m.device = prog.device.clone();
     m.clock_hz = prog.clock_hz;
     m.clock_defaulted = prog.clock_defaulted;
+    m.clock_source = prog.clock_source.clone();
     m.roms = prog.roms.clone();
     m.arrays = prog.arrays.clone();
     m.adc_acq_ns = prog.adc_config.acq_ns;
@@ -21,7 +22,7 @@ pub fn lower(prog: &Program) -> Module {
     for it in &prog.module.items {
         if let Item::Var(v) = it {
             // las tablas viven en la memoria de programa, no son globales
-            if prog.roms.iter().any(|t| t.0 == v.name.name) || prog.arrays.iter().any(|t| t.0 == v.name.name) {
+            if prog.roms.iter().any(|t| t.0 == v.name.name) || prog.arrays.iter().any(|t| t.0 == v.name.name) || matches!(v.ann.kind, TypeExprKind::Clock(..)) {
                 continue;
             }
             let sym = &prog.globals[&v.name.name];
@@ -84,7 +85,7 @@ fn ann_type(te: &TypeExpr) -> Type {
         TypeExprKind::Name(n) => Type::from_name(n).unwrap_or(Type::Error),
         TypeExprKind::Const(inner) => ann_type(inner),
         TypeExprKind::None => Type::Void,
-        TypeExprKind::Rom(_) | TypeExprKind::Array(..) => Type::Error,
+        TypeExprKind::Rom(_) | TypeExprKind::Array(..) | TypeExprKind::Clock(..) => Type::Error,
     }
 }
 

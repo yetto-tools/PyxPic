@@ -11,6 +11,7 @@
 
 use crate::adc::{self, AdcCall, AdcOp};
 use crate::uart::{self, FmtPart, UartCall, UartOp, UartStart};
+use crate::clock::{self, ClockKind, ClockSource};
 use crate::bits::{self, BitsOp};
 use crate::regs::{RegCall, RegOp, BANK_BITS, WRITE_PROTECTED};
 use crate::target::RegInfo;
@@ -136,6 +137,7 @@ pub struct Program {
     pub clock_hz: Option<u32>,
     /// `clock_hz` es el reloj por defecto del dispositivo (no se declaro `CLOCK_HZ`).
     pub clock_defaulted: bool,
+    pub clock_source: Option<ClockSource>,
     /// Llamadas a metodos de `pypic.periph.timer`, por id de expresion.
     pub timer_calls: BTreeMap<u32, TimerCall>,
     /// Llamadas a metodos de `pypic.regs`, por id de expresion.
@@ -166,6 +168,7 @@ pub struct Checked {
     pub device: Option<String>,
     pub clock_hz: Option<u32>,
     pub clock_defaulted: bool,
+    pub clock_source: Option<ClockSource>,
     pub timer_calls: BTreeMap<u32, TimerCall>,
     pub reg_calls: BTreeMap<u32, RegCall>,
     pub bits_calls: BTreeMap<u32, BitsOp>,
@@ -198,6 +201,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         declared_device: None,
         clock_hz: None,
         clock_defaulted: false,
+        clock_source: None,
         in_const_decl: false,
         time_fns: HashMap::new(),
         time_uses: Vec::new(),
@@ -241,7 +245,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         stmt_top: None,
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, arrays: c.arrays, array_gets: c.array_gets, adc_calls: c.adc_calls, adc_config: c.adc_config, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, clock_source: c.clock_source, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, arrays: c.arrays, array_gets: c.array_gets, adc_calls: c.adc_calls, adc_config: c.adc_config, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -286,6 +290,7 @@ struct Checker<'a> {
     clock_hz: Option<u32>,
     /// El reloj no se declaro y se uso el del dispositivo por defecto.
     clock_defaulted: bool,
+    clock_source: Option<ClockSource>,
     /// Verdadero mientras se resuelve el tipo de una constante `Const`: no cuesta nada en el dispositivo.
     in_const_decl: bool,
     /// Funciones de `pypic.system.time` importadas.
@@ -385,6 +390,10 @@ struct TimerEvery {
 
 impl<'a> Checker<'a> {
     fn run(&mut self, m: &Module) {
+        // las unidades de frecuencia: constantes predeclaradas (4 * MHz), igual que los tipos
+        for (name, v) in [("MHz", 1_000_000), ("kHz", 1_000), ("Hz", 1)] {
+            self.globals.insert(name.to_string(), Symbol { name: name.to_string(), ty: U32, kind: SymKind::Global, konst: Some(v), is_final: true });
+        }
         for (i, it) in m.items.iter().enumerate() {
             if let Item::Import { span, module, names } = it {
                 if module == "pypic.device" {
@@ -452,6 +461,10 @@ impl<'a> Checker<'a> {
         if ty == Type::Error {
             return;
         }
+        if self.clock_source.is_some() {
+            self.d.error("PYP2192", v.name.span, "el reloj ya se declaro con 'CLOCK: ...[...]': usa solo una de las dos formas (CLOCK o CLOCK_HZ)");
+            return;
+        }
         if !is_final || ty != U32 {
             self.d.error("PYP2093", v.name.span, "CLOCK_HZ debe declararse como 'CLOCK_HZ: Const[uint32] = 4_000_000' (frecuencia del reloj del sistema en hercios)");
             return;
@@ -492,6 +505,15 @@ impl<'a> Checker<'a> {
                     );
                 } else {
                     self.d.error("PYP1002", n.span, format!("'pypic.system.time' no exporta '{}' (exporta: delay_cycles, delay_us, pause, wait; reservadas: nap, sleep)", n.name));
+                }
+            }
+            return;
+        }
+        if module == "pypic.clock" {
+            for n in names {
+                // los nombres ya estan predeclarados (no hace falta importarlos); importarlos es valido y no hace nada
+                if !matches!(n.name.as_str(), "Internal" | "Crystal" | "ExternalClock" | "MHz" | "kHz" | "Hz") {
+                    self.d.error("PYP2190", n.span, format!("'pypic.clock' no exporta '{}' (exporta: Internal, Crystal, ExternalClock, MHz, kHz, Hz)", n.name));
                 }
             }
             return;
@@ -686,7 +708,8 @@ impl<'a> Checker<'a> {
                 }
             },
         };
-        if let (false, Some(def)) = (self.clock_defaulted, self.target.default_clock_hz) {
+        // con `CLOCK: ...[...]` el compilador si configura el oscilador (FOSC y OSCCON): el aviso solo vale para CLOCK_HZ a secas
+        if let (false, Some(def), None) = (self.clock_defaulted, self.target.default_clock_hz, &self.clock_source) {
             if hz != def {
                 self.d.warning(
                     "PYP3005",
@@ -2041,6 +2064,9 @@ impl<'a> Checker<'a> {
         if let TypeExprKind::Array(elem, n) = &v.ann.kind {
             return self.declare_array(v, elem, *n, is_global);
         }
+        if let TypeExprKind::Clock(kind, e) = &v.ann.kind {
+            return self.declare_clock(v, kind, e, is_global);
+        }
         match &v.ann.kind {
             TypeExprKind::Const(inner) if matches!(inner.kind, TypeExprKind::Rom(_)) => {
                 let TypeExprKind::Rom(elem) = &inner.kind else { unreachable!() };
@@ -2195,6 +2221,54 @@ impl<'a> Checker<'a> {
     /// Profundidad maxima de CALL anidados desde `f` (hoja = 0). Sin recursion es finita;
     /// el guardia de ciclos solo evita bucles si ya se reporto `PYP2013`.
     /// `NOMBRE: Rom[u8] = [..]`: datos constantes en la memoria de programa (`docs/sdk-tablas.md`).
+    /// `CLOCK: Internal[4 * MHz]` / `Crystal[20 * MHz]` / `ExternalClock[20 * MHz]`: la fuente y la frecuencia del reloj (docs/sdk-reloj.md).
+    /// Fija la frecuencia como `CLOCK_HZ`, la palabra de configuracion `FOSC` y, para el oscilador interno, `OSCCON`; y reserva los pines
+    /// del oscilador externo.
+    fn declare_clock(&mut self, v: &VarDecl, kind: &str, e: &Expr, is_global: bool) {
+        let name = &v.name.name;
+        if !is_global || name != "CLOCK" {
+            self.d.error("PYP2190", v.name.span, "el reloj se declara a nivel de modulo y se llama CLOCK: 'CLOCK: Internal[4 * MHz]' (o Crystal[...] / ExternalClock[...])");
+            return;
+        }
+        if let Some(val) = &v.value {
+            self.expr(val);
+            self.d.error("PYP2190", val.span, "CLOCK: Internal[...] ya lleva la frecuencia entre corchetes: no se asigna con '='");
+        }
+        if self.clock_hz.is_some() || self.clock_source.is_some() {
+            self.d.error("PYP2192", v.name.span, "el reloj ya se declaro: usa solo una de las dos formas (CLOCK o CLOCK_HZ) y una sola vez");
+            return;
+        }
+        if self.expr(e) == Type::Error {
+            return;
+        }
+        let Some(hz) = self.konst(e).filter(|h| (1..=u32::MAX as i128).contains(h)) else {
+            self.d.error("PYP2193", e.span, "la frecuencia es una constante mayor que 0 (por ejemplo 4 * MHz): se resuelve al compilar");
+            return;
+        };
+        let k = match kind {
+            "Internal" => ClockKind::Internal,
+            "Crystal" => ClockKind::Crystal,
+            _ => ClockKind::ExternalClock,
+        };
+        let src = match clock::resolve(k, hz as u32) {
+            Ok(s) => s,
+            Err(msg) => {
+                self.d.error("PYP2194", e.span, msg);
+                return;
+            }
+        };
+        if let Some(max) = self.target.max_clock_hz {
+            if hz > max as i128 {
+                self.d.error("PYP2094", e.span, format!("{hz} Hz excede el reloj maximo de '{}' ({max} Hz)", self.target.name));
+            }
+        }
+        for (pin, function) in src.pins {
+            self.claims.push(Claim { pin: pin.to_string(), function: function.to_string(), peripheral: format!("oscilador externo ({kind})"), span: v.span, via_timer: false });
+        }
+        self.clock_hz = Some(hz as u32);
+        self.clock_source = Some(src);
+    }
+
     /// `buf: uint8[16]`: un arreglo de capacidad fija en RAM (docs/sdk-arreglos.md). Solo globales y solo `uint8`; empieza en cero
     /// (el arranque lo pone a cero, como al resto de las globales) y no se inicializa con valores.
     fn declare_array(&mut self, v: &VarDecl, elem: &TypeExpr, n: i128, is_global: bool) {

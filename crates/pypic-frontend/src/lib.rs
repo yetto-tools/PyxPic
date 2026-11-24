@@ -6,6 +6,7 @@
 
 pub mod adc;
 pub mod ast;
+pub mod clock;
 pub mod bits;
 pub mod check;
 pub mod diag;
@@ -22,6 +23,7 @@ pub use check::{time_unit, DelayUnit, PinDecl, Program};
 pub use diag::{Diagnostic, Diagnostics, Severity, Span};
 pub use adc::{AdcCall, AdcClock, AdcConfig, AdcOp};
 pub use bits::BitsOp;
+pub use clock::{ClockKind, ClockSource};
 pub use uart::{format_uint, FmtPart, UartBrg, UartCall, UartOp, UartStart};
 pub use regs::{RegCall, RegOp};
 pub use runtime::{pow2_exp, routine_for, RtKind};
@@ -61,6 +63,6 @@ pub fn analyze(source: &str, target: &TargetProfile) -> Analysis {
         }
     }
     let c = check::check(&module, target, &mut d);
-    let program = (!d.has_errors()).then_some(Program { module, info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, arrays: c.arrays, array_gets: c.array_gets, adc_calls: c.adc_calls, adc_config: c.adc_config, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt });
+    let program = (!d.has_errors()).then_some(Program { module, info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, clock_source: c.clock_source, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, arrays: c.arrays, array_gets: c.array_gets, adc_calls: c.adc_calls, adc_config: c.adc_config, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt });
     Analysis { program, diagnostics: d }
 }

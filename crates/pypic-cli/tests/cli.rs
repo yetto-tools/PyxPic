@@ -426,3 +426,19 @@ fn disasm_rejects_malformed_control_records_with_a_failing_exit_status() {
     std::fs::write(&ok, ":00000001FF\n").unwrap();
     assert!(pypic(&root(), &["disasm", ok.to_str().unwrap()]).status.success());
 }
+
+#[test]
+fn clock_declaration_sets_fosc_and_rejects_a_conflicting_config() {
+    let dir = tmp("clock-source");
+    let src = dir.join("reloj.py");
+    std::fs::write(&src, "from pypic.device import PIC16F887\nCLOCK: Crystal[20 * MHz]\n\n\ndef main() -> None:\n    pass\n").unwrap();
+    let out = dir.join("reloj.hex");
+    let o = pypic(&root(), &["build", src.to_str().unwrap(), "-o", out.to_str().unwrap()]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(text(&o).contains("Crystal 20 MHz (FOSC = HS)"), "{}", text(&o));
+    let img = Image::from_intel_hex(&std::fs::read_to_string(&out).unwrap()).unwrap();
+    assert_eq!(img.get(0x2007), Some(0x20D2)); // FOSC = HS (010) en lugar del INTOSCIO (100) por defecto: 0x20D4
+    // pedir otro oscilador a la vez es una contradiccion
+    let o = pypic(&root(), &["build", src.to_str().unwrap(), "-o", out.to_str().unwrap(), "--config", "FOSC=XT"]);
+    assert!(!o.status.success() && text(&o).contains("fija FOSC = HS"), "{}", text(&o));
+}

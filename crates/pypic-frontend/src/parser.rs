@@ -341,6 +341,13 @@ impl<'a> Parser<'a> {
                 let end = self.expect(Tok::RBracket, "']'")?;
                 Ok(TypeExpr { span: sp.to(end), kind: TypeExprKind::Rom(Box::new(inner)) })
             }
+            Tok::Ident(s) if matches!(s.as_str(), "Internal" | "Crystal" | "ExternalClock") && matches!(self.peek_at(1), Tok::LBracket) => {
+                self.bump();
+                self.bump();
+                let e = self.expr()?;
+                let end = self.expect(Tok::RBracket, "']'")?;
+                Ok(TypeExpr { span: sp.to(end), kind: TypeExprKind::Clock(s, Box::new(e)) })
+            }
             Tok::Ident(s) if !UNSUPPORTED_KEYWORDS.contains(&s.as_str()) => {
                 self.bump();
                 if self.at(&Tok::LBracket) {

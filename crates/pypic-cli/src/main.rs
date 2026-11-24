@@ -468,6 +468,14 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     }
     // build: IR -> instrucciones PIC14 -> Intel HEX
     let pack = pack.expect("comprobado arriba");
+    // `CLOCK: Crystal[20 * MHz]` fija el oscilador (FOSC): pedir otro con --config seria una contradiccion
+    if let Some(cs) = &module.clock_source {
+        if settings.iter().any(|(n, _)| n == "FOSC") {
+            eprintln!("{file}: error: el programa declara 'CLOCK: {}[...]', que fija FOSC = {}: quita --config FOSC=... (o declara el reloj con CLOCK_HZ para elegir el oscilador a mano)", cs.kind.name(), cs.fosc);
+            return ExitCode::from(1);
+        }
+        settings.push(("FOSC".to_string(), cs.fosc.to_string()));
+    }
     let opts = match backend_options(&pack, &settings) {
         Ok(o) => o,
         Err(e) => {
@@ -509,7 +517,13 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     }
     let cfg_text = {
         let names: Vec<String> = pack.config.words.iter().zip(&opts.config).map(|(w, (_, v))| format!("{}={v:#06X}", w.name)).collect();
-        let how = if settings.is_empty() { "por defecto del pack: INTOSCIO, WDT apagado, MCLR interno".to_string() } else { format!("{} ajuste(s) pedidos", settings.len()) };
+        let asked = settings.len() - module.clock_source.is_some() as usize;
+        let how = match (&module.clock_source, asked) {
+            (None, 0) => "por defecto del pack: INTOSCIO, WDT apagado, MCLR interno".to_string(),
+            (None, n) => format!("{n} ajuste(s) pedidos"),
+            (Some(cs), 0) => format!("FOSC = {} por CLOCK", cs.fosc),
+            (Some(cs), n) => format!("FOSC = {} por CLOCK y {n} ajuste(s) pedidos", cs.fosc),
+        };
         format!("{} ({how})", names.join(", "))
     };
     println!("Compilacion completada:");
@@ -520,6 +534,9 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     if let Some(hz) = module.clock_hz {
         let source = if module.clock_defaulted { "por defecto" } else { "declarado" };
         println!("  Reloj:         {hz} Hz ({source})");
+    }
+    if let Some(cs) = &module.clock_source {
+        println!("  Oscilador:     {}", cs.describe());
     }
     println!("  Configuracion: {cfg_text}");
     ExitCode::SUCCESS

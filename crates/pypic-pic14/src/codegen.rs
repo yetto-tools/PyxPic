@@ -1189,6 +1189,22 @@ fn compile_mode(m: &Module, opts: &Options, multi: bool) -> Result<Compiled, Cod
         g.asm.items.push(Item::Org(5));
     }
     g.asm.place(startup);
+    // oscilador interno: IRCF distinto del 4 MHz del reset. Se escribe OSCCON (SCS = 0: manda FOSC, que ya es el interno) y se espera a
+    // que el oscilador este estable (HTS para 8 MHz a 125 kHz, LTS para 31 kHz; DS40001291H p.64)
+    if let Some(ircf) = m.clock_source.as_ref().and_then(|c| c.ircf).filter(|&i| i != pypic_frontend::clock::IRCF_RESET) {
+        let osccon = g.reg_addr("OSCCON")?;
+        if osccon >> 7 != 1 {
+            return unsupported("OSCCON fuera del banco 1");
+        }
+        g.write_banked("OSCCON", ircf << 4)?;
+        let (_, bit) = g.bit_loc(if ircf == 0 { "LTS" } else { "HTS" })?;
+        let wait = g.asm.label("osc.estable");
+        g.asm.i(Bsf(STATUS, BIT_RP0));
+        g.asm.place(wait);
+        g.asm.i(Btfss((osccon & 0x7F) as u8, bit));
+        g.asm.goto(wait);
+        g.asm.i(Bcf(STATUS, BIT_RP0));
+    }
     for (i, gl) in m.globals.iter().enumerate() {
         if gl.is_const {
             continue;

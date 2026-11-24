@@ -141,6 +141,8 @@ pub enum TypeExprKind {
     Const(Box<TypeExpr>),
     /// `uint8[16]`: arreglo de capacidad fija en RAM (solo a nivel de modulo).
     Array(Box<TypeExpr>, i128),
+    /// `Internal[4 * MHz]`, `Crystal[...]`, `ExternalClock[...]`: la fuente y la frecuencia del reloj (solo en `CLOCK: ...`).
+    Clock(String, Box<Expr>),
     /// `None` (solo como tipo de retorno)
     None,
 }

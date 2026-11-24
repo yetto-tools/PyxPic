@@ -71,6 +71,8 @@ pub struct Sim {
     uart_txreg9: bool,
     uart_tsr_left: u64,
     uart_prev_cren: bool,
+    /// Ciclo en que el oscilador interno queda estable tras escribir OSCCON (0 si no hay cambio pendiente).
+    osc_ready_at: u64,
     adc_prev_go: bool,
     adc_prev_on: bool,
     adc_prev_chs: u8,
@@ -86,7 +88,7 @@ impl Sim {
                 flash[a as usize] = w;
             }
         }
-        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None, t0_pre: 0, t0_inhibit: 0, t1_pre: 0, t2_pre: 0, t2_post: 0, timer_events: Vec::new(), adc_inputs: [0; 16], fosc_hz: 4_000_000, adc_violations: Vec::new(), adc_tacq_ns: 11_500.0, adc_low_voltage: false, uart_tx: Vec::new(), uart_tx9: Vec::new(), uart_txreg9: false, uart_violations: Vec::new(), uart_rx_pending: Default::default(), uart_fifo: Default::default(), uart_txreg: None, uart_tsr_left: 0, uart_prev_cren: false, adc_prev_go: false, adc_prev_on: false, adc_prev_chs: 0, adc_acq_from: 0, adc_remaining: 0 };
+        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None, t0_pre: 0, t0_inhibit: 0, t1_pre: 0, t2_pre: 0, t2_post: 0, timer_events: Vec::new(), adc_inputs: [0; 16], fosc_hz: 4_000_000, adc_violations: Vec::new(), adc_tacq_ns: 11_500.0, adc_low_voltage: false, uart_tx: Vec::new(), uart_tx9: Vec::new(), uart_txreg9: false, uart_violations: Vec::new(), uart_rx_pending: Default::default(), uart_fifo: Default::default(), uart_txreg: None, uart_tsr_left: 0, uart_prev_cren: false, osc_ready_at: 0, adc_prev_go: false, adc_prev_on: false, adc_prev_chs: 0, adc_acq_from: 0, adc_remaining: 0 };
         s.reset();
         s
     }
@@ -106,6 +108,8 @@ impl Sim {
         (self.uart_txreg, self.uart_tsr_left, self.uart_prev_cren) = (None, 0, false);
         self.uart_fifo.clear();
         self.ram[0x98] = 0x02; // TXSTA: TRMT = 1 tras el reset
+        self.ram[0x8F] = 0x64; // OSCCON: IRCF = 110 (4 MHz) y HFINTOSC estable
+        self.osc_ready_at = 0;
         self.pc = 0;
         self.pclath = 0;
         self.sp = 0;
@@ -175,6 +179,9 @@ impl Sim {
                 }
                 if a == 0x19 {
                     self.uart_tx_write(v);
+                }
+                if a == 0x8F {
+                    self.osc_write(v);
                 }
             }
         }
@@ -417,7 +424,22 @@ impl Sim {
     /// Un ciclo de instruccion de Timer0, Timer1 y Timer2 con reloj interno (FOSC/4). Los relojes externos,
     /// la compuerta de Timer1 y el modo asincrono no se modelan. Los ticks de la propia instruccion que escribe
     /// un contador se aplican despues de la escritura (error maximo de 1 ciclo en el valor absoluto, ninguno en los periodos).
+    /// OSCCON: la nueva IRCF cambia la frecuencia del sistema (si el reloj es el interno) y el oscilador tarda unos ciclos en quedar
+    /// estable: HTS (8 MHz a 125 kHz) o LTS (31 kHz) valen 0 hasta entonces.
+    fn osc_write(&mut self, v: u8) {
+        let ircf = (v >> 4) & 7;
+        if let Some(&(hz, _)) = pypic_frontend::clock::INTERNAL.iter().find(|(_, i)| *i == ircf) {
+            self.fosc_hz = hz;
+        }
+        self.ram[0x8F] &= !0x06;
+        self.osc_ready_at = self.cycles + 12;
+    }
+
     fn tick_timers(&mut self, now: u64) {
+        if self.osc_ready_at != 0 && now >= self.osc_ready_at {
+            self.osc_ready_at = 0;
+            self.ram[0x8F] |= if (self.ram[0x8F] >> 4) & 7 == 0 { 0x02 } else { 0x04 };
+        }
         self.tick_adc(now);
         self.tick_uart(now);
         let (option, intcon) = (self.ram[0x81], 0x0B);
