@@ -9,17 +9,17 @@
       "address": "0x2007",
       "default": "0x3FFF",
       "fields": [
-        { "name": "DEBUG", "lsb": 13, "width": 1, "values": { "1": "depurador deshabilitado; RB6 y RB7 son E/S", "0": "depurador habilitado; RB6/ICSPCLK y RB7/ICSPDAT dedicados" } },
-        { "name": "LVP", "lsb": 12, "width": 1, "values": { "1": "RB3/PGM con programacion de bajo voltaje", "0": "RB3 es E/S digital; HV en MCLR para programar" } },
-        { "name": "FCMEN", "lsb": 11, "width": 1, "values": { "1": "monitor de reloj a prueba de fallos habilitado", "0": "deshabilitado" } },
-        { "name": "IESO", "lsb": 10, "width": 1, "values": { "1": "cambio interno/externo habilitado", "0": "deshabilitado" } },
-        { "name": "BOREN", "lsb": 8, "width": 2, "values": { "3": "BOR habilitado", "2": "BOR habilitado en operacion y deshabilitado en Sleep", "1": "BOR controlado por SBOREN (PCON)", "0": "BOR deshabilitado" } },
-        { "name": "CPD", "lsb": 7, "width": 1, "values": { "1": "proteccion de datos deshabilitada", "0": "proteccion de datos habilitada" } },
-        { "name": "CP", "lsb": 6, "width": 1, "values": { "1": "proteccion de codigo deshabilitada", "0": "proteccion de codigo habilitada" } },
-        { "name": "MCLRE", "lsb": 5, "width": 1, "values": { "1": "RE3/MCLR funciona como MCLR", "0": "RE3 es entrada digital; MCLR interno a VDD" } },
-        { "name": "PWRTE", "lsb": 4, "width": 1, "values": { "1": "PWRT deshabilitado", "0": "PWRT habilitado" } },
-        { "name": "WDTE", "lsb": 3, "width": 1, "values": { "1": "WDT habilitado", "0": "WDT deshabilitado; se puede habilitar con SWDTEN" } },
-        { "name": "FOSC", "lsb": 0, "width": 3, "values": {
+        { "name": "DEBUG", "lsb": 13, "width": 1, "names": { "ON": "0", "OFF": "1" }, "values": { "1": "depurador deshabilitado; RB6 y RB7 son E/S", "0": "depurador habilitado; RB6/ICSPCLK y RB7/ICSPDAT dedicados" } },
+        { "name": "LVP", "lsb": 12, "width": 1, "names": { "ON": "1", "OFF": "0" }, "values": { "1": "RB3/PGM con programacion de bajo voltaje", "0": "RB3 es E/S digital; HV en MCLR para programar" } },
+        { "name": "FCMEN", "lsb": 11, "width": 1, "names": { "ON": "1", "OFF": "0" }, "values": { "1": "monitor de reloj a prueba de fallos habilitado", "0": "deshabilitado" } },
+        { "name": "IESO", "lsb": 10, "width": 1, "names": { "ON": "1", "OFF": "0" }, "values": { "1": "cambio interno/externo habilitado", "0": "deshabilitado" } },
+        { "name": "BOREN", "lsb": 8, "width": 2, "names": { "ON": "3", "NSLEEP": "2", "SBODEN": "1", "OFF": "0" }, "values": { "3": "BOR habilitado", "2": "BOR habilitado en operacion y deshabilitado en Sleep", "1": "BOR controlado por SBOREN (PCON)", "0": "BOR deshabilitado" } },
+        { "name": "CPD", "lsb": 7, "width": 1, "names": { "ON": "0", "OFF": "1" }, "values": { "1": "proteccion de datos deshabilitada", "0": "proteccion de datos habilitada" } },
+        { "name": "CP", "lsb": 6, "width": 1, "names": { "ON": "0", "OFF": "1" }, "values": { "1": "proteccion de codigo deshabilitada", "0": "proteccion de codigo habilitada" } },
+        { "name": "MCLRE", "lsb": 5, "width": 1, "names": { "ON": "1", "OFF": "0" }, "values": { "1": "RE3/MCLR funciona como MCLR", "0": "RE3 es entrada digital; MCLR interno a VDD" } },
+        { "name": "PWRTE", "lsb": 4, "width": 1, "names": { "ON": "0", "OFF": "1" }, "values": { "1": "PWRT deshabilitado", "0": "PWRT habilitado" } },
+        { "name": "WDTE", "lsb": 3, "width": 1, "names": { "ON": "1", "OFF": "0" }, "values": { "1": "WDT habilitado", "0": "WDT deshabilitado; se puede habilitar con SWDTEN" } },
+        { "name": "FOSC", "lsb": 0, "width": 3, "names": { "LP": "0", "XT": "1", "HS": "2", "EC": "3", "INTRC_NOCLKOUT": "4", "INTRC_CLKOUT": "5", "EXTRC_NOCLKOUT": "6", "EXTRC_CLKOUT": "7" }, "values": {
             "7": "RC, CLKOUT en RA6",
             "6": "RCIO, E/S en RA6",
             "5": "INTOSC, CLKOUT en RA6, E/S en RA7",
@@ -36,13 +36,13 @@
       "address": "0x2008",
       "default": "0x3FFF",
       "fields": [
-        { "name": "WRT", "lsb": 9, "width": 2, "values": {
+        { "name": "WRT", "lsb": 9, "width": 2, "names": { "OFF": "3", "1FOURTH": "1", "HALF": "0" }, "values": {
             "3": "proteccion de escritura desactivada",
             "2": "0000h-00FFh protegido",
             "1": "0000h-07FFh protegido",
             "0": "0000h-0FFFh protegido"
         } },
-        { "name": "BOR4V", "lsb": 8, "width": 1, "values": { "1": "BOR a 4.0 V", "0": "BOR a 2.1 V" } }
+        { "name": "BOR4V", "lsb": 8, "width": 1, "names": { "BOR40V": "1", "BOR21V": "0" }, "values": { "1": "BOR a 4.0 V", "0": "BOR a 2.1 V" } }
       ]
     }
   ]

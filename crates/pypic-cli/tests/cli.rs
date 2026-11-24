@@ -163,26 +163,57 @@ fn removed_aliases_point_to_the_single_name() {
 
 #[test]
 fn asm_reproduces_the_proteus_verified_hex_byte_for_byte() {
+    // el dispositivo sale de la directiva PROCESSOR; los vectores se fijan con las opciones del enlazador de pic-as
     let out = tmp("asm").join("blink_rd0.hex");
-    let o = pypic(&root(), &["asm", "examples/asm/blink_rd0.asm", "-o", out.to_str().unwrap()]);
+    let o = pypic(&root(), &["asm", "examples/asm/blink_rd0.s", "-Wl,-presetVec=0h,-pintentry=4h", "-o", out.to_str().unwrap()]);
     assert!(o.status.success(), "{}", text(&o));
-    let made = std::fs::read_to_string(&out).unwrap().replace("\r\n", "\n");
-    let verified = std::fs::read_to_string(root().join("examples/hex/blink_rd0.hex")).unwrap().replace("\r\n", "\n");
+    let made = std::fs::read_to_string(&out).unwrap().replace("
+", "
+");
+    let verified = std::fs::read_to_string(root().join("examples/hex/blink_rd0.hex")).unwrap().replace("
+", "
+");
     assert_eq!(made, verified);
 }
 
 #[test]
 fn asm_lists_and_reports_errors_with_location() {
     let dir = tmp("asmerr");
-    let good = dir.join("g.asm");
-    std::fs::write(&good, "    MOVLW 0x2A\n").unwrap();
+    let good = dir.join("g.s");
+    std::fs::write(&good, "PSECT t,class=CODE,delta=2,abs
+    movlw 0x2A
+").unwrap();
     let o = pypic(&root(), &["asm", good.to_str().unwrap(), "-o", dir.join("g.hex").to_str().unwrap(), "--listing"]);
-    assert!(o.status.success() && text(&o).contains("0000 302A      MOVLW 0x2A"), "{}", text(&o));
-    let bad = dir.join("b.asm");
-    std::fs::write(&bad, "    MOVLB 1\n    MOVLW 999\n").unwrap();
+    assert!(o.status.success() && text(&o).contains("0000 302A      movlw 0x2A"), "{}", text(&o));
+    let bad = dir.join("b.s");
+    std::fs::write(&bad, "PSECT t,class=CODE,delta=2,abs
+    MOVLB 1
+    MOVLW 999
+").unwrap();
     let o = pypic(&root(), &["asm", bad.to_str().unwrap(), "-o", dir.join("b.hex").to_str().unwrap()]);
     assert_eq!(o.status.code(), Some(1));
     let t = text(&o);
-    assert!(t.contains(":1:5: error[ASM002]") && t.contains(":2:11: error[ASM004]"), "{t}");
+    assert!(t.contains(":2:5: error[ASM002]") && t.contains(":3:11: error[ASM004]"), "{t}");
     assert!(!dir.join("b.hex").exists());
+}
+
+#[test]
+fn asm_takes_the_device_from_mcpu_and_rejects_a_wrong_processor() {
+    let dir = tmp("asmcpu");
+    let f = dir.join("c.s");
+    std::fs::write(&f, "#include <xc.inc>
+CONFIG WDTE = OFF
+PSECT code,abs
+    bsf STATUS,STATUS_RP0_POSN
+").unwrap();
+    let hex = dir.join("c.hex");
+    let o = pypic(&root(), &["asm", f.to_str().unwrap(), "-mcpu=16F887", "-o", hex.to_str().unwrap()]);
+    assert!(o.status.success(), "{}", text(&o));
+    // sin dispositivo, xc.inc no se puede incluir
+    let o = pypic(&root(), &["asm", f.to_str().unwrap(), "-o", hex.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(text(&o).contains("dispositivo"), "{}", text(&o));
+    // un dispositivo sin Device Pack se dice con claridad
+    let o = pypic(&root(), &["asm", f.to_str().unwrap(), "-mcpu=16F999", "-o", hex.to_str().unwrap()]);
+    assert!(!o.status.success() && text(&o).contains("desconocido"), "{}", text(&o));
 }

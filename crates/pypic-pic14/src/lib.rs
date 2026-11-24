@@ -11,7 +11,7 @@ pub mod isa;
 pub mod samples;
 pub mod sim;
 
-pub use asm::{assemble, assemble_fragment, render_errors, AsmError, Assembled, FragItem, Fragment};
+pub use asm::{assemble, assemble_fragment, assemble_with, declared_processor, render_errors, xc_inc, AsmEnv, EnvReg, AsmError, Assembled, FragItem, Fragment};
 pub use codegen::{compile, CodegenError, Compiled, DelayReport, Options};
 pub use hex::{HexError, Image};
 pub use isa::{disassemble, Cycles, Dest, EncodeError, Flag, Inst};

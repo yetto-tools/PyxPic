@@ -1,7 +1,7 @@
 # Ensamblador en línea (`@asm_function`)
 
-**Estado: implementado (#42, primera parte).** Cuando el lenguaje no alcanza, una función puede escribirse **entera** en ensamblador del PIC16 clásico, con las 35 instrucciones y el mismo ensamblador que `pypic asm`
-([asm-pic14.md](asm-pic14.md)). Es la salida de emergencia que hace que PyPIC no limite lo que se puede hacer con un PIC.
+**Estado: implementado (#42, primera parte).** Cuando el lenguaje no alcanza, una función puede escribirse **entera** en ensamblador del PIC16 clásico, con las 35 instrucciones y el mismo ensamblador que `pypic asm`, con la **sintaxis de pic-as** (MPLAB XC8 PIC Assembler,
+[asm-pic14.md](asm-pic14.md)). Es la salida de emergencia que hace que PyPIC no limite lo que se puede hacer con un PIC.
 
 ```python
 from pypic.device import PIC16F887
@@ -42,8 +42,10 @@ Se adoptó lo útil de otros lenguajes y se descartó lo incómodo:
 - **Parámetros y retorno** de hasta 16 bits (`u8`, `i8`, `u16`, `i16`, `bool`). Cada parámetro es un símbolo con la dirección de su byte bajo; un `u16` ocupa `x` (bajo) y `x+1` (alto).
 - **Resultado**: el byte bajo en `W`; en un resultado de 16 bits, el alto se escribe antes en `RETV` (`0x7C`).
 - **Globales**: por su nombre (`hits`, `marker`...); las constantes `Final` valen su valor.
-- **Registros y bits predefinidos**: todos los de `registers.json` del Device Pack (73 registros del PIC16F887 y sus bits con nombre: `STATUS`, `PORTD`, `TRISD`, `ADCON0`, `RP0`, `GO_DONE`...).
-  Cada registro vale su desplazamiento de 7 bits (el banco lo eliges tú con `RP0`/`RP1`) y cada bit su número. Un parámetro o global con uno de esos nombres da error `ASM005` solo si el bloque lo usa.
+- **Registros y bits predefinidos**: los mismos que da `#include <xc.inc>` en `pypic asm`, desde `registers.json` del Device Pack (73 registros del PIC16F887).
+  Cada registro vale su **dirección completa** (`TRISD` = `0x88`), así que fuera del banco 0 se usa `BANKMASK(TRISD)` tras cambiar el banco a mano con
+  `BSF STATUS,STATUS_RP0_POSN`; cada campo tiene `REGISTRO_CAMPO_POSN` (`STATUS_Z_POSN`, `ADCON0_GO_DONE_POSN`...) y los campos únicos de más de una letra son macros
+  (`BSF GO_DONE` = `BSF ADCON0,1`). Un parámetro o global con uno de esos nombres da error `ASM005` solo si el bloque lo usa.
 - **Etiquetas** locales a la función, solo como destino de `CALL`/`GOTO` (con `$` y aritmética: `GOTO $+1`). `EQU` define constantes locales.
 
 ## Lo que el compilador comprueba
@@ -54,7 +56,7 @@ Se adoptó lo útil de otros lenguajes y se descartó lo incómodo:
 | `PYP2111` | No se alcanza desde una `@interrupt` (comparte memoria estática con el contexto principal) |
 | `PYP2112` | Parámetros y retorno de hasta 16 bits |
 | `PYP2113` | No se combina con `@interrupt` ni `@init_device` |
-| `ASM007` | Sin `ORG`/`DW` (el compilador coloca la función; una tabla se escribe con `RETLW`), sin `RETFIE`; debe terminar en `RETURN`, `RETLW` o `GOTO`; **no puede volver con `RP0`/`RP1` puestos** |
+| `ASM007` | Sin `PSECT`/`ORG`/`DB`/`DW`/`DS`/`CONFIG` ni `BANKSEL`/`PAGESEL`/`fcall`/`ljmp` (el compilador coloca la función y gestiona el banco y la página; una tabla se escribe con `RETLW`), sin `RETFIE`; debe terminar en `RETURN`, `RETLW` o `GOTO`; **no puede volver con `RP0`/`RP1` puestos** |
 | `ASM006` | Un salto fuera de la función |
 | `ASM001`–`ASM005` | Los mismos que el ensamblador textual |
 

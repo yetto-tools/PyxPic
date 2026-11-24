@@ -1,56 +1,143 @@
-# Ensamblador PIC14 (`pypic asm`)
+# Ensamblador PIC14 (`pypic asm`): sintaxis de MPLAB XC8 PIC Assembler
 
-**Estado: implementado.** Convierte texto ensamblador del PIC16 clásico en palabras de 14 bits y en Intel HEX, en dos pasadas. Es la base del ensamblador en línea ([asm-inline.md](asm-inline.md))
-y la herramienta para escribir a mano lo que el lenguaje todavía no cubre. Verificado: el blink escrito en ensamblador (`examples/asm/blink_rd0.asm`) produce **byte por byte** el mismo
-`.hex` que se probó en Proteus, y las 16 008 instrucciones válidas sobreviven a desensamblar y volver a ensamblar.
+**Estado: implementado.** `pypic asm` ensambla el PIC16 clásico con la **sintaxis oficial de `pic-as`** (MPLAB XC8 PIC Assembler, guía DS50002974F, cap. 4 y 5),
+no con un dialecto propio: lo que se escribe aquí ensambla igual en MPLAB X, y lo que viene de un proyecto de MPLAB X ensambla aquí
+(dentro del subconjunto de abajo). Es la base del ensamblador en línea ([asm-inline.md](asm-inline.md)).
+Verificado: el blink escrito en PIC-AS (`examples/asm/blink_rd0.s`) produce **byte por byte** el mismo `.hex` que se probó en Proteus,
+y las 16 008 instrucciones válidas sobreviven a desensamblar y volver a ensamblar.
 
 ```
-pypic asm examples/asm/blink_rd0.asm -o blink.hex [--listing]
+pypic asm blink_rd0.s -Wl,-presetVec=0h,-pintentry=4h -o blink_rd0.hex [--listing]
 ```
 
-## Sintaxis (una sola forma por operación)
+| Opción | Significado |
+|---|---|
+| `-mcpu=16F887` o `--device PIC16F887` | Dispositivo. Si falta se toma de la directiva `PROCESSOR`. Es necesario para `#include <xc.inc>` y `CONFIG` |
+| `-Wl,-pNOMBRE=dir[,sig...]` | Opción del enlazador: coloca el psect `NOMBRE` en `dir` (los `sig` van a continuación). Se admiten varias, separadas por comas |
+| `-Wl,--fixupoverflow=ignore` | Los operandos que no caben se truncan en vez de dar error (como en pic-as) |
+| `-o`, `--listing`, `--devices-dir` | Salida, listado con direcciones y dónde buscar los Device Packs |
+
+## Qué cubre
 
 ```asm
-; comentario
-STATUS  EQU 0x03          ; constantes: solo con EQU, y solo con simbolos ya definidos
-RP0     EQU 5
-        ORG 0x0005        ; direccion de palabra
-main:   BSF  STATUS,RP0   ; etiqueta y instruccion en la misma linea, o en lineas aparte
-        ADDWF 0x20,W      ; el destino es SIEMPRE W o F (no 0 ni 1)
-        GOTO $            ; $ = direccion actual; tambien $+1, etiqueta+2...
-        ORG 0x2007
-        DW 0x20D4, 0x3FFF ; palabras de 14 bits (aqui, las de configuracion)
+; comentario    // otro    /* otro */
+PROCESSOR 16F887
+#include <xc.inc>                       ; registros, campos y psects del dispositivo
+
+CONFIG FOSC = INTRC_NOCLKOUT, WDTE = OFF, MCLRE = OFF
+
+PSECT udata_bank0                       ; datos: la clase BANK0 reparte las direcciones
+counter: DS 1
+
+PSECT resetVec,class=CODE,delta=2       ; codigo: lo coloca -presetVec=0h
+    goto main
+
+PSECT code
+main:                                   ; las etiquetas SIEMPRE llevan ':'
+    BANKSEL TRISD                       ; 2 palabras: BCF/BSF STATUS,RP0 y RP1
+    bcf BANKMASK(TRISD),TRISD_TRISD0_POSN
+    bcf STATUS,STATUS_RP0_POSN
+    movf counter,w                      ; destino w o f (tambien 0 o 1; sin destino es f)
+    btfss RB5                           ; RB5 es una macro de xc.inc: PORTB,5
+    goto $+2
+    return
 ```
 
-- Mnemónicos y directivas **sin** distinguir mayúsculas; símbolos y etiquetas **sí**.
-- Números: decimal, `0x1F`, `0b101`. Expresiones: términos con `+` y `-`.
-- Directivas: `ORG`, `DW`, `EQU`. No hay `END`, macros ni `BANKSEL`: el banco se cambia con `BSF`/`BCF` sobre `RP0`/`RP1`.
-- `f` son 7 bits (0..=0x7F): para un registro de otro banco se selecciona el banco y se usa el desplazamiento (ANSEL `0x188` → `0x08` en el banco 3).
-- `CALL`/`GOTO` solo alcanzan la página 0 (`0..=0x7FF`); el ensamblador no carga `PCLATH` (#31).
+### Sentencias, números y expresiones
+
+- Formato `etiqueta: mnemónico operandos ; comentario`; mnemónicos y directivas **sin distinguir mayúsculas**, símbolos **sí**. Sin restricciones de columna.
+- Comentarios `;`, `//` y `/* */`.
+- **Números**: decimal por defecto; `0x1F` o `1Fh` (hexadecimal, con dígito inicial: `0FFh`); `101B` (binario, la `B` en mayúscula); `17o`/`17q` (octal); `10d`; `'A'`.
+  `0b101` no existe en PIC-AS y el error indica la forma correcta.
+- **Expresiones**: se evalúan **de izquierda a derecha, sin precedencia** (`5 + 1 * 2` vale 12; los paréntesis cambian el orden). Operadores
+  `+ - * / mod & | ^ << >> = <> < > <= >=` y en palabra (`and shl shr eq ne gt ge lt le not`), más `low high highword`. `$` es la dirección actual.
+- **Destino** de las instrucciones de byte: `,w` o `,f`, o `,0` o `,1`; si se omite es `f`.
+- **Operandos que no caben**: `f` son 7 bits y `CALL`/`GOTO` 11. Un registro de otro banco da `ASM004` salvo que se enmascare con `BANKMASK(símbolo)` tras
+  `BANKSEL`; una etiqueta lejana, con `PAGEMASK(etiqueta)` tras `PAGESEL`, o con `fcall`/`ljmp`, que lo hacen todo. Con `--fixupoverflow=ignore` se trunca.
+
+### Directivas
+
+| Directiva | Estado |
+|---|---|
+| `PROCESSOR`, `PSECT`, `ORG`, `ALIGN`, `DB`, `DW`, `DS`, `EQU`, `SET`, `GLOBAL`/`PUBLIC`, `END` | ✅ |
+| `CONFIG ajuste = valor[, ...]` y `CONFIG CONFIGn = valor` | ✅ (nombres del Device Pack, ver abajo) |
+| `BANKSEL`, `BANKISEL`, `PAGESEL`, `fcall`, `ljmp` | ✅ (expanden a `BCF`/`BSF` de `STATUS` y `PCLATH`; `fcall` son 5 palabras y `ljmp` 3, como en la guía) |
+| `IF`, `ELSIF`, `ELSE`, `ENDIF`; `#include <xc.inc>`, `#define NOMBRE valor`, `#undef`, `#ifdef`, `#ifndef`, `#if defined(X)`, `#else`, `#endif` | ✅ |
+| `LIST`, `TITLE`, `NOLIST`, `FNCALL`, `ASMOPT`..., directivas de listado y de grafo de llamadas | ✅ se aceptan sin efecto |
+| `MACRO`/`ENDM`, `REPT`, `IRP`, `LOCAL`, `RADIX`, `DABS`, `DDW`, `EXTRN` | ⏳ error `ASM008` explícito (#58) |
+
+`DB`/`DW` en la memoria de programa escriben **una palabra por valor** (con `delta=2`, el byte alto en cero), como indica la guía.
+
+### `PSECT` y el mini-enlazador
+
+pic-as no pone el código donde se escribe: cada `PSECT` lo coloca el enlazador. PyPIC lleva un enlazador mínimo con las mismas reglas:
+
+1. **`abs`**: el psect empieza en la dirección 0 y `ORG` es una dirección absoluta (el uso clásico para vectores).
+2. **`-pNOMBRE=dir[,sig...]`** lo fija en `dir`. Sin esa opción el psect `reset_vec` va en 0, seguido de `intentry`, `init` y `end_init`
+   (el valor por defecto de pic-as: `-preset_vec=00h,intentry,init,end_init`).
+3. **El resto** va al primer hueco libre de su **clase**: `CODE` (páginas de 0x800 palabras, un psect no las cruza), `BANK0`…`BANK3`, `COMMON`, `RAM`.
+   Un psect sin clase y sin `-p` es un error, como en el enlazador.
+4. `ORG` dentro de un psect relocalizable es un **desplazamiento** desde su comienzo y no puede retroceder.
+5. Flags: `abs`, `ovrld`, `class=`, `delta=`, `space=`, `reloc=`, y se aceptan `size`, `limit`, `with`, `optim`, `merge`, `split`, `global`, `local`, `pure`, `noexec`, `note`. `bit` aún no.
+
+`#include <xc.inc>` define los psects `code` (`CODE`), `data` (`STRCODE`), `udata` (`RAM`), `udata_bank0`…`udata_bank3` (`BANKn`) y `udata_shr` (`COMMON`);
+sin el `#include`, `PSECT code` no tiene clase.
+
+### `xc.inc` y los registros
+
+Con `#include <xc.inc>` (o `INCLUDE <xc.inc>`) el Device Pack da: cada **registro** con su **dirección completa** (`TRISB` = `0x86`),
+cada campo con `REGISTRO_CAMPO_POSN`/`_POSITION` (número de bit), `_SIZE`/`_LENGTH` y `_MASK`, y los **campos como macros** que valen `REGISTRO,bit`
+(`RB5` → `PORTB,5`, así `btfss RB5`). Igual que en pic-as, un campo de una sola letra (`C`, `Z`) o repetido en varios registros no tiene macro:
+se usa `STATUS_Z_POSN`.
+
+### `CONFIG`
+
+`CONFIG FOSC = INTRC_NOCLKOUT, WDTE = OFF` o entre comillas `CONFIG "WDTE = OFF"`. El valor es **primero un nombre** del dispositivo (`ON`, `OFF`,
+`XT`, `INTRC_NOCLKOUT`…) y solo si no lo es, una constante. Las palabras no mencionadas quedan en su valor por defecto (`0x3FFF`); `CONFIG CONFIG1 = 0x20D4`
+fija la palabra entera. Se repite un ajuste: error. Los nombres están en `devices/<pic>/config.json` (`names`) y se validan contra los valores del datasheet.
+
+> **A comprobar:** los nombres de valor del PIC16F887 (`INTRC_NOCLKOUT`, `BOR21V`, `1FOURTH`…) están tomados de las convenciones del DFP de Microchip; conviene
+> contrastarlos con `pic_chipinfo.html` del DFP. Los de un solo bit `ON`/`OFF` siguen el significado ("`CP = ON` = protección de código activa").
 
 ## Las 35 instrucciones
 
 | Forma | Instrucciones |
 |---|---|
-| `OP f,W|F` | `ADDWF` `ANDWF` `COMF` `DECF` `DECFSZ` `INCF` `INCFSZ` `IORWF` `MOVF` `RLF` `RRF` `SUBWF` `SWAPF` `XORWF` |
+| `OP f[,w\|f]` | `ADDWF` `ANDWF` `COMF` `DECF` `DECFSZ` `INCF` `INCFSZ` `IORWF` `MOVF` `RLF` `RRF` `SUBWF` `SWAPF` `XORWF` |
 | `OP f` | `CLRF` `MOVWF` |
 | `OP f,bit` | `BCF` `BSF` `BTFSC` `BTFSS` |
 | `OP k` (0..=255) | `ADDLW` `ANDLW` `IORLW` `MOVLW` `RETLW` `SUBLW` `XORLW` |
-| `OP direccion` | `CALL` `GOTO` |
+| `OP dirección` | `CALL` `GOTO` |
 | sin operandos | `CLRW` `CLRWDT` `NOP` `RETFIE` `RETURN` `SLEEP` |
+
+`MOVFW`, `SETC`, `BZ`… (pseudoinstrucciones de MPASM que pic-as no implementa) y `MOVLB`, `BRA`… (de otra familia, PIC16F1xxx) dan un error que explica qué escribir.
 
 ## Errores
 
-Formato `archivo:linea:col: error[ASMnnn]: mensaje`; se informan **todos**, en orden. Las instrucciones que no existen en este dispositivo explican por qué
-(`MOVLB`, `BRA`... son de otra familia, PIC16F1xxx; `SETC`, `MOVFW`... son pseudoinstrucciones de MPASM).
+Formato `archivo:línea:col: error[ASMnnn]: mensaje`; se informan **todos**, en orden. Los de MPASM llevan la forma de PIC-AS equivalente
+(`__CONFIG` → `CONFIG`, `CBLOCK` → `PSECT` + `DS`, `loop` sin `:` → `loop:`, `0b101` → `101B`).
 
 | Código | Regla |
 |---|---|
 | `ASM001` | Carácter o número inválido |
-| `ASM002` | Instrucción o directiva desconocida, de otra familia o pseudoinstrucción |
-| `ASM003` | Cantidad o forma de operandos incorrecta (incluye destino `0`/`1` o ausente) |
-| `ASM004` | Valor fuera de rango (registro, bit, literal, palabra) |
+| `ASM002` | Instrucción o directiva desconocida, de otra familia, de MPASM o etiqueta sin `:` |
+| `ASM003` | Cantidad o forma de operandos incorrecta |
+| `ASM004` | Valor fuera de rango o desbordamiento del operando (falta `BANKMASK`/`PAGEMASK`) |
 | `ASM005` | Símbolo no definido, repetido o reservado |
-| `ASM006` | Dirección fuera de rango o ya ocupada, o salto fuera de la página 0 |
+| `ASM006` | Dirección ocupada o fuera de rango, `ORG` hacia atrás, psects que se solapan o no caben |
+| `ASM007` | Regla de una función `@asm_function` (ver [asm-inline.md](asm-inline.md)) |
+| `ASM008` | Directiva o forma de pic-as todavía no soportada |
+| `ASM009` | Código o datos fuera de un `PSECT` |
+| `ASM010` | Flag, clase o delta de `PSECT` inválidos, o instrucción en un psect de datos |
+| `ASM011` | `PROCESSOR` no coincide con el dispositivo |
+| `ASM012` | `ERROR` del usuario |
+| `ASM013` | `CONFIG`: ajuste o valor inexistente, repetido o sin dispositivo |
 
 Dos sentencias en la misma dirección son siempre un error, aunque escriban el mismo valor.
+
+## Diferencias deliberadas con pic-as
+
+- Un solo archivo y un solo módulo: `EXTRN` y varios `.s` no están soportados (enlazar módulos sería otro proyecto).
+- Sin el optimizador del ensamblador (pic-as tampoco optimiza: `ASMOPT` se ignora).
+- El orden de los dos `BCF`/`BSF` de `BANKSEL` es RP0 y después RP1; la guía no fija el orden y no se ha comprobado byte a byte con un `pic-as` real
+  (el `fcall` sí reproduce el ejemplo de la guía).

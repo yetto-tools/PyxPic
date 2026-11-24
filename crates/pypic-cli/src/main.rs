@@ -9,7 +9,7 @@ const USAGE: &str = "uso:
   pypic check <archivo.py> [opciones]
   pypic ir <archivo.py> [opciones]
   pypic build <archivo.py> [-o salida.hex] [--listing] [--timing] [opciones]
-  pypic asm <archivo.asm> [-o salida.hex] [--listing]
+  pypic asm <archivo.s> [-mcpu=16F887] [-Wl,-pNOMBRE=dir,...] [-o salida.hex] [--listing]
   pypic disasm <archivo.hex>
   pypic device validate <directorio-del-pack>
 
@@ -148,16 +148,31 @@ fn main() -> ExitCode {
     }
 }
 
-/// Ensambla un `.asm` PIC14 a Intel HEX (ver docs/asm-pic14.md).
+/// `16F887` o `PIC16F887` -> `PIC16F887`.
+fn pic_name(s: &str) -> String {
+    let u = s.to_ascii_uppercase();
+    if u.starts_with("PIC") { u } else { format!("PIC{u}") }
+}
+
+/// Ensambla un `.s` PIC14 con la sintaxis de pic-as a Intel HEX (ver docs/asm-pic14.md).
 fn asm_cmd(args: &[String]) -> ExitCode {
     let mut file = None;
     let mut out_path: Option<String> = None;
     let mut listing = false;
+    let mut cpu: Option<String> = None;
+    let mut devices_dir: Option<String> = None;
+    let mut link_opts: Vec<String> = Vec::new();
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "-o" => out_path = it.next().cloned(),
             "--listing" => listing = true,
+            "--devices-dir" => devices_dir = it.next().cloned(),
+            "--device" => cpu = it.next().cloned(),
+            s if s.starts_with("-mcpu=") => cpu = Some(s["-mcpu=".len()..].to_string()),
+            // -Wl,-presetVec=0h,-pintentry=4h: las opciones van separadas por comas (como en pic-as)
+            s if s.starts_with("-Wl,") => link_opts.extend(s["-Wl,".len()..].split(',').map(str::to_string)),
+            s if s.starts_with("--fixupoverflow=") => link_opts.push(s.to_string()),
             s if s.starts_with('-') => return usage(),
             _ if file.is_none() => file = Some(a.clone()),
             _ => return usage(),
@@ -171,7 +186,31 @@ fn asm_cmd(args: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let asm = match pypic_pic14::assemble(&src) {
+    // el dispositivo: -mcpu/--device, o la directiva PROCESSOR del programa
+    let name = cpu.or_else(|| pypic_pic14::declared_processor(&src)).map(|n| pic_name(&n));
+    let mut env = match &name {
+        Some(n) => match find_pack(n, devices_dir.as_deref()) {
+            Ok(pack) => pypic_pic14::AsmEnv::from_pack(&pack),
+            Err(code) => return code,
+        },
+        None => pypic_pic14::AsmEnv::default(),
+    };
+    // las opciones -p con lista (-pa=0h,b,c) llegan partidas por la coma: se vuelven a unir
+    let mut joined: Vec<String> = Vec::new();
+    for o in link_opts {
+        match joined.last_mut() {
+            Some(last) if !o.starts_with('-') && last.starts_with("-p") => {
+                last.push(',');
+                last.push_str(&o);
+            }
+            _ => joined.push(o),
+        }
+    }
+    if let Err(e) = env.add_link_options(&joined) {
+        eprintln!("{e}");
+        return ExitCode::from(2);
+    }
+    let asm = match pypic_pic14::assemble_with(&src, &env) {
         Ok(a) => a,
         Err(errors) => {
             eprint!("{}", pypic_pic14::render_errors(&errors, &file));

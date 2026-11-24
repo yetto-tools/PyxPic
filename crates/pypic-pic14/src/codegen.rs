@@ -890,10 +890,12 @@ impl<'a> Gen<'a> {
         let m = self.m;
         let f = &m.functions[fi];
         let a = f.asm.as_ref().expect("funcion de ensamblador");
-        let syms = self.registers.asm_symbols();
-        let mut ext: BTreeMap<String, i64> = syms.iter().map(|(n, v)| (n.clone(), *v as i64)).collect();
+        // los simbolos de <xc.inc>: registros por su direccion completa, REG_CAMPO_POSN... y macros de campo (RB5)
+        let regs: Vec<crate::asm::EnvReg> = self.registers.registers.iter().filter(|r| r.physical).map(|r| crate::asm::EnvReg { name: r.name.clone(), addr: r.addresses[0].0, bits: r.bits.clone() }).collect();
+        let (syms, macros) = crate::asm::xc_inc(&regs);
+        let mut ext: BTreeMap<String, i64> = syms.clone();
         ext.insert("RETV".into(), RETV_MAIN as i64);
-        let reserved = |n: &str| (n == "RETV" || syms.iter().any(|(s, _)| s == n)) && a.text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).any(|w| w == n);
+        let reserved = |n: &str| (n == "RETV" || syms.contains_key(n) || macros.contains_key(n)) && a.text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).any(|w| w == n);
         let mut clashes = Vec::new();
         for (i, g) in m.globals.iter().enumerate() {
             if reserved(&g.name) {
@@ -917,7 +919,7 @@ impl<'a> Gen<'a> {
                 message: format!("en '{}': {} coincide(n) con nombres que el ensamblador en linea predefine (los registros y bits del pack, y RETV) y que el bloque usa: renombra el parametro o el global", f.name, clashes.join(", ")),
             }]));
         }
-        let frag = assemble_fragment(&a.text, a.first_line, &ext).map_err(CodegenError::Asm)?;
+        let frag = assemble_fragment(&a.text, a.first_line, &ext, &macros).map_err(CodegenError::Asm)?;
         let labels: BTreeMap<u32, Label> = frag.targets.iter().map(|&t| (t, self.asm.label(format!("{}.asm{t}", f.name)))).collect();
         for (i, item) in frag.items.iter().enumerate() {
             if let Some(&l) = labels.get(&(i as u32)) {

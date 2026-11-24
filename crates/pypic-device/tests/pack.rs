@@ -238,17 +238,6 @@ fn registers_match_datasheet_tables() {
     assert_eq!(p.registers.unimplemented.iter().map(|n| n.0).collect::<Vec<_>>(), [0x18E, 0x18F]);
 }
 
-#[test]
-fn registers_give_assembler_symbols_as_seven_bit_offsets_and_bit_numbers() {
-    let syms: std::collections::BTreeMap<_, _> = pack().registers.asm_symbols().into_iter().collect();
-    assert_eq!(syms["STATUS"], 0x03);
-    assert_eq!(syms["TRISD"], 0x08); // 88h: el banco lo elige el codigo
-    assert_eq!(syms["ANSEL"], 0x08);
-    assert_eq!((syms["RP0"], syms["RP1"], syms["IRP"], syms["Z"], syms["C"]), (5, 6, 7, 2, 0));
-    assert_eq!(syms["GO_DONE"], 1);
-    assert_eq!(syms["RD0"], 0);
-}
-
 fn mutated(f: impl FnOnce(&mut DevicePack)) -> Vec<String> {
     let mut p = pack();
     f(&mut p);

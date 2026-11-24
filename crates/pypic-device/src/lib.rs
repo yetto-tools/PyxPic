@@ -215,6 +215,9 @@ pub struct ConfigField {
     pub name: String,
     pub lsb: u32,
     pub width: u32,
+    /// Nombre del valor en el ensamblador PIC-AS (`CONFIG WDTE = OFF`) -> valor (texto decimal). Solo los que tienen nombre.
+    #[serde(default)]
+    pub names: BTreeMap<String, String>,
     /// Valor (como texto decimal) -> significado.
     pub values: BTreeMap<String, String>,
 }
@@ -267,29 +270,6 @@ impl Registers {
 
     pub fn get(&self, name: &str) -> Option<&Register> {
         self.registers.iter().find(|r| r.name == name)
-    }
-
-    /// Simbolos del ensamblador: cada registro vale su desplazamiento de 7 bits (el banco lo elige el codigo
-    /// con RP0/RP1) y cada bit con nombre su numero de bit. Si un nombre de bit se repite o coincide con el
-    /// de un registro, se omite.
-    pub fn asm_symbols(&self) -> Vec<(String, u8)> {
-        let mut out: Vec<(String, u8)> = Vec::new();
-        let mut seen: BTreeSet<&str> = BTreeSet::new();
-        for r in &self.registers {
-            if seen.insert(&r.name) {
-                out.push((r.name.clone(), r.offset()));
-            }
-        }
-        for r in &self.registers {
-            for (i, b) in r.bits.iter().enumerate() {
-                if let Some(b) = b {
-                    if seen.insert(b) {
-                        out.push((b.clone(), i as u8));
-                    }
-                }
-            }
-        }
-        out
     }
 }
 
@@ -866,6 +846,17 @@ impl DevicePack {
                 }
                 if seen.len() as u64 != 1 << f.width {
                     e.push(format!("{ctx}.{}: faltan valores (hay {} de {})", f.name, seen.len(), 1u64 << f.width));
+                }
+                let mut named = BTreeSet::new();
+                for (n, v) in &f.names {
+                    match v.parse::<u64>() {
+                        Ok(v) if seen.contains(&v) => {
+                            if !named.insert(v) {
+                                e.push(format!("{ctx}.{}: el nombre '{n}' repite un valor que ya tiene nombre", f.name));
+                            }
+                        }
+                        _ => e.push(format!("{ctx}.{}: el nombre '{n}' apunta a '{v}', que no es un valor del campo", f.name)),
+                    }
                 }
             }
         }

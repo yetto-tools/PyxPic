@@ -26,7 +26,7 @@ Quien hoy escribe en ensamblador debe poder escribir lo mismo aquí, con menos e
 | Timers (prescaler, desbordamiento, interrupciones) | ✅ `pypic.periph.timer`, `docs/sdk-timer.md` (#39) |
 | **Acceso directo a cualquier registro (SFR) y a sus bits** | ✅ `pypic.regs`, `docs/sdk-regs.md` (#40) |
 | **Rotación por el acarreo, `SWAPF`, prueba/puesta de bits y banderas C/Z/DC** | ⏳ #41 |
-| Ensamblador textual de las 35 instrucciones (`pypic asm`) | ✅ `docs/asm-pic14.md` |
+| Ensamblador textual de las 35 instrucciones (`pypic asm`), con la sintaxis oficial de **pic-as** (XC8) | ✅ `docs/asm-pic14.md` |
 | **Ensamblador en línea (`@asm_function`)**: la salida de emergencia | ✅ `docs/asm-inline.md` (pendiente en #42: llamadas a otras funciones y desde la interrupción) |
 | **Análisis estático de ciclos por función y contratos de tiempo máximo** (p. ej. «esta interrupción dura ≤ N ciclos») | ⏳ #43 |
 | Tablas constantes en flash (`RETLW`, `GOTO` calculado) | ⏳ #44 |
