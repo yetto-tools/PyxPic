@@ -1,10 +1,20 @@
 # Ensamblador PIC14 (`pypic asm`): sintaxis de MPLAB XC8 PIC Assembler
 
-**Estado: implementado.** `pypic asm` ensambla el PIC16 clásico con la **sintaxis oficial de `pic-as`** (MPLAB XC8 PIC Assembler, guía DS50002974F, cap. 4 y 5),
-no con un dialecto propio: lo que se escribe aquí ensambla igual en MPLAB X, y lo que viene de un proyecto de MPLAB X ensambla aquí
-(dentro del subconjunto de abajo). Es la base del ensamblador en línea ([asm-inline.md](asm-inline.md)).
+## Desensamblado como fuente
+
+`pypic disasm firmware.hex --pic-as -mcpu=16F887` escribe en la salida estándar instrucciones en sintaxis PIC-AS, con `PROCESSOR`, `PSECT` absoluto y `ORG` para conservar direcciones. El Device Pack permite identificar los vectores y emitir las palabras de configuración conocidas como `CONFIG CONFIGn = valor`. Las palabras no reconocidas o con codificaciones alternativas se conservan como `DW`; otras direcciones fuera de la memoria de programa se muestran como datos de zona especial. `--devices-dir` permite localizar Device Packs. Sin `-mcpu`, no se presupone un dispositivo y las zonas especiales se representan con `DW`. El formato sin `--pic-as` conserva el listado anterior.
+
+El HEX no contiene nombres, tipos ni una separación fiable entre código y datos: la salida numérica no recupera el programa original. Se rotulan los vectores conocidos, pero los saltos y registros se mantienen numéricos porque la página y el banco dependen del estado en ejecución. `pypic asm` emite únicamente las palabras CONFIG mencionadas; compare las regiones relevantes al reensamblar con otros toolchains.
+
+La prueba automatizada reensambla con `pypic asm` una imagen con direcciones dispersas y CONFIG. Además, se contrastó una imagen pequeña con vectores y ambas palabras CONFIG mediante PIC-AS 4.00 y el DFP oficial PIC16Fxxx 1.9.176: el HEX coincidió. Esta prueba no demuestra compatibilidad de todas las instrucciones, datos o zonas especiales. PIC-AS emitió un aviso sobre bits reservados de CONFIG2. Para ejecutar el ensamblador oficial se necesita el DFP correspondiente mediante `-mdfp`; no es una dependencia de PyPIC.
+
+**Estado: implementación parcial.** `pypic asm` ensambla un subconjunto de la sintaxis de `pic-as` para PIC16 clásico (MPLAB XC8 PIC Assembler, guía DS50002974F, cap. 4 y 5). No se garantiza compatibilidad completa: las directivas pendientes y las diferencias deben comprobarse con PIC-AS real. Es la base del ensamblador en línea ([asm-inline.md](asm-inline.md)).
 Verificado: el blink escrito en PIC-AS (`examples/asm/blink_rd0.s`) produce **byte por byte** el mismo `.hex` que se probó en Proteus,
 y las 16 008 instrucciones válidas sobreviven a desensamblar y volver a ensamblar.
+
+### Comparación con XC8 PIC-AS
+
+Se comparó `examples/asm/blink_rd0.s` con PIC-AS 4.00 y el DFP oficial PIC16Fxxx 1.9.176: ambos ensambladores produjeron la misma imagen, incluidas CONFIG1 y CONFIG2. Para repetir la prueba automatizada, indicar `PYPIC_TEST_PIC_AS` con la ruta de `pic-as.exe` y `PYPIC_TEST_XC8_DFP` con la carpeta `xc8` del DFP; ejecutar `cargo test -p pypic-cli --test cli pic_as_blink_matches_native_assembler_when_xc8_and_dfp_are_configured -- --nocapture`. Si faltan ambas variables la comparación se omite. Para un archivo `.s` con `#include`, el comando oficial necesita `-xassembler-with-cpp`; el DFP se indica con `-mdfp`. Esta prueba no certifica todas las directivas ni todos los valores de configuración.
 
 ```
 pypic asm blink_rd0.s -Wl,-presetVec=0h,-pintentry=4h -o blink_rd0.hex [--listing]

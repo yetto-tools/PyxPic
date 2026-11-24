@@ -10,7 +10,7 @@ const USAGE: &str = "uso:
   pypic ir <archivo.py> [opciones]
   pypic build <archivo.py> [-o salida.hex] [--listing] [--timing] [opciones]
   pypic asm <archivo.s> [-mcpu=16F887] [-Wl,-pNOMBRE=dir,...] [-o salida.hex] [--listing]
-  pypic disasm <archivo.hex>
+  pypic disasm <archivo.hex> [--pic-as] [-mcpu=16F887] [--devices-dir <dir>]
   pypic device validate <directorio-del-pack>
 
 opciones:
@@ -256,7 +256,22 @@ fn asm_cmd(args: &[String]) -> ExitCode {
 
 /// Desensambla un `.hex` (PIC14): util para inspeccionar lo que se carga en Proteus o en un programador.
 fn disasm(args: &[String]) -> ExitCode {
-    let [path] = args else { return usage() };
+    let mut path = None;
+    let mut pic_as = false;
+    let mut cpu = None;
+    let mut devices_dir = None;
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--pic-as" => pic_as = true,
+            "--devices-dir" => match it.next() { Some(dir) => devices_dir = Some(dir.as_str()), None => return usage() },
+            s if s.starts_with("-mcpu=") && s.len() > 6 => cpu = Some(&s[6..]),
+            s if !s.starts_with('-') && path.is_none() => path = Some(s),
+            _ => return usage(),
+        }
+    }
+    let Some(path) = path else { return usage() };
+    if !pic_as && (cpu.is_some() || devices_dir.is_some()) { return usage(); }
     let text = match std::fs::read_to_string(path) {
         Ok(t) => t,
         Err(e) => {
@@ -271,6 +286,42 @@ fn disasm(args: &[String]) -> ExitCode {
             return ExitCode::from(1);
         }
     };
+    if pic_as {
+        let pack = match cpu {
+            Some(name) => match find_pack(&pic_name(name), devices_dir) {
+                Ok(pack) if pack.memory.program.word_bits == 14 => Some(pack),
+                Ok(_) => { eprintln!("disasm --pic-as solo admite palabras PIC14 de 14 bits"); return ExitCode::from(1); }
+                Err(code) => return code,
+            },
+            None => None,
+        };
+        println!("; PIC14: direcciones en palabras; el HEX no conserva nombres ni distingue código de datos");
+        if let Some(pack) = &pack {
+            println!("PROCESSOR {}", pack.device.name.strip_prefix("PIC").unwrap_or(&pack.device.name));
+            for config in &pack.config.words {
+                if let Some(value) = img.get(config.address.0) {
+                    println!("CONFIG {} = {value:#06x}", config.name);
+                }
+            }
+        }
+        println!("PSECT pypic_disasm,class=CODE,delta=2,abs");
+        for (addr, word) in img.iter() {
+            if pack.as_ref().is_some_and(|p| p.config.words.iter().any(|c| c.address.0 == addr)) { continue; }
+            println!("    ORG {addr:#06x}");
+            if let Some(pack) = &pack {
+                if addr == pack.memory.program.reset_vector.0 { println!("pypic_reset:"); }
+                if addr == pack.memory.program.interrupt_vector.0 { println!("pypic_interrupt:"); }
+            }
+            let program_end = pack.as_ref().map_or(0x2000, |p| p.memory.program.words);
+            if addr >= program_end {
+                println!("    DW {word:#06x} ; zona especial: no se interpreta como instrucción");
+            } else {
+                println!("    {}", pypic_pic14::isa::pic_as_word(word));
+            }
+        }
+        println!("END");
+        return ExitCode::SUCCESS;
+    }
     // rachas de direcciones consecutivas
     let mut runs: Vec<(u32, Vec<u16>)> = Vec::new();
     for (addr, word) in img.iter() {

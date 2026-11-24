@@ -334,3 +334,12 @@ pub fn disassemble(words: &[u16], origin: u32) -> String {
     }
     out
 }
+
+/// Expresa una palabra como instrucción PIC-AS sólo si su codificación es exacta.
+/// Las codificaciones alternativas y palabras desconocidas se conservan con DW.
+pub fn pic_as_word(word: u16) -> String {
+    match Inst::decode(word) {
+        Some(inst) if inst.encode().ok() == Some(word) => inst.to_string(),
+        _ => format!("DW {word:#06x}"),
+    }
+}

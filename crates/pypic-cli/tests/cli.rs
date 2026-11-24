@@ -24,6 +24,69 @@ fn text(o: &Output) -> String {
 }
 
 #[test]
+fn pic_as_blink_matches_native_assembler_when_xc8_and_dfp_are_configured() {
+    let (Ok(pic_as), Ok(dfp)) = (std::env::var("PYPIC_TEST_PIC_AS"), std::env::var("PYPIC_TEST_XC8_DFP")) else {
+        eprintln!("comparación XC8 omitida: configurar PYPIC_TEST_PIC_AS y PYPIC_TEST_XC8_DFP");
+        return;
+    };
+    let dir = tmp("xc8-compat");
+    let official = dir.join("official.hex");
+    let native = dir.join("native.hex");
+    let source = "examples/asm/blink_rd0.s";
+    let options = "-Wl,-presetVec=0h,-pintentry=4h";
+    let xc8 = Command::new(pic_as).current_dir(root())
+        .arg("-mcpu=16F887").arg(format!("-mdfp={dfp}"))
+        .args(["-xassembler-with-cpp", source, options, "-o"])
+        .arg(&official).output().unwrap();
+    assert!(xc8.status.success(), "{}", text(&xc8));
+    let own = pypic(&root(), &["asm", source, options, "-o", native.to_str().unwrap()]);
+    assert!(own.status.success(), "{}", text(&own));
+    let read = |path| Image::from_intel_hex(&std::fs::read_to_string(path).unwrap()).unwrap();
+    assert_eq!(read(official), read(native));
+}
+
+#[test]
+fn disasm_pic_as_preserves_program_gaps_and_configuration_words() {
+    let dir = tmp("disasm-pic-as");
+    let src = dir.join("source.hex");
+    let asm = dir.join("disassembled.s");
+    let out = dir.join("reassembled.hex");
+    let mut image = Image::new();
+    for (address, word) in [(0, 0x3001), (1, 0x0061), (0x10, 0x3fff), (0x2007, 0x20d4)] {
+        image.set(address, word).unwrap();
+    }
+    std::fs::write(&src, image.to_intel_hex(16)).unwrap();
+    let dis = pypic(&root(), &["disasm", src.to_str().unwrap(), "--pic-as"]);
+    assert!(dis.status.success(), "{}", text(&dis));
+    std::fs::write(&asm, dis.stdout).unwrap();
+    let assembled = pypic(&root(), &["asm", asm.to_str().unwrap(), "-o", out.to_str().unwrap()]);
+    assert!(assembled.status.success(), "{}", text(&assembled));
+    let roundtrip = Image::from_intel_hex(&std::fs::read_to_string(out).unwrap()).unwrap();
+    assert_eq!(roundtrip, image);
+}
+
+#[test]
+fn disasm_pic_as_uses_device_pack_configuration_and_vectors() {
+    let dir = tmp("disasm-pic-as-device");
+    let input = dir.join("input.hex");
+    let source = dir.join("output.s");
+    let output = dir.join("output.hex");
+    let mut image = Image::new();
+    for (addr, word) in [(0, 0x3001), (4, 0x0008), (0x2007, 0x20d4), (0x2008, 0x3fff)] {
+        image.set(addr, word).unwrap();
+    }
+    std::fs::write(&input, image.to_intel_hex(16)).unwrap();
+    let result = pypic(&root(), &["disasm", input.to_str().unwrap(), "--pic-as", "-mcpu=16F887"]);
+    assert!(result.status.success(), "{}", text(&result));
+    let asm = String::from_utf8(result.stdout).unwrap();
+    assert!(asm.contains("PROCESSOR 16F887") && asm.contains("CONFIG CONFIG1") && asm.contains("pypic_interrupt:"), "{asm}");
+    std::fs::write(&source, asm).unwrap();
+    let result = pypic(&root(), &["asm", source.to_str().unwrap(), "-o", output.to_str().unwrap()]);
+    assert!(result.status.success(), "{}", text(&result));
+    assert_eq!(Image::from_intel_hex(&std::fs::read_to_string(output).unwrap()).unwrap(), image);
+}
+
+#[test]
 fn build_finds_the_device_pack_from_the_programs_declaration() {
     let out = tmp("build").join("button_led.hex");
     let o = pypic(&root(), &["build", "examples/button_led.py", "-o", out.to_str().unwrap()]);
