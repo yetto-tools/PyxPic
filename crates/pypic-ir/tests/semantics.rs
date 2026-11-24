@@ -138,3 +138,26 @@ fn example_program_runs() {
     let m = build(include_str!("../../../examples/counter.py"));
     assert_eq!(Machine::new(&m).with_step_limit(100_000).call("main", &[]), Ok(None));
 }
+
+// ---- constantes locales sin slot (#11) ---------------------------------------------------------------
+
+#[test]
+fn a_local_const_has_no_slot_and_no_store() {
+    let src = "def f(a: u8) -> u16:\n    K: Const[u8] = 5\n    L: Const[u16] = 1000\n    M: Const[u16] = L + 24\n    return u16(a + K) + M\n";
+    let m = build(src);
+    let f = &m.functions[0];
+    // el unico local es el parametro; ni K ni L ni M existen en la IR
+    assert_eq!(f.locals.len(), 1, "{}", print(&m));
+    assert_eq!(run(src, "f", &[10]), Some(15 + 1024));
+}
+
+#[test]
+fn a_local_const_is_usable_in_conditions_loops_and_calls() {
+    let src = "def g(x: u8) -> u8:\n    return x + 1\n\n\ndef f(a: u8) -> u8:\n    LIM: Const[u8] = 3\n    n: u8 = 0\n    for i in range(LIM):\n        n = g(n) + i\n    if a > LIM:\n        n += LIM\n    return n\n";
+    let m = build(src);
+    // solo `a`, `n` y la variable del bucle: LIM no tiene slot
+    assert_eq!(m.functions[1].locals.len(), 3, "{}", print(&m));
+    // i = 0, 1, 2: n = 1, 3, 6; a = 9 > 3 suma LIM: 9
+    assert_eq!(run(src, "f", &[9]), Some(9));
+    assert_eq!(run(src, "f", &[2]), Some(6));
+}

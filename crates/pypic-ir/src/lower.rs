@@ -310,6 +310,9 @@ impl<'a> FnLower<'a> {
     fn stmt(&mut self, s: &Stmt) {
         match &s.kind {
             StmtKind::Pass | StmtKind::Global(_) => {}
+            // una constante local (`K: Const[u8] = 5`) no es una variable: el frontend ya dio valor a cada uso y la IR no
+            // le reserva un slot ni escribe su valor (#11)
+            StmtKind::Decl(v) if matches!(v.ann.kind, TypeExprKind::Const(_)) && v.value.as_ref().is_some_and(|e| self.info(e).konst.is_some()) => {}
             StmtKind::Decl(v) => {
                 let ty = ann_type(&v.ann);
                 let dst = self.declare_local(&v.name.name, ty, false);

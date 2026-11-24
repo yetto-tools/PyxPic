@@ -434,3 +434,22 @@ fn config_words_go_where_the_options_say() {
     let c = compile(&m, &opts).unwrap();
     assert_eq!((c.image.get(0x2007), c.image.get(0x2008)), (Some(0x1234), Some(0x0ABC)));
 }
+
+// ---- constantes locales: sin RAM ni instrucciones (#11) -------------------------------------------------
+
+#[test]
+fn local_constants_cost_no_ram_and_no_code() {
+    let with = "r: u16 = 0\ndef main() -> None:\n    global r\n    K: Const[u8] = 5\n    L: Const[u16] = 1000\n    r = u16(K) + L\n";
+    let without = "r: u16 = 0\ndef main() -> None:\n    global r\n    r = u16(5) + 1000\n";
+    let (_, a) = build(with);
+    let (_, b) = build(without);
+    assert_eq!((a.ram_bytes, a.flash_words), (b.ram_bytes, b.flash_words), "{}", a.listing);
+    assert_eq!(a.ram_bytes, 2); // solo la global r
+    let (_, s) = (0, {
+        let mut s = Sim::new(&a.image);
+        s.run_until(100_000, |s| s.halted);
+        s
+    });
+    let r = a.globals.iter().find(|g| g.name == "r").unwrap();
+    assert_eq!(s.read(r.addr as usize) as u16 | (s.read(r.addr as usize + 1) as u16) << 8, 1005);
+}
