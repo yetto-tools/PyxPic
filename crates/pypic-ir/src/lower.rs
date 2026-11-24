@@ -6,7 +6,7 @@ use pypic_frontend::ast::*;
 use pypic_frontend::Program;
 
 use crate::ir::{Block, BlockId, Inst, Operand, Place, Terminator, UnaryOp};
-use crate::ir::{Function, Global, Local, Module, Type};
+use crate::ir::{Function, Global, Local, Module, Pin, Type};
 
 pub fn lower(prog: &Program) -> Module {
     let mut m = Module::default();
@@ -19,6 +19,11 @@ pub fn lower(prog: &Program) -> Module {
             m.globals.push(Global { name: v.name.name.clone(), ty: sym.ty, init, is_const: sym.is_final });
         }
     }
+    let mut pin_idx: HashMap<String, usize> = HashMap::new();
+    for p in &prog.pins {
+        pin_idx.insert(p.pin.clone(), m.pins.len());
+        m.pins.push(Pin { name: p.pin.clone(), port: p.port, bit: p.bit, analog: p.analog });
+    }
     let fidx: HashMap<String, usize> = prog.functions.iter().enumerate().map(|(i, f)| (f.name.clone(), i)).collect();
     for it in &prog.module.items {
         if let Item::Func(f) = it {
@@ -27,6 +32,7 @@ pub fn lower(prog: &Program) -> Module {
                 prog,
                 gidx: &gidx,
                 fidx: &fidx,
+                pin_idx: &pin_idx,
                 locals: Vec::new(),
                 lmap: HashMap::new(),
                 temps: Vec::new(),
@@ -48,6 +54,7 @@ struct FnLower<'a> {
     prog: &'a Program,
     gidx: &'a HashMap<String, usize>,
     fidx: &'a HashMap<String, usize>,
+    pin_idx: &'a HashMap<String, usize>,
     locals: Vec<Local>,
     lmap: HashMap<String, u32>,
     temps: Vec<Type>,
@@ -187,6 +194,28 @@ impl<'a> FnLower<'a> {
                     let fi = self.fidx[func];
                     let has_ret = self.prog.functions[fi].ret != Type::Void;
                     self.emit(Inst::Call { dst: if has_ret { dst } else { None }, func: fi, args: ops });
+                }
+            }
+            ExprKind::MethodCall { obj, method, args, .. } => {
+                let pin = self.pin_idx[obj];
+                let flag = |v: i128| Operand::Const { value: v, ty: Type::Bool };
+                match method.as_str() {
+                    "output" => self.emit(Inst::PinCfg { pin, output: true }),
+                    "input" => self.emit(Inst::PinCfg { pin, output: false }),
+                    "on" => self.emit(Inst::PinSet { pin, value: flag(1) }),
+                    "off" => self.emit(Inst::PinSet { pin, value: flag(0) }),
+                    "toggle" => self.emit(Inst::PinToggle { pin }),
+                    _ => match args.first() {
+                        Some(a) => {
+                            let value = self.value(a);
+                            self.emit(Inst::PinSet { pin, value });
+                        }
+                        None => {
+                            if let Some(dst) = dst {
+                                self.emit(Inst::PinGet { dst, pin });
+                            }
+                        }
+                    },
                 }
             }
             ExprKind::Int(_) | ExprKind::Bool(_) | ExprKind::Name(_) => {

@@ -41,6 +41,13 @@ pub enum Inst {
     /// Conversion explicita (trunca/extiende) del tipo de `src` al de `dst`.
     Cast { dst: Place, src: Operand },
     Call { dst: Option<Place>, func: usize, args: Vec<Operand> },
+    /// `RD0.output()` / `RD0.input()`: direccion del pin (y pasarlo a digital si era analogico).
+    PinCfg { pin: usize, output: bool },
+    /// `RD0.on()/off()/value(x)`: escribe el latch del pin (`value` es bool o u8; distinto de 0 = alto).
+    PinSet { pin: usize, value: Operand },
+    PinToggle { pin: usize },
+    /// `RD0.value()`: lee el nivel del pin como u8 (0 o 1).
+    PinGet { dst: Place, pin: usize },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -86,10 +93,21 @@ pub struct Global {
     pub is_const: bool,
 }
 
+/// Pin de E/S usado por el programa (importado de `pypic.gpio`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Pin {
+    pub name: String,
+    pub port: char,
+    pub bit: u8,
+    /// Canal analogico `ANn`, si el pin lo tiene.
+    pub analog: Option<u8>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Module {
     pub globals: Vec<Global>,
     pub functions: Vec<Function>,
+    pub pins: Vec<Pin>,
 }
 
 impl Module {

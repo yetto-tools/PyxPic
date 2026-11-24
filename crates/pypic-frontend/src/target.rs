@@ -4,7 +4,20 @@
 //! palabra y capacidades. El frontend solo consulta este perfil; mas adelante
 //! lo construira el Device Pack del dispositivo elegido.
 
+use std::collections::BTreeMap;
+
 use crate::types::Type;
+
+/// Pin de E/S de un dispositivo (lo llena el Device Pack).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PinInfo {
+    pub port: char,
+    pub bit: u8,
+    /// Solo entrada (p. ej. RE3/MCLR en el PIC16F887).
+    pub input_only: bool,
+    /// Canal analogico (`ANn`) del pin, si lo tiene: hay que pasarlo a digital para usarlo como E/S.
+    pub analog: Option<u8>,
+}
 
 #[derive(Clone, Debug)]
 pub struct TargetProfile {
@@ -16,11 +29,18 @@ pub struct TargetProfile {
     pub max_int_bits: u32,
     /// Niveles de la pila de retorno de hardware (8 en PIC16). `None` = sin limite conocido.
     pub stack_levels: Option<u32>,
+    /// Pines de E/S por nombre (`RD0`...). `None` = sin validar (solo se comprueba la sintaxis del nombre).
+    pub pins: Option<BTreeMap<String, PinInfo>>,
 }
 
 impl TargetProfile {
     pub fn new(name: impl Into<String>, native_bits: u32, max_int_bits: u32) -> Self {
-        TargetProfile { name: name.into(), native_bits, max_int_bits, stack_levels: None }
+        TargetProfile { name: name.into(), native_bits, max_int_bits, stack_levels: None, pins: None }
+    }
+
+    pub fn with_pins(mut self, pins: BTreeMap<String, PinInfo>) -> Self {
+        self.pins = Some(pins);
+        self
     }
 
     pub fn with_stack_levels(mut self, levels: u32) -> Self {

@@ -54,6 +54,8 @@ impl Sim {
         for tris in 0x85..=0x89 {
             self.ram[tris] = 0xFF; // TRISA..TRISE: entradas
         }
+        self.ram[0x188] = 0xFF; // ANSEL: todo analogico tras el reset
+        self.ram[0x189] = 0x3F; // ANSELH (--11 1111)
         self.pc = 0;
         self.pclath = 0;
         self.sp = 0;

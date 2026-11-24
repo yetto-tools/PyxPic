@@ -66,6 +66,6 @@ fn verifier_rejects_ill_typed_ir() {
             term: Terminator::Jump(9),
         }],
     };
-    let m = Module { globals: vec![], functions: vec![f] };
+    let m = Module { globals: vec![], functions: vec![f], pins: vec![] };
     assert_eq!(verify(&m).unwrap_err().len(), 2);
 }

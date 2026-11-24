@@ -18,6 +18,13 @@ pub struct Machine<'m> {
     module: &'m Module,
     pub globals: Vec<i128>,
     steps_left: u64,
+    /// Estado de cada pin (en el orden de `module.pins`): latch, direccion y entrada externa.
+    pin_latch: Vec<bool>,
+    pin_out: Vec<bool>,
+    pin_input: Vec<bool>,
+    pin_last: Vec<Option<bool>>,
+    /// (pin, nivel) cada vez que un pin excitado cambia de estado (incluye el paso de entrada a salida).
+    pub pin_events: Vec<(usize, bool)>,
 }
 
 struct Frame {
@@ -27,7 +34,40 @@ struct Frame {
 
 impl<'m> Machine<'m> {
     pub fn new(module: &'m Module) -> Self {
-        Machine { module, globals: module.globals.iter().map(|g| g.init).collect(), steps_left: 10_000_000 }
+        let n = module.pins.len();
+        Machine {
+            module,
+            globals: module.globals.iter().map(|g| g.init).collect(),
+            steps_left: 10_000_000,
+            pin_latch: vec![false; n],
+            pin_out: vec![false; n],
+            pin_input: vec![false; n],
+            pin_last: vec![None; n],
+            pin_events: Vec::new(),
+        }
+    }
+
+    /// Nivel externo de un pin configurado como entrada.
+    pub fn set_input(&mut self, pin: &str, level: bool) {
+        if let Some(i) = self.module.pins.iter().position(|p| p.name == pin) {
+            self.pin_input[i] = level;
+        }
+    }
+
+    /// Nivel que excita un pin (`None` si es entrada).
+    pub fn pin_level(&self, pin: &str) -> Option<bool> {
+        let i = self.module.pins.iter().position(|p| p.name == pin)?;
+        self.pin_out[i].then_some(self.pin_latch[i])
+    }
+
+    fn refresh_pin(&mut self, pin: usize) {
+        let now = self.pin_out[pin].then_some(self.pin_latch[pin]);
+        if now != self.pin_last[pin] {
+            if let Some(level) = now {
+                self.pin_events.push((pin, level));
+            }
+            self.pin_last[pin] = now;
+        }
     }
 
     pub fn with_step_limit(mut self, n: u64) -> Self {
@@ -146,6 +186,22 @@ impl<'m> Machine<'m> {
             Inst::Cast { dst, src } => {
                 let v = self.read(fr, src);
                 self.write(f, fr, *dst, v);
+            }
+            Inst::PinCfg { pin, output } => {
+                self.pin_out[*pin] = *output;
+                self.refresh_pin(*pin);
+            }
+            Inst::PinSet { pin, value } => {
+                self.pin_latch[*pin] = self.read(fr, value) != 0;
+                self.refresh_pin(*pin);
+            }
+            Inst::PinToggle { pin } => {
+                self.pin_latch[*pin] = !self.pin_latch[*pin];
+                self.refresh_pin(*pin);
+            }
+            Inst::PinGet { dst, pin } => {
+                let v = if self.pin_out[*pin] { self.pin_latch[*pin] } else { self.pin_input[*pin] };
+                self.write(f, fr, *dst, v as i128);
             }
             Inst::Call { dst, func, args } => {
                 let a: Vec<i128> = args.iter().map(|o| self.read(fr, o)).collect();

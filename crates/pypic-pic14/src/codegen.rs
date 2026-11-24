@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
-use pypic_ir::ir::{BinOp, CmpOp, Function, Module, Operand, Place, Terminator, Type, UnaryOp};
+use pypic_ir::ir::{BinOp, CmpOp, Function, Module, Operand, Pin, Place, Terminator, Type, UnaryOp};
 
 use crate::hex::Image;
 use crate::isa::{disassemble, Dest::{F, W}, Inst, Inst::*};
@@ -34,6 +34,18 @@ const RETV_ISR: u8 = 0x7D;
 const RAM_START: u16 = 0x20;
 const RAM_END: u16 = 0x6F;
 const PAGE_WORDS: usize = 2048;
+/// PORTA..PORTE estan en 05h-09h (banco 0) y TRISA..TRISE en 85h-89h (banco 1): mismo desplazamiento de 7 bits.
+/// ANSEL=188h y ANSELH=189h (banco 3). DS40001291H p.27-29. TODO: sacarlos del Device Pack (registers.json, #22).
+const ANSEL: u8 = 0x08;
+const ANSELH: u8 = 0x09;
+
+/// (registro de 7 bits de PORTx/TRISx, bit) de un pin; solo puertos A-E del PIC16F88x.
+fn port_reg(p: &Pin) -> Result<(u8, u8), CodegenError> {
+    if !('A'..='E').contains(&p.port) || p.bit > 7 {
+        return unsupported(format!("el pin {} (el backend PIC16F88x solo maneja los puertos A a E, bits 0-7)", p.name));
+    }
+    Ok((0x05 + (p.port as u8 - b'A'), p.bit))
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CodegenError {
@@ -562,6 +574,45 @@ impl<'a> Gen<'a> {
         Ok(())
     }
 
+    /// Pasa el pin a digital (si era analogico) y fija su direccion. Los TRIS estan en el banco 1 y
+    /// ANSEL/ANSELH en el banco 3; siempre se vuelve al banco 0 (invariante de la ABI).
+    fn pin_cfg(&mut self, pin: usize, output: bool) -> Result<(), CodegenError> {
+        let p = &self.m.pins[pin];
+        let (reg, bit) = port_reg(p)?;
+        if let Some(an) = p.analog {
+            let (r, b) = if an < 8 { (ANSEL, an) } else { (ANSELH, an - 8) };
+            self.asm.i(Bsf(STATUS, BIT_RP0));
+            self.asm.i(Bsf(STATUS, BIT_RP1));
+            self.asm.i(Bcf(r, b));
+            self.asm.i(Bcf(STATUS, BIT_RP0));
+            self.asm.i(Bcf(STATUS, BIT_RP1));
+        }
+        self.asm.i(Bsf(STATUS, BIT_RP0));
+        self.asm.i(if output { Bcf(reg, bit) } else { Bsf(reg, bit) });
+        self.asm.i(Bcf(STATUS, BIT_RP0));
+        Ok(())
+    }
+
+    fn pin_set(&mut self, pin: usize, value: &Operand) -> Result<(), CodegenError> {
+        let (reg, bit) = port_reg(&self.m.pins[pin])?;
+        match self.bytes(value)?[0] {
+            B::Imm(k) => self.asm.i(if k != 0 { Bsf(reg, bit) } else { Bcf(reg, bit) }),
+            B::Reg(r) => {
+                // sin parpadeos intermedios: se decide antes de tocar el pin
+                let (clear, end) = (self.asm.label("pin.clr"), self.asm.label("pin.fin"));
+                self.asm.i(Movf(r, W)); // Z = 1 si el valor es 0
+                self.asm.i(Btfsc(STATUS, BIT_Z));
+                self.asm.goto(clear);
+                self.asm.i(Bsf(reg, bit));
+                self.asm.goto(end);
+                self.asm.place(clear);
+                self.asm.i(Bcf(reg, bit));
+                self.asm.place(end);
+            }
+        }
+        Ok(())
+    }
+
     fn inst(&mut self, inst: &pypic_ir::ir::Inst) -> Result<(), CodegenError> {
         use pypic_ir::ir::Inst as I;
         match inst {
@@ -571,6 +622,22 @@ impl<'a> Gen<'a> {
             I::Compare { dst, op, lhs, rhs } => self.compare(*dst, *op, lhs, rhs),
             I::Cast { dst, src } => self.cast(*dst, src),
             I::Call { dst, func, args } => self.call_inst(*dst, *func, args),
+            I::PinCfg { pin, output } => self.pin_cfg(*pin, *output),
+            I::PinSet { pin, value } => self.pin_set(*pin, value),
+            I::PinToggle { pin } => {
+                let (reg, bit) = port_reg(&self.m.pins[*pin])?;
+                self.asm.i(Movlw(1 << bit));
+                self.asm.i(Xorwf(reg, F));
+                Ok(())
+            }
+            I::PinGet { dst, pin } => {
+                let (reg, bit) = port_reg(&self.m.pins[*pin])?;
+                let d = self.regs(*dst)?[0];
+                self.asm.i(Clrf(d));
+                self.asm.i(Btfsc(reg, bit));
+                self.asm.i(Incf(d, F));
+                Ok(())
+            }
         }
     }
 
@@ -715,6 +782,16 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
                 g.asm.i(Movwf(addr + k as u8));
             }
         }
+    }
+    let mut ports: Vec<u8> = Vec::new();
+    for p in &m.pins {
+        let (reg, _) = port_reg(p)?;
+        if !ports.contains(&reg) {
+            ports.push(reg);
+        }
+    }
+    for reg in ports {
+        g.asm.i(Clrf(reg)); // los latches de PORTx quedan indefinidos tras el reset
     }
     let main_label = g.fn_labels[&main];
     g.asm.call(main_label);

@@ -33,6 +33,10 @@ pub fn print(m: &Module) -> String {
         let kw = if g.is_const { "const" } else { "global" };
         let _ = writeln!(out, "{kw} @{}: {} = {}", g.name, g.ty, g.init);
     }
+    for p in &m.pins {
+        let an = p.analog.map(|n| format!(", AN{n}")).unwrap_or_default();
+        let _ = writeln!(out, "pin {} (puerto {}, bit {}{an})", p.name, p.port, p.bit);
+    }
     for f in &m.functions {
         let params: Vec<String> = f.locals[..f.num_params].iter().map(|l| format!("{}: {}", l.name, l.ty)).collect();
         let tag = if f.is_interrupt { "interrupt " } else { "" };
@@ -61,6 +65,10 @@ pub fn print(m: &Module) -> String {
                     Inst::Cast { dst, src } => {
                         format!("{}: {} = cast {}", place(m, f, *dst), m.place_ty(f, *dst), operand(m, f, src))
                     }
+                    Inst::PinCfg { pin, output } => format!("pin {} = {}", m.pins[*pin].name, if *output { "output" } else { "input" }),
+                    Inst::PinSet { pin, value } => format!("pin {} <- {}", m.pins[*pin].name, operand(m, f, value)),
+                    Inst::PinToggle { pin } => format!("pin {} toggle", m.pins[*pin].name),
+                    Inst::PinGet { dst, pin } => format!("{} = pin {}", place(m, f, *dst), m.pins[*pin].name),
                     Inst::Call { dst, func, args } => {
                         let a: Vec<String> = args.iter().map(|o| operand(m, f, o)).collect();
                         let call = format!("call {}({})", m.functions.get(*func).map_or("?", |x| x.name.as_str()), a.join(", "));

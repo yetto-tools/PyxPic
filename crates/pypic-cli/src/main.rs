@@ -160,6 +160,11 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
         println!("{file}: ok");
         return ExitCode::SUCCESS;
     }
+    if cmd == "build" && !program.pins.is_empty() && device_dir.is_none() {
+        // sin el pack no se sabe que pines son analogicos: ANSEL/ANSELH no se limpiarian y la lectura seria siempre 0
+        eprintln!("{file}: error: el programa usa pines (pypic.gpio): indica el dispositivo con --device <directorio del pack>, p. ej. --device devices/pic16f887");
+        return ExitCode::from(1);
+    }
     let module = pypic_ir::lower(&program);
     if let Err(errs) = pypic_ir::verify(&module) {
         eprintln!("error interno: la IR generada no es valida:\n  {}", errs.join("\n  "));

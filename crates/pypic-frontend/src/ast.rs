@@ -90,6 +90,8 @@ pub enum ExprKind {
     Compare(CmpOp, Box<Expr>, Box<Expr>),
     Bool_(BoolOp, Vec<Expr>),
     Call { func: String, func_span: Span, args: Vec<Expr> },
+    /// `pin.metodo(args)`, p. ej. `RD0.toggle()`.
+    MethodCall { obj: String, obj_span: Span, method: String, args: Vec<Expr> },
 }
 
 #[derive(Clone, Debug)]

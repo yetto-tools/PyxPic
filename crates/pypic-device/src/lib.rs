@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::Path;
 
-use pypic_frontend::TargetProfile;
+use pypic_frontend::{PinInfo, TargetProfile};
 use serde::{Deserialize, Deserializer};
 
 /// Version del esquema que este crate sabe leer.
@@ -251,8 +251,18 @@ impl DevicePack {
 
     /// Perfil que consume el frontend: ancho nativo y maximo del dispositivo.
     pub fn target_profile(&self) -> TargetProfile {
+        let mut pins = BTreeMap::new();
+        if let Some(pk) = self.pins.packages.first() {
+            for p in &pk.pins {
+                if let (Some(port), Some(bit)) = (&p.port, p.bit) {
+                    let analog = p.functions.iter().find_map(|f| f.strip_prefix("AN").and_then(|n| n.parse::<u8>().ok()));
+                    pins.insert(p.name.clone(), PinInfo { port: port.chars().next().unwrap_or('?'), bit: bit as u8, input_only: p.input_only, analog });
+                }
+            }
+        }
         TargetProfile::new(self.device.name.clone(), self.device.cpu.data_bits, self.device.pypic.max_int_bits)
             .with_stack_levels(self.memory.program.stack_levels)
+            .with_pins(pins)
     }
 
     /// Comprobaciones de coherencia interna. Vacio = pack valido.

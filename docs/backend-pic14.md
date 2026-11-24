@@ -13,6 +13,7 @@ pypic build programa.py -o salida.hex [--listing] [--device devices/pic16f887]
 - `+ - & | ^ ~`, negación, `not`, comparaciones (con y sin signo, 8 y 16 bits), desplazamientos por **constante**, conversiones.
 - `if/elif/else`, `while`, `for range`, `break/continue`, `and/or/not` con cortocircuito.
 - Funciones con argumentos y retorno (8/16 bits), globales inicializados en el arranque, `@interrupt` con guardado de contexto.
+- Pines: `RD0.output()/input()/on()/off()/toggle()/value()` (limpia `ANSEL`/`ANSELH`, fija `TRISx`, vuelve al banco 0).
 - Programas con `main()`; solo se compilan las funciones alcanzables desde `main` o la ISR.
 
 ## Cómo está generado
@@ -33,7 +34,7 @@ pypic build programa.py -o salida.hex [--listing] [--device devices/pic16f887]
 - `u32` / `i32`.
 - Más de 80 bytes de datos: no hay otros bancos ni solapamiento de locales (#26).
 - Más de 2048 palabras: no se maneja PCLATH.
-- **Sin acceso a hardware desde el lenguaje todavía** (SDK, #9): hoy un programa `.py` no puede mover un pin.
+- Acceso a pines (`pypic.gpio`, ver `docs/sdk-gpio.md`) solo en los puertos A–E; sin retardos (`sleep_ms`) todavía.
 
 ## Cómo se verifica
 

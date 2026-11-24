@@ -77,6 +77,21 @@ fn verify_fn(m: &Module, f: &Function, errs: &mut Vec<String>) {
                         e(format!("{}: conversion invalida", at(i)));
                     }
                 }
+                Inst::PinCfg { pin, .. } | Inst::PinToggle { pin } => {
+                    if *pin >= m.pins.len() {
+                        e(format!("{}: pin invalido", at(i)));
+                    }
+                }
+                Inst::PinSet { pin, value } => {
+                    if *pin >= m.pins.len() || !matches!(ty(value), Type::Bool | Type::Int { bits: 8, signed: false }) {
+                        e(format!("{}: PinSet mal tipado (pin valido y valor bool o u8)", at(i)));
+                    }
+                }
+                Inst::PinGet { dst, pin } => {
+                    if *pin >= m.pins.len() || !dst_ok(dst) || m.place_ty(f, *dst) != (Type::Int { bits: 8, signed: false }) {
+                        e(format!("{}: PinGet mal tipado (pin valido y destino u8)", at(i)));
+                    }
+                }
                 Inst::Call { dst, func, args } => {
                     let Some(callee) = m.functions.get(*func) else {
                         e(format!("{}: funcion invalida", at(i)));

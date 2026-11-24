@@ -33,7 +33,7 @@ fn describe(t: &Tok) -> String {
     match t {
         Tok::Ident(s) => format!("'{s}'"),
         Tok::Int(_) => "un numero".into(),
-        Tok::Str => "una cadena".into(),
+        Tok::Str(_) => "una cadena".into(),
         Tok::Newline => "fin de linea".into(),
         Tok::Indent => "una indentacion".into(),
         Tok::Dedent => "el fin del bloque".into(),
@@ -190,7 +190,7 @@ impl<'a> Parser<'a> {
                 let sp = self.span();
                 return self.err("PYP1002", sp, "'import' no soportado todavia; solo 'from pypic import <tipos>'");
             }
-            Tok::Str if first => {
+            Tok::Str(_) if first => {
                 self.bump();
                 self.end_stmt()?;
             }
@@ -211,7 +211,13 @@ impl<'a> Parser<'a> {
 
     fn import_from(&mut self) -> R<Item> {
         let start = self.bump().span; // from
-        let module = self.ident("un nombre de modulo")?;
+        let mut module = self.ident("un nombre de modulo")?;
+        while *self.peek() == Tok::Other('.') {
+            self.bump();
+            let part = self.ident("un nombre de modulo")?;
+            module.name = format!("{}.{}", module.name, part.name);
+            module.span = module.span.to(part.span);
+        }
         if !self.at_kw("import") {
             return self.unexpected("'import'");
         }
@@ -323,7 +329,7 @@ impl<'a> Parser<'a> {
         let mut first = allow_docstring;
         while !matches!(self.peek(), Tok::Dedent | Tok::Eof) {
             let before = self.pos;
-            if first && self.at(&Tok::Str) {
+            if first && matches!(self.peek(), Tok::Str(_)) {
                 self.bump();
                 if self.end_stmt().is_err() {
                     self.sync();
@@ -426,7 +432,7 @@ impl<'a> Parser<'a> {
         }
         // sentencia-expresion: solo llamadas
         let e = self.expr()?;
-        if !matches!(e.kind, ExprKind::Call { .. }) {
+        if !matches!(e.kind, ExprKind::Call { .. } | ExprKind::MethodCall { .. }) {
             return self.err("PYP1011", e.span, "una expresion suelta no tiene efecto; solo se permiten llamadas");
         }
         self.end_stmt()?;
@@ -670,7 +676,7 @@ impl<'a> Parser<'a> {
                 self.expect(Tok::RParen, "')'")?;
                 e
             }
-            Tok::Str => return self.err("PYP1021", sp, "las cadenas no estan soportadas"),
+            Tok::Str(_) => return self.err("PYP1021", sp, "las cadenas no estan soportadas"),
             Tok::LBracket => return self.err("PYP1025", sp, "las listas no estan soportadas"),
             Tok::Ident(s) => match s.as_str() {
                 "True" | "False" => {
@@ -687,6 +693,16 @@ impl<'a> Parser<'a> {
                         let args = self.call_args()?;
                         let span = sp.to(self.prev_span());
                         self.mk(span, ExprKind::Call { func: s, func_span: sp, args })
+                    } else if *self.peek() == Tok::Other('.') {
+                        self.bump();
+                        let attr = self.ident("un nombre despues del punto")?;
+                        if self.at(&Tok::LParen) {
+                            let args = self.call_args()?;
+                            let span = sp.to(self.prev_span());
+                            self.mk(span, ExprKind::MethodCall { obj: s, obj_span: sp, method: attr.name, args })
+                        } else {
+                            return self.err("PYP1026", sp.to(attr.span), "el acceso a atributos (a.b) no esta soportado; los pines usan metodos, p. ej. RD0.toggle()");
+                        }
                     } else {
                         self.mk(sp, ExprKind::Name(s))
                     }

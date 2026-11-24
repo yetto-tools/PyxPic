@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::ast::*;
 use crate::diag::{Diagnostics, Span};
-use crate::target::TargetProfile;
+use crate::target::{PinInfo, TargetProfile};
 use crate::types::{Type, INFERENCE_ORDER, U8};
 
 /// Nombres predeclarados (no requieren import; `from pypic import ...` es
@@ -53,6 +53,28 @@ pub struct FuncInfo {
     pub span: Span,
 }
 
+/// Un pin importado con `from pypic.gpio import RD0` (no ocupa memoria: se resuelve al compilar).
+#[derive(Clone, Debug)]
+pub struct PinDecl {
+    /// Nombre del pin en el dispositivo y en el programa (`RD0`).
+    pub pin: String,
+    pub port: char,
+    pub bit: u8,
+    pub input_only: bool,
+    /// Canal analogico (`ANn`): hay que pasarlo a digital para usarlo como E/S.
+    pub analog: Option<u8>,
+    pub span: Span,
+}
+
+/// Uso de un pin a lo largo del programa (comprobacion global, sin importar el orden).
+#[derive(Default)]
+struct PinUse {
+    out_cfg: bool,
+    in_cfg: bool,
+    needs_out: Option<Span>,
+    needs_cfg: Option<Span>,
+}
+
 /// Resultado del analisis: AST + tipos/constantes por expresion + simbolos.
 #[derive(Debug)]
 pub struct Program {
@@ -61,12 +83,14 @@ pub struct Program {
     pub info: Vec<ExprInfo>,
     pub globals: BTreeMap<String, Symbol>,
     pub functions: Vec<FuncInfo>,
+    pub pins: Vec<PinDecl>,
 }
 
 pub struct Checked {
     pub info: Vec<ExprInfo>,
     pub globals: BTreeMap<String, Symbol>,
     pub functions: Vec<FuncInfo>,
+    pub pins: Vec<PinDecl>,
 }
 
 pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Checked {
@@ -82,9 +106,12 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         global_decls: HashSet::new(),
         loop_depth: 0,
         warned: HashSet::new(),
+        pins: Vec::new(),
+        pin_names: HashMap::new(),
+        pin_uses: Vec::new(),
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -121,10 +148,19 @@ struct Checker<'a> {
     loop_depth: u32,
     /// Tipos emulados ya avisados (un aviso por tipo).
     warned: HashSet<Type>,
+    /// Pines importados de `pypic.gpio`, en orden de importacion.
+    pins: Vec<PinDecl>,
+    pin_names: HashMap<String, usize>,
+    pin_uses: Vec<PinUse>,
 }
 
 impl<'a> Checker<'a> {
     fn run(&mut self, m: &Module) {
+        for it in &m.items {
+            if let Item::Import { span, module, names } = it {
+                self.check_import(*span, module, names);
+            }
+        }
         for it in &m.items {
             if let Item::Func(f) = it {
                 self.declare_function(f);
@@ -133,8 +169,7 @@ impl<'a> Checker<'a> {
         for it in &m.items {
             match it {
                 Item::Var(v) => self.declare_variable(v, true),
-                Item::Import { span, module, names } => self.check_import(*span, module, names),
-                Item::Func(_) => {}
+                Item::Import { .. } | Item::Func(_) => {}
             }
         }
         for it in &m.items {
@@ -145,16 +180,140 @@ impl<'a> Checker<'a> {
         self.check_recursion();
         self.check_interrupt_sharing();
         self.check_stack_depth();
+        self.check_pin_usage();
     }
 
     fn check_import(&mut self, span: Span, module: &str, names: &[Ident]) {
+        if module == "pypic.gpio" {
+            for n in names {
+                match self.pin_info(&n.name) {
+                    Some(info) => {
+                        if !self.pin_names.contains_key(&n.name) {
+                            self.pin_names.insert(n.name.clone(), self.pins.len());
+                            self.pins.push(PinDecl { pin: n.name.clone(), port: info.port, bit: info.bit, input_only: info.input_only, analog: info.analog, span: n.span });
+                            self.pin_uses.push(PinUse::default());
+                        }
+                    }
+                    None => {
+                        let msg = match &self.target.pins {
+                            Some(map) => format!(
+                                "'pypic.gpio' no exporta '{}' en '{}' (pines de E/S: {})",
+                                n.name,
+                                self.target.name,
+                                map.keys().map(String::as_str).collect::<Vec<_>>().join(", ")
+                            ),
+                            None => format!("'{}' no es un nombre de pin valido (se espera algo como RD0)", n.name),
+                        };
+                        self.d.error("PYP2074", n.span, msg);
+                    }
+                }
+            }
+            return;
+        }
         let ok = module == "pypic" && names.iter().all(|n| PREDECLARED.contains(&n.name.as_str()));
         if !ok {
             self.d.error(
                 "PYP1002",
                 span,
-                format!("import de '{module}' no soportado todavia (los modulos del SDK llegaran en una fase posterior); solo 'from pypic import <tipos>'"),
+                format!("import de '{module}' no soportado; modulos disponibles: 'pypic' (tipos) y 'pypic.gpio' (pines)"),
             );
+        }
+    }
+
+    // ------------------------------------------------------------------ pines
+    fn pin_info(&self, name: &str) -> Option<PinInfo> {
+        match &self.target.pins {
+            Some(map) => map.get(name).cloned(),
+            None => parse_pin_name(name).map(|(port, bit)| PinInfo { port, bit, input_only: false, analog: None }),
+        }
+    }
+
+    fn method_call(&mut self, e: &Expr, obj: &str, obj_span: Span, method: &str, args: &[Expr]) -> Type {
+        let Some(&pi) = self.pin_names.get(obj) else {
+            let hint = if self.pin_info(obj).is_some() { format!("; importalo con 'from pypic.gpio import {obj}'") } else { String::new() };
+            self.d.error("PYP2078", obj_span, format!("'{obj}' no es un pin importado{hint}"));
+            for a in args {
+                self.expr(a);
+            }
+            return self.set(e, Type::Error, None);
+        };
+        let arities: &[usize] = match method {
+            "output" | "input" | "on" | "off" | "toggle" => &[0],
+            "value" => &[0, 1],
+            other => {
+                self.d.error("PYP2080", e.span, format!("un pin no tiene el metodo '{other}' (disponibles: output, input, on, off, toggle, value)"));
+                for a in args {
+                    self.expr(a);
+                }
+                return self.set(e, Type::Error, None);
+            }
+        };
+        if !arities.contains(&args.len()) {
+            self.d.error("PYP2055", e.span, format!("'{obj}.{method}' no acepta {} argumento(s)", args.len()));
+            for a in args {
+                self.expr(a);
+            }
+            return self.set(e, Type::Error, None);
+        }
+        match method {
+            "output" => {
+                if self.pins[pi].input_only {
+                    self.d.error("PYP2075", e.span, format!("el pin '{obj}' es solo de entrada: usa {obj}.input()"));
+                }
+                self.pin_uses[pi].out_cfg = true;
+                self.set(e, Type::Void, None)
+            }
+            "input" => {
+                self.pin_uses[pi].in_cfg = true;
+                self.set(e, Type::Void, None)
+            }
+            "on" | "off" | "toggle" => {
+                self.pin_uses[pi].needs_out.get_or_insert(e.span);
+                self.set(e, Type::Void, None)
+            }
+            _ => match args {
+                [] => {
+                    self.pin_uses[pi].needs_cfg.get_or_insert(e.span);
+                    self.set(e, U8, None)
+                }
+                [a] => {
+                    self.pin_uses[pi].needs_out.get_or_insert(e.span);
+                    match self.expr(a) {
+                        Type::Bool | Type::Error => {}
+                        Type::Literal => {
+                            self.coerce_literal(a, U8);
+                        }
+                        t if t == U8 => {}
+                        t => self.d.error("PYP2041", a.span, format!("value() recibe un u8 o un bool, no {t}")),
+                    }
+                    self.set(e, Type::Void, None)
+                }
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    /// Un pin debe configurarse en algun punto del programa antes de usarse (la RAM de los registros
+    /// arranca como entrada y analogico).
+    fn check_pin_usage(&mut self) {
+        for (i, pin) in self.pins.iter().enumerate() {
+            let u = &self.pin_uses[i];
+            if let Some(sp) = u.needs_out {
+                if !u.out_cfg {
+                    let msg = if u.in_cfg {
+                        format!("el pin '{0}' solo se configura como entrada ({0}.input()); on/off/toggle/value(x) necesitan {0}.output()", pin.pin)
+                    } else {
+                        format!("el pin '{0}' nunca se configura como salida: llama a {0}.output()", pin.pin)
+                    };
+                    self.d.error("PYP2079", sp, msg);
+                    continue;
+                }
+            }
+            if let Some(sp) = u.needs_cfg {
+                if !u.out_cfg && !u.in_cfg {
+                    self.d.error("PYP2081", sp, format!("el pin '{0}' nunca se configura: llama a {0}.input() (o {0}.output())", pin.pin));
+                }
+            }
         }
     }
 
@@ -218,6 +377,10 @@ impl<'a> Checker<'a> {
             self.d.error("PYP2002", f.name.span, format!("funcion '{}' ya definida", f.name.name));
             return;
         }
+        if self.pin_names.contains_key(&f.name.name) {
+            self.d.error("PYP2009", f.name.span, format!("'{}' ya esta declarado (es un pin importado)", f.name.name));
+            return;
+        }
         let mut params = Vec::new();
         let mut seen = HashSet::new();
         for p in &f.params {
@@ -276,7 +439,7 @@ impl<'a> Checker<'a> {
         let exists = if is_global { self.globals.contains_key(name) } else { self.locals.contains_key(name) };
         if !is_global && self.globals.contains_key(name) {
             self.d.error("PYP2008", v.name.span, format!("'{name}' oculta una variable global del mismo nombre"));
-        } else if exists || self.fidx.contains_key(name) {
+        } else if exists || self.fidx.contains_key(name) || self.pin_names.contains_key(name) {
             self.d.error("PYP2009", v.name.span, format!("'{name}' ya esta declarado"));
         }
         let mut konst = None;
@@ -685,6 +848,7 @@ impl<'a> Checker<'a> {
             ExprKind::Binary(op, l, r) => self.binary(e, *op, l, r),
             ExprKind::Compare(op, l, r) => self.compare(e, *op, l, r),
             ExprKind::Call { func, args, .. } => self.call(e, func, args),
+            ExprKind::MethodCall { obj, obj_span, method, args } => self.method_call(e, obj, *obj_span, method, args),
         }
     }
 
@@ -692,7 +856,9 @@ impl<'a> Checker<'a> {
         if let Some(sym) = self.lookup(n) {
             return self.set(e, sym.ty, sym.konst);
         }
-        if self.fidx.contains_key(n) {
+        if self.pin_names.contains_key(n) {
+            self.d.error("PYP2077", e.span, format!("'{n}' es un pin: usa sus metodos ({n}.on(), {n}.off(), {n}.toggle(), {n}.value())"));
+        } else if self.fidx.contains_key(n) {
             self.d.error("PYP2042", e.span, format!("'{n}' es una funcion; llamala con parentesis"));
         } else if PREDECLARED.contains(&n) {
             self.d.error("PYP2042", e.span, format!("'{n}' es un tipo; no puede usarse como valor"));
@@ -956,6 +1122,18 @@ impl<'a> Checker<'a> {
         }
         self.set(e, f.ret, None)
     }
+}
+
+/// `RD0` -> ('D', 0)
+fn parse_pin_name(s: &str) -> Option<(char, u8)> {
+    let b = s.as_bytes();
+    if b.len() >= 3 && b[0] == b'R' && b[1].is_ascii_uppercase() && s[2..].bytes().all(|c| c.is_ascii_digit()) {
+        let bit: u8 = s[2..].parse().ok()?;
+        if bit <= 15 {
+            return Some((b[1] as char, bit));
+        }
+    }
+    None
 }
 
 /// Analisis simple de "todos los caminos terminan en return".
