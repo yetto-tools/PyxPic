@@ -350,7 +350,7 @@ fn config_accepts_digit_only_value_name_without_reinterpreting_hex_literals() {
     assert_eq!(a.image.get(0x2008), Some(0x3dff));
     let a = ok("CONFIG WRT = \"256\"\n");
     assert_eq!(a.image.get(0x2008), Some(0x3dff));
-    assert_eq!(code("CONFIG WRT = 0x100\n"), "ASM004");
+    assert_eq!(ok("CONFIG WRT = 0x100\n").image.get(0x2008), Some(0x39ff));
 }
 
 #[test]
@@ -360,7 +360,7 @@ fn config_errors_list_the_valid_choices() {
     let m = msg("CONFIG NOPE = ON\n");
     assert!(m.contains("FOSC") && m.contains("no es un ajuste"), "{m}");
     assert_eq!(code("CONFIG WDTE = OFF\nCONFIG WDTE = ON\n"), "ASM013");
-    assert_eq!(code("CONFIG WDTE = 2\n"), "ASM004");
+    assert_eq!(ok("CONFIG WDTE = 2\n").image.get(0x2007), Some(0x3ff7));
     assert_eq!(assemble("CONFIG WDTE = OFF\n").unwrap_err()[0].code, "ASM013"); // sin dispositivo
 }
 

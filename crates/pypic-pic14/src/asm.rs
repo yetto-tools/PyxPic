@@ -1846,7 +1846,7 @@ fn apply_config(sets: &[ConfigSet], env: &AsmEnv, syms: &BTreeMap<String, i64>, 
         let value: Option<u64> = match c.value.as_slice() {
             [(Tok::Ident(n) | Tok::Str(n), _)] if f.names.contains_key(n.as_str()) => Some(f.names[n.as_str()]),
             toks => match eval(toks, &ctx, c.col) {
-                Ok(v) if v >= 0 && (v as u64) < (1u64 << f.width) => Some(v as u64),
+                Ok(v) if v >= 0 => Some((v as u64) & ((1u64 << f.width) - 1)),
                 Ok(v) => {
                     errors.push(AsmError { line: c.line, col: c.col, code: "ASM004", message: format!("{} = {v}: el campo tiene {} bit(s)", f.name, f.width) });
                     None

@@ -68,6 +68,29 @@ fn pic_as_wrt_256_matches_native_config_when_xc8_is_configured() {
 }
 
 #[test]
+fn pic_as_numeric_config_values_match_when_xc8_is_configured() {
+    let (Ok(pic_as), Ok(dfp)) = (std::env::var("PYPIC_TEST_PIC_AS"), std::env::var("PYPIC_TEST_XC8_DFP")) else {
+        eprintln!("comparación XC8 omitida: configurar PYPIC_TEST_PIC_AS y PYPIC_TEST_XC8_DFP");
+        return;
+    };
+    let dir = tmp("xc8-config-numeric");
+    for (index, value) in ["-1", "0", "1", "2", "3", "4", "0x100"].iter().enumerate() {
+        let source = dir.join(format!("wrt{index}.s"));
+        let official = dir.join(format!("official{index}.hex"));
+        let native = dir.join(format!("native{index}.hex"));
+        std::fs::write(&source, format!("PROCESSOR 16F887\nCONFIG WRT = {value}\nPSECT test,class=CODE,delta=2,abs\n nop\nEND\n")).unwrap();
+        let xc8 = Command::new(&pic_as).current_dir(root()).arg("-mcpu=16F887")
+            .arg(format!("-mdfp={dfp}")).arg(&source).arg("-o").arg(&official).output().unwrap();
+        let own = pypic(&root(), &["asm", source.to_str().unwrap(), "-o", native.to_str().unwrap()]);
+        assert_eq!(own.status.success(), xc8.status.success(), "WRT={value}: XC8: {} PyPIC: {}", text(&xc8), text(&own));
+        if xc8.status.success() {
+            let read = |path| Image::from_intel_hex(&std::fs::read_to_string(path).unwrap()).unwrap();
+            assert_eq!(read(&official).get(0x2008), read(&native).get(0x2008), "WRT={value}");
+        }
+    }
+}
+
+#[test]
 fn disasm_pic_as_preserves_program_gaps_and_configuration_words() {
     let dir = tmp("disasm-pic-as");
     let src = dir.join("source.hex");
