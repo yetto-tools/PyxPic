@@ -31,7 +31,7 @@ Los issues abiertos están en <https://github.com/yetto-tools/PyPic/issues>.
   - [x] ADC de 10 bits (`pypic.periph.adc`) · [x] UART asíncrona 8N1 y de 9 bits (`pypic.periph.uart`) · [ ] PWM/CCP, SPI, I²C, comparadores, EEPROM (resto de #45) · [ ] WDT, `sleep`/`nap`, reloj y energía (#46, #38) · [ ] protocolos por software (#47)
 
 ## Fase 3 — Herramientas
-- [ ] VS Code y Project Wizard
+- [~] VS Code: extensión inicial para comprobar, compilar y abrir ejemplos (`vscode-pypic/README.md`); informe de recursos #65 y demás herramientas pendientes. [ ] Project Wizard.
 - [~] Simulador: existe el simulador del núcleo para pruebas del backend; sin interfaz de usuario ni DAP
 - [ ] Terminal serial y plotter
 - [ ] I²C Scanner y explorador de registros

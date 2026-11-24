@@ -11,8 +11,8 @@ Compilador de firmware para microcontroladores PIC con la **sintaxis de Python**
 |---|---|
 | **Funciona** (500 pruebas, muchas diferenciales entre el intérprete de referencia y un simulador del núcleo) | frontend con tipos y diagnósticos con ubicación · IR y backend PIC14 · las 35 instrucciones y un ensamblador con la **sintaxis de pic-as** (macros, `PSECT`, `CONFIG`) · Intel HEX · Device Pack del PIC16F887 · GPIO, temporizadores 0/1/2, ADC de 10 bits, UART 8N1 y de 9 bits, registros y bits, acarreo, esperas exactas al ciclo, tablas en flash, `*` `//` `%` y desplazamientos · interrupciones · `@asm_function` |
 | **Confirmado en Proteus** | `blink` y `button_led` compilados desde `.py` (`docs/proteus-blink.md`). **Falta confirmarlo en hardware real** (#16) |
-| **Límites conocidos** | solo el PIC16F887 (#25) · sin `u32`/`i32` (#32) · todo el dato en el banco 0 (#26) y una función no puede pasar de 2048 palabras · sin PWM, SPI, I²C ni EEPROM (resto de #45) · sin extensión de VS Code, depurador ni terminal serie |
-| **Sin empezar** | herramientas de la Fase 3 (VS Code, Wizard, DAP, I²C Scanner) y la Fase 4 (otros PIC, backends C/ASM, Blockly) |
+| **Límites conocidos** | solo el PIC16F887 (#25) · sin `u32`/`i32` (#32) · todo el dato en el banco 0 (#26) y una función no puede pasar de 2048 palabras · sin PWM, SPI, I²C ni EEPROM (resto de #45) · extensión VS Code inicial, sin depurador ni terminal serie |
+| **Sin empezar** | Wizard, DAP, I²C Scanner y la Fase 4 (otros PIC, backends C/ASM, Blockly) |
 
 ## Documentos
 - Especificación: [principio NO intérprete](docs/spec/00_PRINCIPIOS_NO_INTERPRETE.md) · [visión](docs/spec/01_VISION.md) · [compilador e IR](docs/spec/02_COMPILADOR.md) · [dispositivos](docs/spec/03_DISPOSITIVOS.md) · [IDE y Wizard](docs/spec/04_IDE_WIZARD.md) · [SDK](docs/spec/05_SDK.md) · [simulador y depuración](docs/spec/06_SIMULADOR_DEBUG.md) · [herramientas](docs/spec/07_HERRAMIENTAS.md) · [CLI y formatos](docs/spec/08_CLI_FORMATOS.md) · [roadmap](docs/spec/09_ROADMAP.md). **Es la visión de diseño**; lo implementado está en `TASKS.md`.
@@ -23,7 +23,7 @@ Compilador de firmware para microcontroladores PIC con la **sintaxis de Python**
 - PIC16F887 primero, PIC12F625 después; extensibilidad mediante IR, backends y Device Packs.
 - Una sola forma por operación, sin costos ocultos y esperas exactas al ciclo.
 - Integración opcional con XC8/PIC-AS/SDCC mediante transpilación o ASM (hoy: el ensamblador acepta la sintaxis de PIC-AS).
-- VS Code, Wizard, pinout, simulador, debugger, I²C Scanner y terminal serial forman parte de la visión (todavía no están).
+- La [extensión inicial de VS Code](vscode-pypic/README.md) permite comprobar y compilar con la CLI y abrir ejemplos; Wizard, pinout, simulador visual, debugger, I²C Scanner y terminal serial siguen pendientes.
 
 ## Estructura del repositorio
 ```

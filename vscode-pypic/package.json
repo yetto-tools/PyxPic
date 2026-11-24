@@ -1,0 +1,31 @@
+{
+  "name": "pypic-ide",
+  "displayName": "PyPIC IDE",
+  "description": "Comprueba y compila programas PyPIC desde VS Code.",
+  "version": "0.0.1",
+  "publisher": "pypic",
+  "repository": { "type": "git", "url": "https://github.com/yetto-tools/PyPic.git" },
+  "files": ["extension.js", "README.md"],
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Programming Languages"],
+  "main": "./extension.js",
+  "capabilities": { "untrustedWorkspaces": { "supported": false } },
+  "contributes": {
+    "commands": [
+      { "command": "pypic.check", "title": "PyPIC: Comprobar archivo" },
+      { "command": "pypic.build", "title": "PyPIC: Compilar archivo a HEX" },
+      { "command": "pypic.examples", "title": "PyPIC: Abrir ejemplo" }
+    ],
+    "menus": { "editor/title": [
+      { "command": "pypic.check", "when": "resourceLangId == python", "group": "navigation" },
+      { "command": "pypic.build", "when": "resourceLangId == python", "group": "navigation" }
+    ] },
+    "configuration": {
+      "title": "PyPIC",
+      "properties": {
+        "pypic.executable": { "type": "string", "default": "pypic", "description": "Ruta al ejecutable de PyPIC." },
+        "pypic.devicesDir": { "type": "string", "default": "", "description": "Directorio de Device Packs; vacío usa la búsqueda de PyPIC." }
+      }
+    }
+  }
+}
