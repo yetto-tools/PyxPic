@@ -92,3 +92,18 @@ las funciones de pin que posee (con dirección `in`/`out`/`io`/`analog`) y de qu
 
 `DevicePack::pin_uses("RA4")` devuelve lo que un pin cedería a periféricos: `T0CKI:TIMER0` y `C1OUT:COMPARATORS`. Es la base de los avisos de conflicto de pines
 y de que el SDK de periféricos ([sdk-modulos.md](sdk-modulos.md)) sepa qué pines reclama cada módulo.
+
+## Configuración por nombre (`config.json`)
+
+Cada palabra tiene `default` (el valor de la memoria sin programar, `0x3FFF`) y, opcionalmente, **`build_default`**: lo que `pypic build` programa si no se pide otra cosa
+(en el PIC16F887, `CONFIG1 = 0x20D4`: oscilador interno INTOSCIO, WDT apagado, MCLR interno). Cada campo puede traer **`names`**: el nombre del valor en pic-as y en el DFP
+(`"ON"`, `"OFF"`, `"INTRC_NOCLKOUT"`...) → valor numérico; el pack comprueba que cada nombre apunte a un valor que exista y que no se repita.
+
+```
+pypic build blink.py --config WDTE=ON,FOSC=XT --config BOR4V=BOR21V     # por nombre, repetible
+pypic build blink.py --config CONFIG1=0x20D4                            # o la palabra entera
+```
+
+Se parte de `build_default` y se aplica cada ajuste encima; un ajuste o valor que el pack no tiene es un error que lista las opciones (`ON (WDT habilitado), OFF (...)`),
+y repetir un ajuste también. El mismo `config.json` da los nombres de `CONFIG` en `pypic asm` ([asm-pic14.md](asm-pic14.md)). Los límites de memoria
+(`memory.json`) ya se toman del pack. El archivo de proyecto `pypic.toml` para fijar estos ajustes sin la línea de órdenes es #37.

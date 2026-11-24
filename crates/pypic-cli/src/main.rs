@@ -16,6 +16,7 @@ const USAGE: &str = "uso:
 opciones:
   --device <directorio>   usa este Device Pack (por defecto se busca el que declara el programa)
   --devices-dir <dir>     donde buscar los Device Packs (tambien $PYPIC_DEVICES y ./devices)
+  --config AJUSTE=VALOR   palabra de configuracion por nombre, p. ej. --config WDTE=ON,FOSC=XT (repetible)
   --native-bits N         ancho nativo del destino (sobrescribe al pack)
   --max-int-bits N        ancho maximo de entero (sobrescribe al pack)
   --stack-levels N        niveles de la pila de retorno (sobrescribe al pack)";
@@ -74,12 +75,20 @@ fn find_pack(name: &str, extra: Option<&str>) -> Result<DevicePack, ExitCode> {
 }
 
 /// Parametros del backend tomados del Device Pack: RAM util del banco 0, tamano de programa y direcciones de CONFIG.
-fn backend_options(pack: &DevicePack) -> Result<pypic_pic14::Options, String> {
+fn backend_options(pack: &DevicePack, settings: &[(String, String)]) -> Result<pypic_pic14::Options, String> {
     let d = &pack.memory.data;
     let first = d.gpr.first().ok_or("el pack no define RAM de propósito general")?;
-    let cfg = &pack.config.words;
-    if cfg.len() < 2 || d.common.start.0 == 0 {
-        return Err("el pack no define dos palabras de configuracion o la zona comun".into());
+    if pack.config.words.is_empty() || d.common.start.0 == 0 {
+        return Err("el pack no define palabras de configuracion o la zona comun".into());
+    }
+    // el valor por defecto del pack y encima, uno a uno, los ajustes pedidos por nombre
+    let mut config = pack.config.build_words();
+    let mut seen = std::collections::BTreeSet::new();
+    for (name, value) in settings {
+        if !seen.insert(name.clone()) {
+            return Err(format!("--config {name} se indica dos veces"));
+        }
+        pack.config.apply(&mut config, name, value)?;
     }
     Ok(pypic_pic14::Options {
         device: pack.device.name.clone(),
@@ -87,9 +96,7 @@ fn backend_options(pack: &DevicePack) -> Result<pypic_pic14::Options, String> {
         clocks_per_cycle: pack.device.cpu.clocks_per_instruction,
         ram_start: first.start.0 as u16,
         ram_end: (d.common.start.0 - 1) as u16,
-        config_addr: (cfg[0].address.0, cfg[1].address.0),
-        // TODO: por nombre de campo desde el pack (#33)
-        config: (pypic_pic14::samples::BLINK_CONFIG1, pypic_pic14::samples::BLINK_CONFIG2),
+        config,
         registers: pack.registers.clone(),
     })
 }
@@ -295,6 +302,7 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     let mut out_path: Option<String> = None;
     let mut listing = false;
     let mut timing = false;
+    let mut settings: Vec<(String, String)> = Vec::new();
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -306,6 +314,19 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
             "--native-bits" => native = it.next().and_then(|v| v.parse::<u32>().ok()),
             "--max-int-bits" => max = it.next().and_then(|v| v.parse::<u32>().ok()),
             "--stack-levels" => stack = it.next().and_then(|v| v.parse::<u32>().ok()),
+            // --config WDTE=ON,FOSC=XT (se puede repetir)
+            "--config" => {
+                let Some(v) = it.next() else { return usage() };
+                for part in v.split(',') {
+                    match part.split_once('=') {
+                        Some((n, val)) => settings.push((n.trim().to_string(), val.trim().to_string())),
+                        None => {
+                            eprintln!("--config {part}: se escribe AJUSTE=VALOR (p. ej. WDTE=ON)");
+                            return ExitCode::from(2);
+                        }
+                    }
+                }
+            }
             s if s.starts_with("--") => return usage(),
             _ if file.is_none() => file = Some(a.clone()),
             _ => return usage(),
@@ -367,7 +388,7 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     }
     // build: IR -> instrucciones PIC14 -> Intel HEX
     let pack = pack.expect("comprobado arriba");
-    let opts = match backend_options(&pack) {
+    let opts = match backend_options(&pack, &settings) {
         Ok(o) => o,
         Err(e) => {
             eprintln!("{file}: error: {e}");
@@ -397,10 +418,18 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     if timing {
         print_timing(&compiled.timing);
     }
+    let cfg_text = {
+        let names: Vec<String> = pack.config.words.iter().zip(&opts.config).map(|(w, (_, v))| format!("{}={v:#06X}", w.name)).collect();
+        let how = if settings.is_empty() { "por defecto del pack: INTOSCIO, WDT apagado, MCLR interno".to_string() } else { format!("{} ajuste(s) pedidos", settings.len()) };
+        format!("{} ({how})", names.join(", "))
+    };
     let clock = module.clock_hz.map(|hz| if module.clock_defaulted { format!(", reloj {hz} Hz (por defecto)") } else { format!(", reloj declarado {hz} Hz") }).unwrap_or_default();
     println!(
-        "{out_path}: para {}: {} palabras de programa, {} bytes de RAM (banco 0){clock}. Palabras de configuracion por defecto (INTOSCIO, WDT apagado, MCLR interno).",
-        pack.device.name, compiled.flash_words, compiled.ram_bytes
+        "{out_path}: para {}: {} palabras de programa, {} bytes de RAM (banco 0){clock}. Configuracion: {}.",
+        pack.device.name,
+        compiled.flash_words,
+        compiled.ram_bytes,
+        cfg_text
     );
     ExitCode::SUCCESS
 }

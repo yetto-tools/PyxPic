@@ -434,7 +434,7 @@ fn ram_range_and_program_size_come_from_the_options() {
 fn config_words_go_where_the_options_say() {
     let r = analyze("def main() -> None:\n    pass\n", &TargetProfile::generic());
     let m = lower(&r.program.unwrap());
-    let opts = Options { config_addr: (0x2007, 0x2008), config: (0x1234, 0x0ABC), ..Options::default() };
+    let opts = Options { config: vec![(0x2007, 0x1234), (0x2008, 0x0ABC)], ..Options::default() };
     let c = compile(&m, &opts).unwrap();
     assert_eq!((c.image.get(0x2007), c.image.get(0x2008)), (Some(0x1234), Some(0x0ABC)));
 }

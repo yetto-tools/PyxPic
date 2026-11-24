@@ -366,3 +366,47 @@ fn peripherals_must_agree_with_device_json_counts() {
     let e = mutated(|p| p.peripherals.peripherals.retain(|x| x.name != "MSSP"));
     assert!(has(&e, "CCP, ECCP, EUSART o MSSP"), "{e:?}");
 }
+
+// ---- configuracion por nombre (#33) -----------------------------------------------------------------
+
+#[test]
+fn the_build_words_are_the_packs_defaults_for_pypic() {
+    // CONFIG1 = INTOSCIO, WDT apagado, MCLR interno (0x20D4); CONFIG2 sin programar
+    assert_eq!(pack().config.build_words(), vec![(0x2007, 0x20D4), (0x2008, 0x3FFF)]);
+}
+
+#[test]
+fn settings_apply_by_name_on_top_of_the_build_words() {
+    let p = pack();
+    let mut w = p.config.build_words();
+    p.config.apply(&mut w, "WDTE", "ON").unwrap();
+    p.config.apply(&mut w, "FOSC", "XT").unwrap();
+    // 0x20D4 con WDTE=1 (bit 3) y FOSC=001
+    assert_eq!(w[0].1, (0x20D4 & !0b1111) | 0b1000 | 0b001);
+    p.config.apply(&mut w, "BOR4V", "BOR21V").unwrap();
+    assert_eq!(w[1].1, 0x3FFF & !(1 << 8));
+    // un numero tambien vale, y una palabra entera
+    p.config.apply(&mut w, "FOSC", "2").unwrap();
+    assert_eq!(w[0].1 & 7, 2);
+    p.config.apply(&mut w, "CONFIG1", "0x1234").unwrap();
+    assert_eq!(w[0].1, 0x1234);
+}
+
+#[test]
+fn settings_that_do_not_exist_list_the_valid_choices() {
+    let p = pack();
+    let mut w = p.config.build_words();
+    let e = p.config.apply(&mut w, "NOPE", "ON").unwrap_err();
+    assert!(e.contains("WDTE") && e.contains("FOSC") && e.contains("CONFIG1"), "{e}");
+    let e = p.config.apply(&mut w, "WDTE", "MAYBE").unwrap_err();
+    assert!(e.contains("ON (") && e.contains("OFF (") && e.contains("0..=1"), "{e}");
+    let e = p.config.apply(&mut w, "FOSC", "9").unwrap_err();
+    assert!(e.contains("INTRC_NOCLKOUT"), "{e}");
+    assert!(p.config.apply(&mut w, "CONFIG1", "0x4000").is_err());
+}
+
+#[test]
+fn a_build_default_that_does_not_fit_is_a_pack_error() {
+    let e = mutated(|p| p.config.words[0].build_default = Some(pypic_device::Num(0x4000)));
+    assert!(e.iter().any(|m| m.contains("build_default")), "{e:?}");
+}

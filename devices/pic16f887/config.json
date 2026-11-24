@@ -8,6 +8,7 @@
       "name": "CONFIG1",
       "address": "0x2007",
       "default": "0x3FFF",
+      "build_default": "0x20D4",
       "fields": [
         { "name": "DEBUG", "lsb": 13, "width": 1, "names": { "ON": "0", "OFF": "1" }, "values": { "1": "depurador deshabilitado; RB6 y RB7 son E/S", "0": "depurador habilitado; RB6/ICSPCLK y RB7/ICSPDAT dedicados" } },
         { "name": "LVP", "lsb": 12, "width": 1, "names": { "ON": "1", "OFF": "0" }, "values": { "1": "RB3/PGM con programacion de bajo voltaje", "0": "RB3 es E/S digital; HV en MCLR para programar" } },

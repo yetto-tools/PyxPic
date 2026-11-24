@@ -206,6 +206,9 @@ pub struct ConfigWord {
     pub name: String,
     pub address: Num,
     pub default: Num,
+    /// Valor que `pypic build` programa si el usuario no pide otro (el `default` es el de la memoria sin programar).
+    #[serde(default)]
+    pub build_default: Option<Num>,
     pub fields: Vec<ConfigField>,
 }
 
@@ -220,6 +223,53 @@ pub struct ConfigField {
     pub names: BTreeMap<String, String>,
     /// Valor (como texto decimal) -> significado.
     pub values: BTreeMap<String, String>,
+}
+
+impl Config {
+    /// Palabras de configuracion que programa `pypic build`: direccion y valor (`build_default`, o el de la memoria sin programar).
+    pub fn build_words(&self) -> Vec<(u32, u16)> {
+        self.words.iter().map(|w| (w.address.0, w.build_default.unwrap_or(w.default).0 as u16)).collect()
+    }
+
+    /// Aplica `ajuste = valor` sobre `words`. `ajuste` es un campo (`WDTE`) o una palabra entera (`CONFIG1`); el valor es un nombre
+    /// del campo (`ON`, `INTRC_NOCLKOUT`) o un numero. Devuelve un error que lista las opciones validas.
+    pub fn apply(&self, words: &mut [(u32, u16)], setting: &str, value: &str) -> Result<(), String> {
+        let num = |t: &str| -> Option<u64> {
+            let t = t.trim();
+            match t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
+                Some(h) => u64::from_str_radix(h, 16).ok(),
+                None => t.parse().ok(),
+            }
+        };
+        let slot = |addr: u32, words: &mut [(u32, u16)]| words.iter().position(|w| w.0 == addr);
+        if let Some(w) = self.words.iter().find(|w| w.name == setting) {
+            let v = num(value).filter(|v| *v < (1 << self.word_bits)).ok_or_else(|| format!("{setting} = {value}: la palabra de configuracion es un numero de {} bits (p. ej. 0x20D4)", self.word_bits))?;
+            let i = slot(w.address.0, words).ok_or_else(|| format!("{setting} no esta entre las palabras a programar"))?;
+            words[i].1 = v as u16;
+            return Ok(());
+        }
+        let Some((w, f)) = self.words.iter().find_map(|w| w.fields.iter().find(|f| f.name == setting).map(|f| (w, f))) else {
+            let all: Vec<&str> = self.words.iter().flat_map(|w| w.fields.iter().map(|f| f.name.as_str())).collect();
+            return Err(format!("'{setting}' no es un ajuste de configuracion de este dispositivo (ajustes: {}; o una palabra entera: {})", all.join(", "), self.words.iter().map(|w| w.name.as_str()).collect::<Vec<_>>().join(", ")));
+        };
+        let v = match f.names.get(value) {
+            Some(n) => n.parse::<u64>().map_err(|_| format!("{setting}: valor del pack invalido"))?,
+            None => match num(value) {
+                Some(v) if v < (1 << f.width) => v,
+                _ => {
+                    let mut opts: Vec<String> = f.names.iter().map(|(n, v)| format!("{n} ({})", f.values.get(v).map(String::as_str).unwrap_or("?"))).collect();
+                    if opts.is_empty() {
+                        opts = f.values.iter().map(|(v, d)| format!("{v} ({d})")).collect();
+                    }
+                    return Err(format!("{setting} = {value}: valor no valido; opciones: {}; o un numero 0..={}", opts.join(", "), (1u64 << f.width) - 1));
+                }
+            },
+        };
+        let i = slot(w.address.0, words).ok_or_else(|| format!("{setting} esta en {}, que no se programa", w.name))?;
+        let mask = (((1u32 << f.width) - 1) << f.lsb) as u16;
+        words[i].1 = (words[i].1 & !mask) | ((v as u16) << f.lsb);
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------- registers.json
@@ -823,6 +873,9 @@ impl DevicePack {
             }
             if w.default.0 as u64 > mask {
                 e.push(format!("{ctx}: default {:#x} no cabe en {} bits", w.default.0, c.word_bits));
+            }
+            if w.build_default.is_some_and(|b| b.0 as u64 > mask) {
+                e.push(format!("{ctx}: build_default no cabe en {} bits", c.word_bits));
             }
             let mut used = 0u64;
             for f in &w.fields {

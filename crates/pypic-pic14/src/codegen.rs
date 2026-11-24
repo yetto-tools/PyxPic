@@ -93,9 +93,8 @@ pub struct Options {
     /// Rango de RAM del banco 0 que usa el compilador (sin la zona comun 70h-7Fh).
     pub ram_start: u16,
     pub ram_end: u16,
-    /// Direcciones de palabra de CONFIG1 y CONFIG2.
-    pub config_addr: (u32, u32),
-    pub config: (u16, u16),
+    /// Palabras de configuracion que se programan: (direccion, valor). Un PIC puede tener una o varias.
+    pub config: Vec<(u32, u16)>,
     /// Relojes del oscilador por ciclo de instruccion (4 en PIC16): convierte tiempo en ciclos.
     pub clocks_per_cycle: u32,
     /// Mapa de registros del dispositivo (`registers.json` del Device Pack): el ensamblador en linea y los
@@ -110,15 +109,14 @@ fn builtin_registers() -> pypic_device::Registers {
 
 impl Default for Options {
     /// PIC16F887 con oscilador interno INTOSCIO, WDT apagado y MCLR interno (los valores de `blink_rd0`).
-    /// TODO: tomar las palabras de configuracion por nombre del Device Pack (#33).
+    /// Con un Device Pack, `pypic build --config` las elige por nombre (#33).
     fn default() -> Self {
         Options {
             device: "PIC16F887".into(),
             program_words: 8192,
             ram_start: 0x20,
             ram_end: 0x6F,
-            config_addr: (CONFIG1, CONFIG2),
-            config: (BLINK_CONFIG1, BLINK_CONFIG2),
+            config: vec![(CONFIG1, BLINK_CONFIG1), (CONFIG2, BLINK_CONFIG2)],
             clocks_per_cycle: 4,
             registers: builtin_registers(),
         }
@@ -1133,8 +1131,9 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
         };
         image.set(*a, inst.encode().expect("operandos validos")).expect("sin solapes");
     }
-    image.set(opts.config_addr.0, opts.config.0).expect("config");
-    image.set(opts.config_addr.1, opts.config.1).expect("config");
+    for (addr, word) in &opts.config {
+        image.set(*addr, *word).expect("config");
+    }
 
     // ---- listado ----
     let mut by_addr: BTreeMap<u32, Vec<&str>> = BTreeMap::new();

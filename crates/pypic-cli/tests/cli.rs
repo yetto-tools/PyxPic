@@ -217,3 +217,56 @@ PSECT code,abs
     let o = pypic(&root(), &["asm", f.to_str().unwrap(), "-mcpu=16F999", "-o", hex.to_str().unwrap()]);
     assert!(!o.status.success() && text(&o).contains("desconocido"), "{}", text(&o));
 }
+
+// ---- configuracion por nombre (#33) -----------------------------------------------------------------
+
+const BLINK: &str = "from pypic.device import PIC16F887\nfrom pypic.periph.gpio import RD0\nCLOCK_HZ: Final[u32] = 4_000_000\ndef main() -> None:\n    RD0.output()\n    RD0.on()\n    while True:\n        pass\n";
+
+fn hex_word(hex: &str, addr: u32) -> Option<u16> {
+    let img = pypic_pic14::Image::from_intel_hex(hex).unwrap();
+    img.get(addr)
+}
+
+#[test]
+fn build_programs_the_packs_default_configuration_when_none_is_requested() {
+    let dir = tmp("cfg0");
+    let src = dir.join("p.py");
+    std::fs::write(&src, BLINK).unwrap();
+    let out = dir.join("p.hex");
+    let o = pypic(&root(), &["build", src.to_str().unwrap(), "-o", out.to_str().unwrap()]);
+    assert!(o.status.success() && text(&o).contains("CONFIG1=0x20D4"), "{}", text(&o));
+    let hex = std::fs::read_to_string(&out).unwrap();
+    assert_eq!((hex_word(&hex, 0x2007), hex_word(&hex, 0x2008)), (Some(0x20D4), Some(0x3FFF)));
+}
+
+#[test]
+fn config_by_name_changes_only_the_requested_fields() {
+    let dir = tmp("cfg1");
+    let src = dir.join("p.py");
+    std::fs::write(&src, BLINK).unwrap();
+    let out = dir.join("p.hex");
+    let o = pypic(&root(), &["build", src.to_str().unwrap(), "--config", "WDTE=ON,FOSC=XT", "--config", "BOR4V=BOR21V", "-o", out.to_str().unwrap()]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(text(&o).contains("3 ajuste(s) pedidos"), "{}", text(&o));
+    let hex = std::fs::read_to_string(&out).unwrap();
+    assert_eq!(hex_word(&hex, 0x2007), Some((0x20D4 & !0b1111) | 0b1000 | 0b001));
+    assert_eq!(hex_word(&hex, 0x2008), Some(0x3FFF & !(1 << 8)));
+}
+
+#[test]
+fn config_errors_say_what_is_valid_and_write_nothing() {
+    let dir = tmp("cfg2");
+    let src = dir.join("p.py");
+    std::fs::write(&src, BLINK).unwrap();
+    let out = dir.join("p.hex");
+    let o = pypic(&root(), &["build", src.to_str().unwrap(), "--config", "WDTE=MAYBE", "-o", out.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(text(&o).contains("ON (") && text(&o).contains("OFF ("), "{}", text(&o));
+    assert!(!out.exists());
+    let o = pypic(&root(), &["build", src.to_str().unwrap(), "--config", "NOPE=1", "-o", out.to_str().unwrap()]);
+    assert!(!o.status.success() && text(&o).contains("no es un ajuste"), "{}", text(&o));
+    let o = pypic(&root(), &["build", src.to_str().unwrap(), "--config", "WDTE=ON,WDTE=OFF", "-o", out.to_str().unwrap()]);
+    assert!(!o.status.success() && text(&o).contains("dos veces"), "{}", text(&o));
+    let o = pypic(&root(), &["build", src.to_str().unwrap(), "--config", "WDTE", "-o", out.to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(2));
+}
