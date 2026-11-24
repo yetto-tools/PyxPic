@@ -1,6 +1,6 @@
 # Visión y alcance
 
-PyPIC es un proyecto open source de lenguaje Python restringido, compilado AOT a código máquina nativo para microcontroladores PIC de 8 bits, sin intérprete ni runtime MicroPython en el MCU. Incluye CLI, SDK, extensiones de VS Code y herramientas de hardware. Objetivo inicial PIC16F887; segundo objetivo PIC12F625; ampliar a otras familias PIC8 mediante arquitectura extensible. Diferenciar entre requisitos aprobados, propuestas y funciones implementadas (ninguna implementación se presupone).
+PyPIC es un proyecto open source de lenguaje Python restringido, compilado AOT a código máquina nativo para microcontroladores PIC de cualquier familia (PIC16, PIC18, PIC24, dsPIC y PIC32), sin intérprete ni runtime MicroPython en el MCU. Incluye CLI, SDK, extensiones de VS Code y herramientas de hardware. Objetivo inicial PIC16F887; segundo objetivo PIC12F625 (ambos de 8 bits); ampliar a las demás familias PIC mediante arquitectura extensible. Diferenciar entre requisitos aprobados, propuestas y funciones implementadas (ninguna implementación se presupone).
 
 Principios: independencia de XC8; toolchains externos opcionales; código reproducible; diagnósticos conscientes del hardware; diseño modular; transparencia en compatibilidad y licencias.
 
