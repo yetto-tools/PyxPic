@@ -181,7 +181,7 @@ fn diagnostics_have_line_and_column() {
 
 #[test]
 fn target_profile_limits_types() {
-    let t = TargetProfile { name: "mini".into(), max_int_bits: 16 };
+    let t = TargetProfile::new("mini", 8, 16);
     let r = analyze("x: u32 = 0\n", &t);
     assert!(r.diagnostics.codes().contains(&"PYP2030"));
     let r = analyze("x: u16 = 0\n", &t);

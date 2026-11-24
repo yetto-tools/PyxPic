@@ -13,8 +13,14 @@ fuente .py -> lexer -> parser (AST propio) -> check (tipos, constantes, reglas) 
 
 PyPIC no es "solo 8 bits": cubre cada MCU PIC. El lenguaje tiene enteros de ancho fijo
 (`u8 i8 u16 i16 u32 i32`) y `bool`; **no hay `int` nativo ni ancho de palabra asumido**.
-Que tipos admite un destino lo decide `TargetProfile` (hoy `max_int_bits`; mas adelante lo
-llenara el Device Pack). Sin perfil, el destino es `generic` (hasta 32 bits).
+Que tipos admite un destino lo decide `TargetProfile` (mas adelante lo llenara el Device Pack):
+
+- `native_bits`: ancho nativo de la CPU (8 en PIC16, 16 en PIC24/dsPIC, 32 en PIC32...).
+- `max_int_bits`: ancho maximo admitido, nativo o emulado.
+
+**Decision #1:** un tipo mas ancho que `native_bits` pero dentro de `max_int_bits` **se permite** y se emula con rutinas
+nativas de software; el compilador emite una advertencia de coste (`PYP3001`, una vez por tipo). Por encima de
+`max_int_bits` es error (`PYP2030`). Sin perfil, el destino es `generic` (32 bits nativos).
 
 ## Subconjunto soportado
 
@@ -30,7 +36,7 @@ llenara el Device Pack). Sin perfil, el destino es `generic` (hasta 32 bits).
 Todo lo demas se rechaza con un diagnostico especifico: clases, listas/tuplas, cadenas, floats, `/`, `**`,
 lambdas, `try`, `import` general, atributos, indexado, argumentos con nombre, comparaciones encadenadas, etc.
 
-## Semantica fijada (decisiones a revisar)
+## Semantica fijada (confirmada, decision #2)
 
 | Tema | Regla |
 |---|---|
@@ -45,17 +51,19 @@ lambdas, `try`, `import` general, atributos, indexado, argumentos con nombre, co
 | Globales | Modificarlas en una funcion exige `global x`. Un local no puede ocultar una global. |
 | `for` | Solo `range(...)`; el paso debe ser constante distinto de 0; si todo es literal, el tipo es el menor que cabe. |
 | Recursion | Prohibida (memoria estatica, pila de hardware limitada): `PYP2013`. |
+| ISR vs main | **Decision #3.** Una funcion alcanzable desde `main` y desde la `@interrupt` es error (`PYP2060`): su memoria estatica seria compartida y la ISR podria corromperla. Se escribe una version por contexto. El contexto principal es `main`; si no existe, toda funcion sin llamadores que no sea la ISR. Compartir *globales* si esta permitido. |
+| Ensanchamiento | Sin conversion implicita ni siquiera sin perdida (`u8` + `u16` es `PYP2047`). |
 | Desplazamientos | Cantidad literal `0..bits-1` o entero sin signo; el operando izquierdo necesita tipo. |
 
 ## Diagnosticos
 
 Formato: `archivo:linea:col: error[PYPnnnn]: mensaje`. Rangos: `PYP0xxx` lexer, `PYP1xxx` sintaxis/subconjunto,
-`PYP2xxx` tipos y semantica. Si hay errores de sintaxis no se ejecuta el verificador de tipos.
+`PYP2xxx` tipos y semantica, `PYP3xxx` advertencias (no impiden compilar). Si hay errores de sintaxis no se ejecuta el verificador de tipos.
 
 ## Uso
 
 ```
-cargo run -p pypic-cli -- check examples/counter.py [--max-int-bits 16]
+cargo run -p pypic-cli -- check examples/counter.py [--native-bits 8] [--max-int-bits 16]
 cargo test
 ```
 

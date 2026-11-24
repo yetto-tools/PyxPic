@@ -81,6 +81,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         locals: HashMap::new(),
         global_decls: HashSet::new(),
         loop_depth: 0,
+        warned: HashSet::new(),
     };
     c.run(module);
     Checked { info: c.info, globals: c.globals, functions: c.functions }
@@ -118,6 +119,8 @@ struct Checker<'a> {
     locals: HashMap<String, Symbol>,
     global_decls: HashSet<String>,
     loop_depth: u32,
+    /// Tipos emulados ya avisados (un aviso por tipo).
+    warned: HashSet<Type>,
 }
 
 impl<'a> Checker<'a> {
@@ -140,6 +143,7 @@ impl<'a> Checker<'a> {
             }
         }
         self.check_recursion();
+        self.check_interrupt_sharing();
     }
 
     fn check_import(&mut self, span: Span, module: &str, names: &[Ident]) {
@@ -158,7 +162,10 @@ impl<'a> Checker<'a> {
         match &te.kind {
             TypeExprKind::None if allow_void => Type::Void,
             TypeExprKind::Name(n) => match Type::from_name(n) {
-                Some(t) if self.target.supports(t) => t,
+                Some(t) if self.target.supports(t) => {
+                    self.note_emulated(t, te.span);
+                    t
+                }
                 Some(t) => {
                     self.d.error(
                         "PYP2030",
@@ -176,6 +183,20 @@ impl<'a> Checker<'a> {
                 self.d.error("PYP2001", te.span, "tipo no valido en este contexto");
                 Type::Error
             }
+        }
+    }
+
+    /// Aviso de coste (una vez por tipo) si el destino emula `t` por software.
+    fn note_emulated(&mut self, t: Type, span: Span) {
+        if self.target.is_emulated(t) && self.warned.insert(t) {
+            self.d.warning(
+                "PYP3001",
+                span,
+                format!(
+                    "'{t}' excede el ancho nativo de {} bits de '{}': se emulara por software (mayor coste en flash y ciclos)",
+                    self.target.native_bits, self.target.name
+                ),
+            );
         }
     }
 
@@ -340,6 +361,45 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// Una funcion alcanzable desde `main` y desde la @interrupt compartiria sus
+    /// variables estaticas: la ISR podria corromper una ejecucion en curso.
+    fn check_interrupt_sharing(&mut self) {
+        let Some(isr) = self.functions.iter().find(|f| f.is_interrupt) else { return };
+        let reach = |roots: Vec<String>, fns: &[FuncInfo], idx: &HashMap<String, usize>| {
+            let mut seen: BTreeSet<String> = BTreeSet::new();
+            let mut stack = roots;
+            while let Some(n) = stack.pop() {
+                if let Some(&i) = idx.get(&n) {
+                    if seen.insert(n) {
+                        stack.extend(fns[i].calls.iter().cloned());
+                    }
+                }
+            }
+            seen
+        };
+        let isr_name = isr.name.clone();
+        let isr_reach = reach(isr.calls.iter().cloned().collect(), &self.functions, &self.fidx);
+        // contexto principal: `main` si existe; si no, toda funcion sin llamadores (que no sea la ISR)
+        let called: BTreeSet<&String> = self.functions.iter().flat_map(|f| f.calls.iter()).collect();
+        let roots: Vec<String> = if self.fidx.contains_key("main") {
+            vec!["main".to_string()]
+        } else {
+            self.functions.iter().filter(|f| !f.is_interrupt && !called.contains(&f.name)).map(|f| f.name.clone()).collect()
+        };
+        let main_reach = reach(roots, &self.functions, &self.fidx);
+        for name in isr_reach.intersection(&main_reach) {
+            if *name == isr_name {
+                continue;
+            }
+            let span = self.functions[self.fidx[name]].span;
+            self.d.error(
+                "PYP2060",
+                span,
+                format!("'{name}' se llama desde la interrupcion y desde el codigo principal; su memoria es estatica y la ISR podria corromperla. Crea una version separada para cada contexto"),
+            );
+        }
+    }
+
     // ----------------------------------------------------------- sentencias
     fn block(&mut self, stmts: &[Stmt]) {
         for s in stmts {
@@ -481,6 +541,7 @@ impl<'a> Checker<'a> {
                 let pick = INFERENCE_ORDER.iter().copied().find(|c| self.target.supports(*c) && vals.iter().all(|v| c.contains(*v)));
                 match pick {
                     Some(t) => {
+                        self.note_emulated(t, iter_span);
                         for a in args {
                             let k = self.konst(a);
                             self.set(a, t, k);
@@ -789,6 +850,7 @@ impl<'a> Checker<'a> {
             self.d.error("PYP2030", e.span, format!("el tipo '{target}' no esta soportado por el destino '{}'", self.target.name));
             return self.set(e, Type::Error, None);
         }
+        self.note_emulated(target, e.span);
         let a = &args[0];
         let t = self.ty(a);
         match t {

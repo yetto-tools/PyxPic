@@ -7,7 +7,7 @@ Borrador para crear en GitHub (`yetto-tools/PyPic`). Labels existentes: `bug`, `
 - Frontend: lexer, parser, verificador de tipos y constantes (`crates/pypic-frontend`, `docs/frontend.md`).
 - IR tipada + lowering + verificador + `pypic ir` (`crates/pypic-ir`).
 
-## Decisiones de diseno (`question`, `design-decision`)
+## Decisiones de diseno (`question`, `design-decision`) — RESUELTAS (#1, #2, #3; ver docs/frontend.md)
 1. **Politica de tipos anchos en MCU pequenos.** Hoy `--max-int-bits 8` rechaza `u16`. Un PIC16 puede emular 16/32 bits por
    software: decidir si el Device Pack lo permite con advertencia de coste.
 2. **Revisar semantica fijada:** `//` y `%` truncan hacia cero; condiciones solo `bool`; conversiones siempre explicitas;

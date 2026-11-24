@@ -6,7 +6,7 @@
 
 use std::fmt;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Type {
     Int { bits: u8, signed: bool },
     Bool,

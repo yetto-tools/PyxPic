@@ -2,7 +2,7 @@ use std::process::ExitCode;
 
 use pypic_frontend::{analyze, TargetProfile};
 
-const USAGE: &str = "uso: pypic <check|ir> <archivo.py> [--max-int-bits N]";
+const USAGE: &str = "uso: pypic <check|ir> <archivo.py> [--native-bits N] [--max-int-bits N]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -15,11 +15,19 @@ fn main() -> ExitCode {
     let mut target = TargetProfile::generic();
     let mut it = args.iter().skip(1);
     while let Some(a) = it.next() {
-        if a == "--max-int-bits" {
+        if a == "--native-bits" {
+            match it.next().and_then(|v| v.parse().ok()) {
+                Some(n) => target.native_bits = n,
+                None => {
+                    eprintln!("{USAGE}");
+                    return ExitCode::from(2);
+                }
+            }
+        } else if a == "--max-int-bits" {
             match it.next().and_then(|v| v.parse().ok()) {
                 Some(n) => {
                     target.max_int_bits = n;
-                    target.name = format!("custom-{n}bit");
+                    target.name = format!("custom-{}bit", target.native_bits);
                 }
                 None => {
                     eprintln!("{USAGE}");

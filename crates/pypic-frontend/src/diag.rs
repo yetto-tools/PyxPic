@@ -38,6 +38,9 @@ impl Diagnostics {
     pub fn error(&mut self, code: &'static str, span: Span, message: impl Into<String>) {
         self.items.push(Diagnostic { severity: Severity::Error, code, message: message.into(), span });
     }
+    pub fn warning(&mut self, code: &'static str, span: Span, message: impl Into<String>) {
+        self.items.push(Diagnostic { severity: Severity::Warning, code, message: message.into(), span });
+    }
     pub fn has_errors(&self) -> bool {
         self.items.iter().any(|d| d.severity == Severity::Error)
     }
