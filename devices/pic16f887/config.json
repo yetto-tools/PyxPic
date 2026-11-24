@@ -37,7 +37,7 @@
       "address": "0x2008",
       "default": "0x3FFF",
       "fields": [
-        { "name": "WRT", "lsb": 9, "width": 2, "names": { "OFF": "3", "1FOURTH": "1", "HALF": "0" }, "values": {
+        { "name": "WRT", "lsb": 9, "width": 2, "names": { "OFF": "3", "256": "2", "1FOURTH": "1", "HALF": "0" }, "values": {
             "3": "proteccion de escritura desactivada",
             "2": "0000h-00FFh protegido",
             "1": "0000h-07FFh protegido",

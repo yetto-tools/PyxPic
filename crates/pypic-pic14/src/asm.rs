@@ -1622,7 +1622,7 @@ pub fn assemble_with(src: &str, env: &AsmEnv) -> Result<Assembled, Vec<AsmError>
             }
             continue;
         }
-        let toks = match lex_radix(text, *line, radix) {
+        let mut toks = match lex_radix(text, *line, radix) {
             Ok(t) => t,
             Err(e) => {
                 a.errors.push(e);
@@ -1631,6 +1631,21 @@ pub fn assemble_with(src: &str, env: &AsmEnv) -> Result<Assembled, Vec<AsmError>
         };
         if toks.is_empty() {
             continue;
+        }
+        // CONFIG puede tener nombres de valor que consisten solo en dígitos
+        // (p. ej. WRT=256); distinguir el texto original de 0x100.
+        if matches!(toks.first(), Some((Tok::Ident(w), _)) if w.eq_ignore_ascii_case("CONFIG")) {
+            for idx in 3..toks.len() {
+                let (left, right) = toks.split_at_mut(idx);
+                if let (Some((Tok::Ident(field), _)), Some((Tok::Eq, _)), Some((Tok::Num(_), col))) =
+                    (left.get(idx - 2), left.get(idx - 1), right.first())
+                {
+                    let raw = text.get(col.saturating_sub(1)..).unwrap_or("").split(|c: char| !c.is_ascii_alphanumeric()).next().unwrap_or("");
+                    if env.config.iter().flat_map(|w| &w.fields).any(|f| f.name == *field && f.names.contains_key(raw)) {
+                        right[0].0 = Tok::Str(raw.to_string());
+                    }
+                }
+            }
         }
         if matches!(toks.first(), Some((Tok::Ident(w), _)) if w.eq_ignore_ascii_case("END")) && a.cond.last().is_none_or(|c| c.0) {
             ended = true;

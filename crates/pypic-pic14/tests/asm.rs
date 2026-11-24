@@ -345,6 +345,15 @@ fn config_accepts_quotes_numbers_and_whole_registers() {
 }
 
 #[test]
+fn config_accepts_digit_only_value_name_without_reinterpreting_hex_literals() {
+    let a = ok("CONFIG WRT = 256\n");
+    assert_eq!(a.image.get(0x2008), Some(0x3dff));
+    let a = ok("CONFIG WRT = \"256\"\n");
+    assert_eq!(a.image.get(0x2008), Some(0x3dff));
+    assert_eq!(code("CONFIG WRT = 0x100\n"), "ASM004");
+}
+
+#[test]
 fn config_errors_list_the_valid_choices() {
     let m = msg("CONFIG WDTE = MAYBE\n");
     assert!(m.contains("ON") && m.contains("OFF"), "{m}");

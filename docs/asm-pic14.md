@@ -8,6 +8,8 @@ El HEX no contiene nombres, tipos ni una separación fiable entre código y dato
 
 La prueba automatizada reensambla con `pypic asm` una imagen con direcciones dispersas y CONFIG. Además, se contrastó una imagen pequeña con vectores y ambas palabras CONFIG mediante PIC-AS 4.00 y el DFP oficial PIC16Fxxx 1.9.176: el HEX coincidió. Esta prueba no demuestra compatibilidad de todas las instrucciones, datos o zonas especiales. PIC-AS emitió un aviso sobre bits reservados de CONFIG2. Para ejecutar el ensamblador oficial se necesita el DFP correspondiente mediante `-mdfp`; no es una dependencia de PyPIC.
 
+Para PIC16F887 se reconoce `CONFIG WRT = 256`, nombre del DFP que protege las primeras 256 palabras. No debe confundirse con el literal hexadecimal `0x100`: PIC-AS 4.00 acepta este último como valor numérico mientras PyPIC lo rechaza por exceder el campo; esa diferencia sigue pendiente de resolver.
+
 **Estado: implementación parcial.** `pypic asm` ensambla un subconjunto de la sintaxis de `pic-as` para PIC16 clásico (MPLAB XC8 PIC Assembler, guía DS50002974F, cap. 4 y 5). No se garantiza compatibilidad completa: las directivas pendientes y las diferencias deben comprobarse con PIC-AS real. Es la base del ensamblador en línea ([asm-inline.md](asm-inline.md)).
 Verificado: el blink escrito en PIC-AS (`examples/asm/blink_rd0.s`) produce **byte por byte** el mismo `.hex` que se probó en Proteus,
 y las 16 008 instrucciones válidas sobreviven a desensamblar y volver a ensamblar.
