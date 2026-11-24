@@ -29,6 +29,7 @@ Los `.hex` ya generados están en `examples/hex/uart_*.hex`. Para verlos funcion
 | `saludo_texto.py` | Lo mismo con `UART.write_text("Hola PyPIC")` | No recibe, nada que tratar |
 | `adc_serial.py` | Lee AN0 y envía `ADC: 0512 (0x0200)` cada 500 ms con `f"..."` | Solo transmite; nada que tratar |
 | `linea_comandos.py` | Lee líneas con `UART.read_line`: `ON`, `OFF`, y `ERR n` si no entiende | Línea vacía se ignora; larga se trunca; no trata `OERR` (ver el ejemplo) |
+| `convertidor.py` | Convierte decimal ↔ hexadecimal: recibe `31` o `0x1F` y contesta `31 = 0x001F`; `ERR` si no es un número | Línea vacía se ignora; larga se trunca; `ERR` ante texto inválido o mayor que 65535 |
 | `eco.py` | Devuelve cada byte sin modificar (incluidos `0x00` y `0xFF`) | Borra `OERR`; los bytes perdidos no se recuperan |
 | `led_comandos.py` | `A` enciende RD0, `B` lo apaga | Ignora cualquier otro byte; borra `OERR` |
 | `no_bloqueante.py` | Parpadea RD0 mientras consulta la UART, con eco | El parpadeo no se detiene; borra `OERR` |

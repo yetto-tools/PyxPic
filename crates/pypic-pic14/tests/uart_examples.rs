@@ -243,3 +243,23 @@ fn linea_comandos_obeys_on_off_and_reports_unknown_lines() {
     assert_eq!(String::from_utf8(sent(&s)).unwrap(), "OK\r\nERR 3\r\nOK\r\nERR 16\r\nOK\r\n");
     assert!(s.uart_violations.is_empty(), "{:?}", s.uart_violations);
 }
+
+#[test]
+fn convertidor_converts_between_decimal_and_hexadecimal_and_reports_errors() {
+    let c = build("convertidor");
+    let mut s = sim(&c);
+    // una linea cada 150 000 ciclos (la respuesta mas larga tarda ~17 000)
+    let lines: [&[u8]; 9] = [b"31\n", b"0x1F\n", b"65535\n", b"0xffff\r\n", b"65536\n", b"12ab\n", b"\n", b"0xZZ\n", b"007\n"];
+    let (gap, step) = (150_000u64, FRAME + 400);
+    for (k, l) in lines.iter().enumerate() {
+        for (i, b) in l.iter().enumerate() {
+            s.uart_feed(*b, 3_000 + k as u64 * gap + i as u64 * step, true);
+        }
+    }
+    run(&mut s, 3_000 + lines.len() as u64 * gap);
+    assert_eq!(
+        String::from_utf8(sent(&s)).unwrap(),
+        "31 = 0x001F\r\n0x001F = 31\r\n65535 = 0xFFFF\r\n0xFFFF = 65535\r\nERR\r\nERR\r\nERR\r\n7 = 0x0007\r\n"
+    );
+    assert!(s.uart_violations.is_empty(), "{:?}", s.uart_violations);
+}

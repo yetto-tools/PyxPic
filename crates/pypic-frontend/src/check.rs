@@ -12,6 +12,7 @@
 use crate::adc::{self, AdcCall, AdcOp};
 use crate::uart::{self, FmtPart, UartCall, UartOp, UartStart};
 use crate::clock::{self, ClockKind, ClockSource};
+use crate::text::{TextCall, TextOp};
 use crate::bits::{self, BitsOp};
 use crate::regs::{RegCall, RegOp, BANK_BITS, WRITE_PROTECTED};
 use crate::target::RegInfo;
@@ -150,6 +151,8 @@ pub struct Program {
     /// Arreglos de RAM (`buf: uint8[16]`): nombre y capacidad; y las lecturas `buf[i]` con indice variable, por id de expresion.
     pub arrays: Vec<(String, usize)>,
     pub array_gets: BTreeMap<u32, usize>,
+    /// Las llamadas a `parse_dec` / `parse_hex`, por id de expresion.
+    pub text_calls: BTreeMap<u32, TextCall>,
     /// Llamadas a metodos de `pypic.periph.adc`, por id de expresion.
     pub adc_calls: BTreeMap<u32, AdcCall>,
     /// Condiciones electricas que asume el programa para el ADC (adquisicion y alimentacion).
@@ -176,6 +179,8 @@ pub struct Checked {
     pub rom_gets: BTreeMap<u32, usize>,
     pub arrays: Vec<(String, usize)>,
     pub array_gets: BTreeMap<u32, usize>,
+    /// Las llamadas a `parse_dec` / `parse_hex`, por id de expresion.
+    pub text_calls: BTreeMap<u32, TextCall>,
     pub adc_calls: BTreeMap<u32, AdcCall>,
     pub adc_config: adc::AdcConfig,
     pub uart_calls: BTreeMap<u32, UartCall>,
@@ -238,6 +243,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         arrays: Vec::new(),
         array_idx: HashMap::new(),
         array_gets: BTreeMap::new(),
+        text_calls: BTreeMap::new(),
         bits_calls: BTreeMap::new(),
         carry_ok: false,
         carry_prev: false,
@@ -245,7 +251,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         stmt_top: None,
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, clock_source: c.clock_source, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, arrays: c.arrays, array_gets: c.array_gets, adc_calls: c.adc_calls, adc_config: c.adc_config, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, clock_source: c.clock_source, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, arrays: c.arrays, array_gets: c.array_gets, text_calls: c.text_calls, adc_calls: c.adc_calls, adc_config: c.adc_config, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -340,6 +346,7 @@ struct Checker<'a> {
     arrays: Vec<(String, usize)>,
     array_idx: HashMap<String, usize>,
     array_gets: BTreeMap<u32, usize>,
+    text_calls: BTreeMap<u32, TextCall>,
     /// Funciones importadas de `pypic.bits` y sus llamadas por id de expresion.
     bits_fns: HashSet<String>,
     bits_calls: BTreeMap<u32, BitsOp>,
@@ -3093,6 +3100,52 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// `parse_dec(buf, n, error)` y `parse_hex(buf, n, error)` -> uint16 (docs/sdk-texto.md): texto de un arreglo `uint8[N]` a numero.
+    /// `error` es una variable `bool` que se nombra: se escribe `True` si el texto no es un numero valido (y el valor es 0) y `False` si lo es.
+    fn parse_call(&mut self, e: &Expr, func: &str, args: &[Expr]) -> Type {
+        if args.len() != 3 {
+            for a in args {
+                self.expr_unless_array(a);
+            }
+            self.d.error("PYP2055", e.span, format!("'{func}' se escribe {func}(buf, n, error): el arreglo, cuantos bytes leer y la variable bool donde se anota el error"));
+            return self.set(e, Type::Error, None);
+        }
+        let mut ok = true;
+        let arr = match &args[0].kind {
+            ExprKind::Name(n) if self.array_idx.contains_key(n) => Some(self.array_idx[n]),
+            _ => {
+                self.expr_unless_array(&args[0]);
+                self.d.error("PYP2189", args[0].span, format!("{func} lee el texto de un arreglo uint8[N] (buf: uint8[16]) y se le pasa su nombre"));
+                None
+            }
+        };
+        self.expect(&args[1], U8, Some("n, cuantos bytes leer, es un uint8"));
+        match &args[2].kind {
+            ExprKind::Name(name) => {
+                let id = Ident { name: name.clone(), span: args[2].span };
+                match self.assign_target(&id) {
+                    Some(sym) if sym.ty == Type::Bool => {}
+                    Some(sym) => {
+                        if sym.ty != Type::Error {
+                            self.d.error("PYP2189", args[2].span, format!("'{name}' es {}: el error se anota en una variable bool (error: bool = False)", sym.ty));
+                        }
+                        ok = false;
+                    }
+                    None => ok = false,
+                }
+            }
+            _ => {
+                self.expr(&args[2]);
+                self.d.error("PYP2189", args[2].span, format!("el tercer argumento de {func} es el nombre de una variable bool donde se anota el error (error: bool = False)"));
+                ok = false;
+            }
+        }
+        let (Some(arr), true) = (arr, ok) else { return self.set(e, Type::Error, None) };
+        let op = if func == "parse_dec" { TextOp::ParseDec } else { TextOp::ParseHex };
+        self.text_calls.insert(e.id, TextCall { op, arr });
+        self.set(e, U16, None)
+    }
+
     fn call(&mut self, e: &Expr, func: &str, args: &[Expr]) -> Type {
         if func == "len" && !self.fidx.contains_key("len") {
             return match args {
@@ -3114,6 +3167,9 @@ impl<'a> Checker<'a> {
                     self.set(e, Type::Error, None)
                 }
             };
+        }
+        if (func == "parse_dec" || func == "parse_hex") && !self.fidx.contains_key(func) {
+            return self.parse_call(e, func, args);
         }
         if self.bits_fns.contains(func) {
             return self.bits_call(e, func, args);

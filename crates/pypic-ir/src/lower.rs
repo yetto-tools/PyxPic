@@ -266,6 +266,10 @@ impl<'a> FnLower<'a> {
             }
             ExprKind::Str(_) | ExprKind::FStr(_) => unreachable!("el frontend rechaza el texto fuera de UART.write_text"),
             ExprKind::List(_) => unreachable!("el frontend rechaza las listas fuera de una tabla"),
+            ExprKind::Call { args, .. } if self.prog.text_calls.contains_key(&e.id) => {
+                let tc = self.prog.text_calls[&e.id];
+                self.parse_text(tc, &args[1], &args[2], dst);
+            }
             ExprKind::Call { func, args, .. } => {
                 if self.prog.bits_calls.contains_key(&e.id) {
                     let op = self.prog.bits_calls[&e.id];
@@ -541,6 +545,142 @@ impl<'a> FnLower<'a> {
         self.emit(Inst::Binary { dst: i, op: BinOp::Add, lhs: Operand::Place(i), rhs: Operand::Const { value: 1, ty: u8t } });
         self.terminate(Terminator::Jump(loop_head));
         self.cur = exit;
+    }
+
+    /// Emite `lhs OP rhs` y salta a `then_bb` o `else_bb`.
+    fn jump_if(&mut self, op: CmpOp, lhs: Operand, rhs: Operand, then_bb: BlockId, else_bb: BlockId) {
+        let c = self.pooled("cond", Type::Bool);
+        self.emit(Inst::Compare { dst: c, op, lhs, rhs });
+        self.terminate(Terminator::Branch { cond: Operand::Place(c), then_bb, else_bb });
+    }
+
+    /// `parse_dec(buf, n, error)` / `parse_hex(buf, n, error)`: cifra a cifra con aritmetica de 16 bits, con el desbordamiento
+    /// comprobado antes de multiplicar (`v > 6553`, o `v == 6553` y la cifra `> 5` en decimal; `v > 0FFFh` en hexadecimal). Un error deja
+    /// `error = True` y el valor en 0; la conversion de referencia es `pypic_frontend::text::parse`.
+    fn parse_text(&mut self, tc: pypic_frontend::TextCall, n: &Expr, err: &Expr, dst: Option<Place>) {
+        use pypic_frontend::TextOp;
+        let (u8t, u16t) = (Type::Int { bits: 8, signed: false }, Type::Int { bits: 16, signed: false });
+        let k8 = |v: i128| Operand::Const { value: v, ty: u8t };
+        let k16 = |v: i128| Operand::Const { value: v, ty: u16t };
+        let len = self.prog.arrays[tc.arr].1 as i128;
+        let ExprKind::Name(err_name) = &err.kind else { unreachable!("el frontend exige el nombre de una variable") };
+        let err_place = self.name_place(err_name);
+        let n_op = self.value(n);
+        let (cap, i, v, bad) = (self.pooled("p_cap", u8t), self.pooled("idx", u8t), self.pooled("p_val", u16t), self.pooled("p_bad", Type::Bool));
+        let (ch, d, d16) = (self.pooled("byte", u8t), self.pooled("digit", u8t), self.pooled("p_d16", u16t));
+        let (clamp, after, header, body, digit, ovf, ok_b, notdigit, done, zero, join) = (
+            self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(),
+            self.new_block(), self.new_block(), self.new_block(), self.new_block(),
+        );
+        // cap = min(n, capacidad); i = 0; v = 0; bad = False
+        self.emit(Inst::Copy { dst: cap, src: n_op });
+        self.jump_if(CmpOp::Gt, Operand::Place(cap), k8(len), clamp, after);
+        self.cur = clamp;
+        self.emit(Inst::Copy { dst: cap, src: k8(len) });
+        self.terminate(Terminator::Jump(after));
+        self.cur = after;
+        self.emit(Inst::Copy { dst: i, src: k8(0) });
+        self.emit(Inst::Copy { dst: v, src: k16(0) });
+        self.emit(Inst::Copy { dst: bad, src: Operand::Const { value: 0, ty: Type::Bool } });
+        let empty = self.new_block();
+        match tc.op {
+            TextOp::ParseDec => {
+                self.jump_if(CmpOp::Eq, Operand::Place(cap), k8(0), empty, header);
+            }
+            TextOp::ParseHex => {
+                // prefijo opcional "0x" / "0X": i = 2
+                let (chk0, chk1, pfx, nopfx) = (self.new_block(), self.new_block(), self.new_block(), self.new_block());
+                self.jump_if(CmpOp::Ge, Operand::Place(cap), k8(2), chk0, nopfx);
+                self.cur = chk0;
+                self.emit(Inst::ArrGet { dst: ch, arr: tc.arr, index: k8(0) });
+                self.jump_if(CmpOp::Eq, Operand::Place(ch), k8(48), chk1, nopfx);
+                self.cur = chk1;
+                self.emit(Inst::ArrGet { dst: ch, arr: tc.arr, index: k8(1) });
+                self.emit(Inst::Binary { dst: ch, op: BinOp::BitOr, lhs: Operand::Place(ch), rhs: k8(0x20) });
+                self.jump_if(CmpOp::Eq, Operand::Place(ch), k8(120), pfx, nopfx);
+                self.cur = pfx;
+                self.emit(Inst::Copy { dst: i, src: k8(2) });
+                self.terminate(Terminator::Jump(nopfx));
+                self.cur = nopfx;
+                // sin ninguna cifra (vacio o solo el prefijo) es un error
+                self.jump_if(CmpOp::Ge, Operand::Place(i), Operand::Place(cap), empty, header);
+            }
+        }
+        self.cur = empty;
+        self.emit(Inst::Copy { dst: bad, src: Operand::Const { value: 1, ty: Type::Bool } });
+        self.terminate(Terminator::Jump(done));
+
+        self.cur = header;
+        self.jump_if(CmpOp::Lt, Operand::Place(i), Operand::Place(cap), body, done);
+        self.cur = body;
+        self.emit(Inst::ArrGet { dst: ch, arr: tc.arr, index: Operand::Place(i) });
+        self.emit(Inst::Binary { dst: d, op: BinOp::Sub, lhs: Operand::Place(ch), rhs: k8(48) });
+        match tc.op {
+            TextOp::ParseDec => self.jump_if(CmpOp::Le, Operand::Place(d), k8(9), digit, notdigit),
+            TextOp::ParseHex => {
+                // 0-9 directo; si no, la letra en minuscula menos 'a' debe ser 0..5 (A-F y a-f) y la cifra vale 10 mas
+                let (letter, hexl) = (self.new_block(), self.new_block());
+                self.jump_if(CmpOp::Le, Operand::Place(d), k8(9), digit, letter);
+                self.cur = letter;
+                self.emit(Inst::Binary { dst: d, op: BinOp::BitOr, lhs: Operand::Place(ch), rhs: k8(0x20) });
+                self.emit(Inst::Binary { dst: d, op: BinOp::Sub, lhs: Operand::Place(d), rhs: k8(97) });
+                self.jump_if(CmpOp::Le, Operand::Place(d), k8(5), hexl, notdigit);
+                self.cur = hexl;
+                self.emit(Inst::Binary { dst: d, op: BinOp::Add, lhs: Operand::Place(d), rhs: k8(10) });
+                self.terminate(Terminator::Jump(digit));
+            }
+        }
+        self.cur = notdigit;
+        self.emit(Inst::Copy { dst: bad, src: Operand::Const { value: 1, ty: Type::Bool } });
+        self.terminate(Terminator::Jump(done));
+
+        // desbordamiento antes de multiplicar
+        self.cur = digit;
+        match tc.op {
+            TextOp::ParseDec => {
+                let (chk2, chk3) = (self.new_block(), self.new_block());
+                self.jump_if(CmpOp::Gt, Operand::Place(v), k16(6553), ovf, chk2);
+                self.cur = chk2;
+                self.jump_if(CmpOp::Eq, Operand::Place(v), k16(6553), chk3, ok_b);
+                self.cur = chk3;
+                self.jump_if(CmpOp::Gt, Operand::Place(d), k8(5), ovf, ok_b);
+            }
+            TextOp::ParseHex => self.jump_if(CmpOp::Gt, Operand::Place(v), k16(0x0FFF), ovf, ok_b),
+        }
+        self.cur = ovf;
+        self.emit(Inst::Copy { dst: bad, src: Operand::Const { value: 1, ty: Type::Bool } });
+        self.terminate(Terminator::Jump(done));
+        self.cur = ok_b;
+        self.emit(Inst::Cast { dst: d16, src: Operand::Place(d) });
+        match tc.op {
+            TextOp::ParseDec => {
+                // v * 10 + d = (v << 3) + (v << 1) + d
+                let (a, b) = (self.pooled("p_a", u16t), self.pooled("p_b", u16t));
+                self.emit(Inst::Binary { dst: a, op: BinOp::Shl, lhs: Operand::Place(v), rhs: k8(3) });
+                self.emit(Inst::Binary { dst: b, op: BinOp::Shl, lhs: Operand::Place(v), rhs: k8(1) });
+                self.emit(Inst::Binary { dst: v, op: BinOp::Add, lhs: Operand::Place(a), rhs: Operand::Place(b) });
+                self.emit(Inst::Binary { dst: v, op: BinOp::Add, lhs: Operand::Place(v), rhs: Operand::Place(d16) });
+            }
+            TextOp::ParseHex => {
+                self.emit(Inst::Binary { dst: v, op: BinOp::Shl, lhs: Operand::Place(v), rhs: k8(4) });
+                self.emit(Inst::Binary { dst: v, op: BinOp::BitOr, lhs: Operand::Place(v), rhs: Operand::Place(d16) });
+            }
+        }
+        self.emit(Inst::Binary { dst: i, op: BinOp::Add, lhs: Operand::Place(i), rhs: k8(1) });
+        self.terminate(Terminator::Jump(header));
+
+        // un error deja el valor en 0; el indicador se escribe siempre (un True viejo no se queda)
+        self.cur = done;
+        let zero_cond = Operand::Place(bad);
+        self.terminate(Terminator::Branch { cond: zero_cond, then_bb: zero, else_bb: join });
+        self.cur = zero;
+        self.emit(Inst::Copy { dst: v, src: k16(0) });
+        self.terminate(Terminator::Jump(join));
+        self.cur = join;
+        self.emit(Inst::Copy { dst: err_place, src: Operand::Place(bad) });
+        if let Some(d) = dst {
+            self.emit(Inst::Copy { dst: d, src: Operand::Place(v) });
+        }
     }
 
     fn uart_put(&mut self, ch: Operand) {
