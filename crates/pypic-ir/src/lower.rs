@@ -6,7 +6,7 @@ use pypic_frontend::ast::*;
 use pypic_frontend::Program;
 
 use crate::ir::{Block, BlockId, Inst, Operand, Place, Terminator, UnaryOp};
-use crate::ir::{AsmBlock, Function, Global, Local, Module, Pin, TimerOp, Type};
+use crate::ir::{AsmBlock, Function, Global, Local, Module, Pin, RegOp, TimerOp, Type};
 
 pub fn lower(prog: &Program) -> Module {
     let mut m = Module::default();
@@ -209,6 +209,15 @@ impl<'a> FnLower<'a> {
                 let reads = matches!(call.op, TimerOp::Value | TimerOp::Expired);
                 if !reads || dst.is_some() {
                     self.emit(Inst::Timer { call, dst: if reads { dst } else { None }, arg });
+                }
+            }
+            ExprKind::MethodCall { args, .. } if self.prog.reg_calls.contains_key(&e.id) => {
+                let call = self.prog.reg_calls[&e.id].clone();
+                let arg = if call.op == RegOp::Write { Some(self.value(&args[0])) } else { None };
+                let reads = matches!(call.op, RegOp::Read | RegOp::Value);
+                // leer sin usar el resultado no tiene efecto: no se emite
+                if !reads || dst.is_some() {
+                    self.emit(Inst::Reg { call, dst: if reads { dst } else { None }, arg });
                 }
             }
             ExprKind::MethodCall { obj, method, args, .. } => {

@@ -91,7 +91,8 @@ pub enum ExprKind {
     Bool_(BoolOp, Vec<Expr>),
     Call { func: String, func_span: Span, args: Vec<Expr> },
     /// `pin.metodo(args)`, p. ej. `RD0.toggle()`.
-    MethodCall { obj: String, obj_span: Span, method: String, args: Vec<Expr>, kwargs: Vec<Kwarg> },
+    /// Con `attr`, es `REG.BIT.metodo(args)` (p. ej. `STATUS.RP0.set()`).
+    MethodCall { obj: String, obj_span: Span, attr: Option<Ident>, method: String, args: Vec<Expr>, kwargs: Vec<Kwarg> },
 }
 
 #[derive(Clone, Debug)]

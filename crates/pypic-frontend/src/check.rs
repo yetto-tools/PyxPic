@@ -9,6 +9,8 @@
 //!  * Las condiciones deben ser bool (sin "truthiness").
 //!  * Sin recursion: la memoria es estatica y la pila de hardware es limitada.
 
+use crate::regs::{RegCall, RegOp, BANK_BITS, WRITE_PROTECTED};
+use crate::target::RegInfo;
 use crate::timer::{self, Gate, GateSource, TimerCall, TimerId, TimerOp, TimerSource, TimerStart};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -129,6 +131,8 @@ pub struct Program {
     pub clock_defaulted: bool,
     /// Llamadas a metodos de `pypic.periph.timer`, por id de expresion.
     pub timer_calls: BTreeMap<u32, TimerCall>,
+    /// Llamadas a metodos de `pypic.regs`, por id de expresion.
+    pub reg_calls: BTreeMap<u32, RegCall>,
 }
 
 pub struct Checked {
@@ -140,6 +144,7 @@ pub struct Checked {
     pub clock_hz: Option<u32>,
     pub clock_defaulted: bool,
     pub timer_calls: BTreeMap<u32, TimerCall>,
+    pub reg_calls: BTreeMap<u32, RegCall>,
 }
 
 pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Checked {
@@ -171,9 +176,11 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         timer_needs: BTreeMap::new(),
         timer_every: Vec::new(),
         timer_pins: Vec::new(),
+        reg_names: HashMap::new(),
+        reg_calls: BTreeMap::new(),
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -235,6 +242,9 @@ struct Checker<'a> {
     timer_every: Vec<TimerEvery>,
     /// Pines que un temporizador reclama (`T0CKI` en RA4...).
     timer_pins: Vec<(&'static str, &'static str, Span)>,
+    /// Registros importados de `pypic.regs`.
+    reg_names: HashMap<String, RegInfo>,
+    reg_calls: BTreeMap<u32, RegCall>,
 }
 
 struct TimerEvery {
@@ -352,6 +362,26 @@ impl<'a> Checker<'a> {
                     );
                 } else {
                     self.d.error("PYP1002", n.span, format!("'pypic.system.time' no exporta '{}' (exporta: delay_cycles, delay_us, pause, wait; reservadas: nap, sleep)", n.name));
+                }
+            }
+            return;
+        }
+        if module == "pypic.regs" {
+            for n in names {
+                let Some(regs) = &self.target.registers else {
+                    self.d.error("PYP2130", n.span, "'pypic.regs' necesita un dispositivo: declara 'from pypic.device import PIC16F887'");
+                    continue;
+                };
+                match regs.get(&n.name) {
+                    None => {
+                        let all: Vec<&str> = regs.iter().filter(|(_, r)| r.physical && !r.shared).map(|(k, _)| k.as_str()).collect();
+                        self.d.error("PYP2130", n.span, format!("'{}' no tiene el registro '{}' (registros: {})", self.target.name, n.name, all.join(", ")));
+                    }
+                    Some(r) if !r.physical => self.d.error("PYP2130", n.span, format!("'{}' no es un registro fisico: no se lee ni se escribe como un byte", n.name)),
+                    Some(r) if r.shared => self.d.error("PYP2130", n.span, format!("'{}' comparte direccion con otro registro y depende de otros bits para saber cual se toca; usa @asm_function", n.name)),
+                    Some(r) => {
+                        self.reg_names.insert(n.name.clone(), r.clone());
+                    }
                 }
             }
             return;
@@ -922,7 +952,84 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn method_call(&mut self, e: &Expr, obj: &str, obj_span: Span, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
+    /// `REG.read()`, `REG.write(v)` y `REG.BIT.set()/clear()/toggle()/value()`.
+    fn reg_method(&mut self, e: &Expr, obj: &str, attr: Option<&Ident>, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
+        let info = self.reg_names[obj].clone();
+        if let Some(k) = kwargs.first() {
+            self.d.error("PYP2132", k.name_span, format!("los metodos de un registro no aceptan argumentos con nombre ('{}')", k.name));
+            for k in kwargs {
+                self.expr(&k.value);
+            }
+        }
+        let fail = |this: &mut Self, args: &[Expr]| {
+            for a in args {
+                this.expr(a);
+            }
+            this.set(e, Type::Error, None)
+        };
+        let (bit, label) = match attr {
+            Some(b) => match info.bits.iter().position(|x| x.as_deref() == Some(b.name.as_str())) {
+                Some(i) => (Some(i as u8), format!("{obj}.{}", b.name)),
+                None => {
+                    let names: Vec<&str> = info.bits.iter().flatten().map(|s| s.as_str()).collect();
+                    let list = if names.is_empty() { "no tiene bits con nombre".to_string() } else { format!("bits: {}", names.join(", ")) };
+                    self.d.error("PYP2133", b.span, format!("{obj} no tiene el bit '{}' ({list})", b.name));
+                    return fail(self, args);
+                }
+            },
+            None => (None, obj.to_string()),
+        };
+        let (want_args, op) = match (bit.is_some(), method) {
+            (false, "read") => (0, RegOp::Read),
+            (false, "write") => (1, RegOp::Write),
+            (true, "set") => (0, RegOp::Set),
+            (true, "clear") => (0, RegOp::Clear),
+            (true, "toggle") => (0, RegOp::Toggle),
+            (true, "value") => (0, RegOp::Value),
+            (false, m) => {
+                self.d.error("PYP2134", e.span, format!("el registro {obj} no tiene el metodo '{m}' (disponibles: read, write; un bit se usa asi: {obj}.BIT.set())"));
+                return fail(self, args);
+            }
+            (true, m) => {
+                self.d.error("PYP2134", e.span, format!("el bit {label} no tiene el metodo '{m}' (disponibles: set, clear, toggle, value)"));
+                return fail(self, args);
+            }
+        };
+        if args.len() != want_args {
+            self.d.error("PYP2055", e.span, format!("'{label}.{method}' recibe {want_args} argumento(s)"));
+            return fail(self, args);
+        }
+        if op == RegOp::Write && WRITE_PROTECTED.contains(&obj) {
+            self.d.error("PYP2135", e.span, format!("{obj} no se escribe entero: lo usa el compilador (banco, pagina, PC). Para sus banderas usa {obj}.C, {obj}.Z, {obj}.DC; para algo mas, @asm_function"));
+            return fail(self, args);
+        }
+        if matches!(op, RegOp::Set | RegOp::Clear | RegOp::Toggle) {
+            if let Some(b) = attr.filter(|b| BANK_BITS.contains(&b.name.as_str())) {
+                self.d.error("PYP2135", e.span, format!("{obj}.{} elige el banco de datos y lo gestiona el compilador: el codigo del programa corre en el banco 0. Para cambiarlo a mano usa @asm_function", b.name));
+                return fail(self, args);
+            }
+        }
+        if op == RegOp::Write {
+            self.expect(&args[0], U8, Some(&format!("{obj}.write recibe un u8")));
+        }
+        self.reg_calls.insert(e.id, RegCall { reg: obj.to_string(), addr: info.addr, bit, op });
+        match op {
+            RegOp::Read | RegOp::Value => self.set(e, U8, None),
+            _ => self.set(e, Type::Void, None),
+        }
+    }
+
+    fn method_call(&mut self, e: &Expr, obj: &str, obj_span: Span, attr: Option<&Ident>, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
+        if self.reg_names.contains_key(obj) {
+            return self.reg_method(e, obj, attr, method, args, kwargs);
+        }
+        if let Some(b) = attr {
+            self.d.error("PYP2131", b.span, format!("'{obj}.{}' no existe: solo los registros de 'pypic.regs' tienen bits con nombre, p. ej. STATUS.RP0.set()", b.name));
+            for a in args {
+                self.expr(a);
+            }
+            return self.set(e, Type::Error, None);
+        }
         if let Some(&tid) = self.timer_names.get(obj) {
             return self.timer_method(e, tid, method, args, kwargs);
         }
@@ -1085,7 +1192,7 @@ impl<'a> Checker<'a> {
             self.d.error("PYP2002", f.name.span, format!("funcion '{}' ya definida", f.name.name));
             return;
         }
-        if self.pin_names.contains_key(&f.name.name) || self.time_fns.contains_key(&f.name.name) || self.timer_names.contains_key(&f.name.name) || self.timer_consts.contains(&f.name.name) {
+        if self.pin_names.contains_key(&f.name.name) || self.time_fns.contains_key(&f.name.name) || self.timer_names.contains_key(&f.name.name) || self.reg_names.contains_key(&f.name.name) || self.timer_consts.contains(&f.name.name) {
             self.d.error("PYP2009", f.name.span, format!("'{}' ya esta declarado (es un pin o una funcion del SDK importados)", f.name.name));
             return;
         }
@@ -1176,7 +1283,7 @@ impl<'a> Checker<'a> {
         let exists = if is_global { self.globals.contains_key(name) } else { self.locals.contains_key(name) };
         if !is_global && self.globals.contains_key(name) {
             self.d.error("PYP2008", v.name.span, format!("'{name}' oculta una variable global del mismo nombre"));
-        } else if exists || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.time_fns.contains_key(name) || self.timer_names.contains_key(name) || self.timer_consts.contains(name) {
+        } else if exists || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.time_fns.contains_key(name) || self.timer_names.contains_key(name) || self.reg_names.contains_key(name) || self.timer_consts.contains(name) {
             self.d.error("PYP2009", v.name.span, format!("'{name}' ya esta declarado"));
         }
         let mut konst = None;
@@ -1590,7 +1697,7 @@ impl<'a> Checker<'a> {
             ExprKind::Binary(op, l, r) => self.binary(e, *op, l, r),
             ExprKind::Compare(op, l, r) => self.compare(e, *op, l, r),
             ExprKind::Call { func, args, .. } => self.call(e, func, args),
-            ExprKind::MethodCall { obj, obj_span, method, args, kwargs } => self.method_call(e, obj, *obj_span, method, args, kwargs),
+            ExprKind::MethodCall { obj, obj_span, attr, method, args, kwargs } => self.method_call(e, obj, *obj_span, attr.as_ref(), method, args, kwargs),
         }
     }
 
@@ -1600,6 +1707,8 @@ impl<'a> Checker<'a> {
         }
         if self.timer_consts.contains(n) {
             self.d.error("PYP2128", e.span, format!("'{n}' es una constante de configuracion de temporizadores: solo se usa como argumento de TMRx.start(...)"));
+        } else if self.reg_names.contains_key(n) {
+            self.d.error("PYP2136", e.span, format!("'{n}' es un registro: usa sus metodos ({n}.read(), {n}.write(v), {n}.BIT.set()...)"));
         } else if self.timer_names.contains_key(n) {
             self.d.error("PYP2129", e.span, format!("'{n}' es un temporizador: usa sus metodos ({n}.start(...), {n}.value(), {n}.expired()...)"));
         } else if self.pin_names.contains_key(n) {
@@ -1884,7 +1993,7 @@ const PERIPH_MODULES: &[&str] = &["gpio", "adc", "timer", "pwm", "ccp", "eccp", 
 const SYSTEM_MODULES: &[&str] = &["time", "irq", "wdt", "clock", "power", "flash"];
 /// `pypic.soft.*`: implementaciones por software sobre cualquier GPIO (cuestan ciclos de CPU).
 const SOFT_MODULES: &[&str] = &["spi", "i2c", "uart", "onewire"];
-const IMPLEMENTED_MODULES: &[&str] = &["pypic.periph.gpio", "pypic.periph.timer", "pypic.system.time"];
+const IMPLEMENTED_MODULES: &[&str] = &["pypic.periph.gpio", "pypic.periph.timer", "pypic.regs", "pypic.system.time"];
 
 /// Problema con la ruta de un modulo `pypic.*` (renombrado, categoria sin modulo, inexistente o aun no implementado).
 /// `None` si es un modulo implementado o no es del arbol de categorias.

@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
-use pypic_ir::ir::{BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, Terminator, TimerCall, TimerId, TimerOp, TimerStart, Type, UnaryOp};
+use pypic_ir::ir::{BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, RegCall, RegOp, Terminator, TimerCall, TimerId, TimerOp, TimerStart, Type, UnaryOp};
 use pypic_frontend::timer::{GateSource, TimerSource};
 
 use crate::asm::{assemble_fragment, AsmError, FragItem};
@@ -840,6 +840,7 @@ impl<'a> Gen<'a> {
             I::Call { dst, func, args } => self.call_inst(*dst, *func, args),
             I::Delay { unit, amount } => self.delay(*unit, amount),
             I::Timer { call, dst, arg } => self.timer(call, *dst, arg.as_ref()),
+            I::Reg { call, dst, arg } => self.reg(call, *dst, arg.as_ref()),
             I::PinCfg { pin, output } => self.pin_cfg(*pin, *output),
             I::PinSet { pin, value } => self.pin_set(*pin, value),
             I::PinToggle { pin } => {
@@ -1210,6 +1211,40 @@ impl<'a> Gen<'a> {
     fn bit_op(&mut self, name: &str, set: bool) -> Result<(), CodegenError> {
         let (addr, b) = self.bit_loc(name)?;
         self.banked(addr, |g, f| g.asm.i(if set { Bsf(f, b) } else { Bcf(f, b) }));
+        Ok(())
+    }
+
+    /// Acceso a un registro por su direccion de 9 bits: el banco lo pone `banked` y se vuelve al banco 0 (ABI).
+    fn reg(&mut self, call: &RegCall, dst: Option<Place>, arg: Option<&Operand>) -> Result<(), CodegenError> {
+        let addr = call.addr;
+        let mask = call.bit.map_or(0, |b| 1u8 << b);
+        match call.op {
+            RegOp::Read => {
+                let d = self.regs(dst.expect("Read lleva destino"))?[0];
+                self.banked(addr, |g, f| g.asm.i(Movf(f, W)));
+                self.st(d);
+            }
+            RegOp::Write => {
+                let b = self.bytes(arg.expect("Write lleva valor"))?;
+                self.ld(b[0]);
+                self.banked(addr, |g, f| g.asm.i(Movwf(f)));
+            }
+            RegOp::Set => self.banked(addr, |g, f| g.asm.i(Bsf(f, call.bit.unwrap()))),
+            RegOp::Clear => self.banked(addr, |g, f| g.asm.i(Bcf(f, call.bit.unwrap()))),
+            RegOp::Toggle => {
+                self.asm.i(Movlw(mask));
+                self.banked(addr, |g, f| g.asm.i(Xorwf(f, F)));
+            }
+            RegOp::Value => {
+                // el bit se aisla con ANDLW porque entre el BTFSC y el resultado habria que cambiar de banco
+                let d = self.regs(dst.expect("Value lleva destino"))?[0];
+                self.asm.i(Clrf(d));
+                self.banked(addr, |g, f| g.asm.i(Movf(f, W)));
+                self.asm.i(Andlw(mask));
+                self.asm.i(Btfss(STATUS, BIT_Z));
+                self.asm.i(Incf(d, F));
+            }
+        }
         Ok(())
     }
 

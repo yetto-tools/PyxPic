@@ -19,6 +19,19 @@ pub struct PinInfo {
     pub analog: Option<u8>,
 }
 
+/// Registro de funciones especiales (lo llena `registers.json`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RegInfo {
+    /// Primera direccion de 9 bits (banco incluido).
+    pub addr: u16,
+    /// Nombre de cada bit (del 0 al 7), `None` si no tiene.
+    pub bits: Vec<Option<String>>,
+    /// `false` en INDF y EECON2: no son registros fisicos.
+    pub physical: bool,
+    /// Comparte direccion con otro registro (SSPMSK/SSPADD): el nombre no basta para saber cual se toca.
+    pub shared: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct TargetProfile {
     pub name: String,
@@ -41,11 +54,18 @@ pub struct TargetProfile {
     pub default_clock_hz: Option<u32>,
     /// Perifericos del dispositivo (`TIMER0`, `ADC`... de `peripherals.json`). `None` = sin validar.
     pub peripherals: Option<std::collections::BTreeSet<String>>,
+    /// Registros por nombre (`STATUS`, `OPTION_REG`...). `None` = sin validar.
+    pub registers: Option<BTreeMap<String, RegInfo>>,
 }
 
 impl TargetProfile {
     pub fn new(name: impl Into<String>, native_bits: u32, max_int_bits: u32) -> Self {
-        TargetProfile { name: name.into(), native_bits, max_int_bits, stack_levels: None, pins: None, device: None, max_clock_hz: None, clocks_per_cycle: None, default_clock_hz: None, peripherals: None }
+        TargetProfile { name: name.into(), native_bits, max_int_bits, stack_levels: None, pins: None, device: None, max_clock_hz: None, clocks_per_cycle: None, default_clock_hz: None, peripherals: None, registers: None }
+    }
+
+    pub fn with_registers(mut self, regs: BTreeMap<String, RegInfo>) -> Self {
+        self.registers = Some(regs);
+        self
     }
 
     pub fn with_peripherals(mut self, names: impl IntoIterator<Item = String>) -> Self {

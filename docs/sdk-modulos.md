@@ -14,6 +14,7 @@ from pypic.system.time import pause           # sistema: CPU, reloj y energía
 | Categoría | Qué es | Módulos |
 |---|---|---|
 | `pypic.periph.*` | **Hardware integrado del chip**; solo existe si el dispositivo lo tiene (lo valida el Device Pack) | `gpio` ✅, `timer` ✅ (`docs/sdk-timer.md`), `adc`, `pwm`, `ccp`, `eccp`, `uart`, `spi`, `i2c`, `comparator`, `vref`, `eeprom`, `latch` |
+| `pypic.regs` | **Registros del núcleo y de los periféricos por nombre** (`STATUS.Z.set()`, `OPTION_REG.write(v)`), validados con `registers.json` | ✅ `docs/sdk-regs.md` |
 | `pypic.system.*` | **CPU, reloj y energía** | `time` ✅ (`pause`, `wait`, `delay_us`, `delay_cycles`; `nap`/`sleep` reservadas), `irq`, `wdt`, `clock`, `power`, `flash` |
 | `pypic.soft.*` | **Implementaciones por software** de protocolos, sobre cualquier GPIO | `spi`, `i2c`, `uart`, `onewire` |
 

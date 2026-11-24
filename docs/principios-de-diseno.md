@@ -24,7 +24,7 @@ Quien hoy escribe en ensamblador debe poder escribir lo mismo aquí, con menos e
 | Arranque y configuración inicial | ✅ `@init_device`, `CLOCK_HZ`, declaración del dispositivo |
 | Bajo consumo (`SLEEP`, watchdog) | ⏳ `nap`/`sleep` reservadas (#38) |
 | Timers (prescaler, desbordamiento, interrupciones) | ✅ `pypic.periph.timer`, `docs/sdk-timer.md` (#39) |
-| **Acceso directo a cualquier registro (SFR) y a sus bits** | ⏳ #40 (necesita `registers.json`, #22) |
+| **Acceso directo a cualquier registro (SFR) y a sus bits** | ✅ `pypic.regs`, `docs/sdk-regs.md` (#40) |
 | **Rotación por el acarreo, `SWAPF`, prueba/puesta de bits y banderas C/Z/DC** | ⏳ #41 |
 | Ensamblador textual de las 35 instrucciones (`pypic asm`) | ✅ `docs/asm-pic14.md` |
 | **Ensamblador en línea (`@asm_function`)**: la salida de emergencia | ✅ `docs/asm-inline.md` (pendiente en #42: llamadas a otras funciones y desde la interrupción) |

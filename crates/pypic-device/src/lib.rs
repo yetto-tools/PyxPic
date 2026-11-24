@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::Path;
 
-use pypic_frontend::{PinInfo, TargetProfile};
+use pypic_frontend::{PinInfo, RegInfo, TargetProfile};
 use serde::{Deserialize, Deserializer};
 
 /// Version del esquema que este crate sabe leer.
@@ -411,6 +411,13 @@ impl DevicePack {
             .with_stack_levels(self.memory.program.stack_levels)
             .with_peripherals(self.peripherals.peripherals.iter().map(|p| p.name.clone()))
             .with_pins(pins)
+            .with_registers(
+                self.registers
+                    .registers
+                    .iter()
+                    .map(|r| (r.name.clone(), RegInfo { addr: r.addresses[0].0 as u16, bits: r.bits.clone(), physical: r.physical, shared: r.selected_by.is_some() }))
+                    .collect(),
+            )
             .with_clocks_per_cycle(self.device.cpu.clocks_per_instruction)
             .with_default_clock(self.device.cpu.default_clock_hz)
             .with_device(self.device.name.clone(), self.device.cpu.max_clock_hz.min(u32::MAX as u64) as u32)

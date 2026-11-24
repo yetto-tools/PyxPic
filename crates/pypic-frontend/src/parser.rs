@@ -742,7 +742,17 @@ impl<'a> Parser<'a> {
                         if self.at(&Tok::LParen) {
                             let (args, kwargs) = self.call_args_kw(true)?;
                             let span = sp.to(self.prev_span());
-                            self.mk(span, ExprKind::MethodCall { obj: s, obj_span: sp, method: attr.name, args, kwargs })
+                            self.mk(span, ExprKind::MethodCall { obj: s, obj_span: sp, attr: None, method: attr.name, args, kwargs })
+                        } else if *self.peek() == Tok::Other('.') {
+                            // REG.BIT.metodo(...)
+                            self.bump();
+                            let method = self.ident("un metodo despues del bit")?;
+                            if !self.at(&Tok::LParen) {
+                                return self.err("PYP1026", sp.to(method.span), "el acceso a atributos (a.b.c) no esta soportado; un bit se usa con un metodo, p. ej. STATUS.RP0.set()");
+                            }
+                            let (args, kwargs) = self.call_args_kw(true)?;
+                            let span = sp.to(self.prev_span());
+                            self.mk(span, ExprKind::MethodCall { obj: s, obj_span: sp, attr: Some(attr), method: method.name, args, kwargs })
                         } else {
                             return self.err("PYP1026", sp.to(attr.span), "el acceso a atributos (a.b) no esta soportado; los pines usan metodos, p. ej. RD0.toggle()");
                         }

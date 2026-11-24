@@ -31,6 +31,8 @@ pub struct Machine<'m> {
     pub pin_events: Vec<(usize, bool)>,
     /// Esperas ejecutadas (unidad, cantidad) en orden; el interprete no mide tiempo, solo las registra.
     pub delays: Vec<(DelayUnit, i128)>,
+    /// Registros tocados por el programa, por direccion de 9 bits (0 al empezar; el interprete no modela efectos de hardware).
+    pub regs: std::collections::BTreeMap<u16, u8>,
 }
 
 struct Frame {
@@ -51,6 +53,7 @@ impl<'m> Machine<'m> {
             pin_last: vec![None; n],
             pin_events: Vec::new(),
             delays: Vec::new(),
+            regs: Default::default(),
         }
     }
 
@@ -205,6 +208,27 @@ impl<'m> Machine<'m> {
             Inst::Cast { dst, src } => {
                 let v = self.read(fr, src);
                 self.write(f, fr, *dst, v);
+            }
+            Inst::Reg { call, dst, arg } => {
+                let cur = self.regs.get(&call.addr).copied().unwrap_or(0);
+                let mask = call.bit.map_or(0, |b| 1u8 << b);
+                match call.op {
+                    RegOp::Read => self.write(f, fr, dst.unwrap(), cur as i128),
+                    RegOp::Value => self.write(f, fr, dst.unwrap(), (cur & mask != 0) as i128),
+                    RegOp::Write => {
+                        let v = self.read(fr, arg.as_ref().unwrap());
+                        self.regs.insert(call.addr, v as u8);
+                    }
+                    RegOp::Set => {
+                        self.regs.insert(call.addr, cur | mask);
+                    }
+                    RegOp::Clear => {
+                        self.regs.insert(call.addr, cur & !mask);
+                    }
+                    RegOp::Toggle => {
+                        self.regs.insert(call.addr, cur ^ mask);
+                    }
+                }
             }
             Inst::Timer { call, .. } => return Err(Trap::Timer(call.timer.name().to_string())),
             Inst::Delay { unit, amount } => {

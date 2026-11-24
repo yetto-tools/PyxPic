@@ -79,6 +79,12 @@ pub fn print(m: &Module) -> String {
                         let d = dst.map(|d| format!("{} = ", place(m, f, d))).unwrap_or_default();
                         format!("{d}timer {} {:?}{a}", call.timer.name(), call.op)
                     }
+                    Inst::Reg { call, dst, arg } => {
+                        let a = arg.as_ref().map(|a| format!(" {}", operand(m, f, a))).unwrap_or_default();
+                        let d = dst.map(|d| format!("{} = ", place(m, f, d))).unwrap_or_default();
+                        let bit = call.bit.map(|b| format!(".{b}")).unwrap_or_default();
+                        format!("{d}reg {}{bit} {:?}{a}", call.reg, call.op)
+                    }
                     Inst::PinCfg { pin, output } => format!("pin {} = {}", m.pins[*pin].name, if *output { "output" } else { "input" }),
                     Inst::PinSet { pin, value } => format!("pin {} <- {}", m.pins[*pin].name, operand(m, f, value)),
                     Inst::PinToggle { pin } => format!("pin {} toggle", m.pins[*pin].name),

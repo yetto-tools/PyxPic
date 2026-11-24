@@ -97,6 +97,15 @@ fn verify_fn(m: &Module, f: &Function, errs: &mut Vec<String>) {
                         _ => {}
                     }
                 }
+                Inst::Reg { call, dst, arg } => {
+                    let u8_ty = Type::Int { bits: 8, signed: false };
+                    match call.op {
+                        RegOp::Read | RegOp::Value if !dst.is_some_and(|d| valid(d) && m.place_ty(f, d) == u8_ty) => e(format!("{}: Reg read/value necesita un destino u8", at(i))),
+                        RegOp::Write if !arg.as_ref().is_some_and(|a| ty(a) == u8_ty) => e(format!("{}: Reg write necesita un valor u8", at(i))),
+                        RegOp::Set | RegOp::Clear | RegOp::Toggle | RegOp::Value if call.bit.is_none_or(|b| b > 7) => e(format!("{}: Reg necesita un bit 0..7", at(i))),
+                        _ => {}
+                    }
+                }
                 Inst::PinCfg { pin, .. } | Inst::PinToggle { pin } => {
                     if *pin >= m.pins.len() {
                         e(format!("{}: pin invalido", at(i)));
