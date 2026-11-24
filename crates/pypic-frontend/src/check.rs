@@ -58,6 +58,8 @@ pub struct FuncInfo {
     /// Decorada con `@asm_function`: el cuerpo es ensamblador (lo valida el backend).
     pub is_asm: bool,
     pub calls: BTreeSet<String>,
+    /// Lee alguna tabla con un indice variable: la consulta es un CALL (un nivel de pila).
+    pub uses_table: bool,
     pub span: Span,
 }
 
@@ -136,6 +138,9 @@ pub struct Program {
     pub reg_calls: BTreeMap<u32, RegCall>,
     /// Llamadas a `pypic.bits`, por id de expresion.
     pub bits_calls: BTreeMap<u32, BitsOp>,
+    /// Tablas constantes (nombre y entradas) y las lecturas con indice variable, por id de expresion.
+    pub tables: Vec<(String, Vec<u8>)>,
+    pub table_gets: BTreeMap<u32, usize>,
 }
 
 pub struct Checked {
@@ -149,6 +154,8 @@ pub struct Checked {
     pub timer_calls: BTreeMap<u32, TimerCall>,
     pub reg_calls: BTreeMap<u32, RegCall>,
     pub bits_calls: BTreeMap<u32, BitsOp>,
+    pub tables: Vec<(String, Vec<u8>)>,
+    pub table_gets: BTreeMap<u32, usize>,
 }
 
 pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Checked {
@@ -184,6 +191,9 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         reg_calls: BTreeMap::new(),
         bits_fns: HashSet::new(),
         claims: Vec::new(),
+        tables: Vec::new(),
+        table_idx: HashMap::new(),
+        table_gets: BTreeMap::new(),
         bits_calls: BTreeMap::new(),
         carry_ok: false,
         carry_prev: false,
@@ -191,7 +201,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         stmt_top: None,
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, tables: c.tables, table_gets: c.table_gets }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -258,6 +268,10 @@ struct Checker<'a> {
     reg_calls: BTreeMap<u32, RegCall>,
     /// Pines que un periferico toma al encender un bit (por registros o por el reloj externo de un timer).
     claims: Vec<Claim>,
+    /// Tablas constantes declaradas, su indice por nombre y las lecturas variables.
+    tables: Vec<(String, Vec<u8>)>,
+    table_idx: HashMap<String, usize>,
+    table_gets: BTreeMap<u32, usize>,
     /// Funciones importadas de `pypic.bits` y sus llamadas por id de expresion.
     bits_fns: HashSet<String>,
     bits_calls: BTreeMap<u32, BitsOp>,
@@ -1362,12 +1376,21 @@ impl<'a> Checker<'a> {
             is_init,
             is_asm,
             calls: BTreeSet::new(),
+            uses_table: false,
             span: f.name.span,
         });
     }
 
     fn declare_variable(&mut self, v: &VarDecl, is_global: bool) {
         let name = &v.name.name;
+        match &v.ann.kind {
+            TypeExprKind::Final(inner) if matches!(inner.kind, TypeExprKind::Table(_)) => {
+                let TypeExprKind::Table(elem) = &inner.kind else { unreachable!() };
+                return self.declare_table(v, elem, is_global, true);
+            }
+            TypeExprKind::Table(elem) => return self.declare_table(v, elem, is_global, false),
+            _ => {}
+        }
         let (inner, is_final) = match &v.ann.kind {
             TypeExprKind::Final(inner) => (&**inner, true),
             _ => (&v.ann, false),
@@ -1513,6 +1536,81 @@ impl<'a> Checker<'a> {
 
     /// Profundidad maxima de CALL anidados desde `f` (hoja = 0). Sin recursion es finita;
     /// el guardia de ciclos solo evita bucles si ya se reporto `PYP2013`.
+    /// `NOMBRE: Final[Table[u8]] = [..]`: datos constantes en la memoria de programa (`docs/sdk-tablas.md`).
+    fn declare_table(&mut self, v: &VarDecl, inner: &TypeExpr, is_global: bool, is_final: bool) {
+        let name = &v.name.name;
+        if !is_global || !is_final {
+            let why = if !is_global { "una tabla se declara a nivel de modulo, no dentro de una funcion" } else { "una tabla es de solo lectura: se declara 'Final[Table[u8]]'" };
+            self.d.error("PYP2160", v.span, format!("'{name}': {why}"));
+        }
+        match &inner.kind {
+            TypeExprKind::Name(n) if n == "u8" => {}
+            _ => self.d.error("PYP2160", inner.span, "Table solo admite u8 por ahora: cada entrada es un RETLW"),
+        }
+        if self.globals.contains_key(name) || self.table_idx.contains_key(name) || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.reg_names.contains_key(name) || self.timer_names.contains_key(name) || self.bits_fns.contains(name) {
+            self.d.error("PYP2009", v.name.span, format!("'{name}' ya esta declarado"));
+        }
+        let Some(val) = &v.value else {
+            self.d.error("PYP2007", v.span, format!("'{name}' debe inicializarse en su declaracion"));
+            return;
+        };
+        let ExprKind::List(items) = &val.kind else {
+            self.expr(val);
+            self.d.error("PYP2160", val.span, format!("'{name}' se inicializa con una lista de constantes: [1, 2, 3]"));
+            return;
+        };
+        if items.is_empty() || items.len() > 256 {
+            self.d.error("PYP2160", val.span, format!("una tabla tiene de 1 a 256 entradas (el indice es un u8), '{name}' tiene {}", items.len()));
+        }
+        let mut values = Vec::new();
+        for it in items {
+            let t = self.expr(it);
+            match (t, self.konst(it)) {
+                (Type::Error, _) => {}
+                (_, Some(k)) if (0..=255).contains(&k) => values.push(k as u8),
+                (_, Some(k)) => self.d.error("PYP2160", it.span, format!("la entrada {k} no cabe en un u8 (0..=255)")),
+                (_, None) => self.d.error("PYP2160", it.span, "las entradas de una tabla son constantes: se escriben en la memoria de programa al compilar"),
+            }
+        }
+        self.table_idx.insert(name.clone(), self.tables.len());
+        self.tables.push((name.clone(), values));
+    }
+
+    /// `TABLA[i]`: lectura de costo fijo; un indice constante se resuelve al compilar.
+    fn index_expr(&mut self, e: &Expr, obj: &str, obj_span: Span, index: &Expr) -> Type {
+        let Some(&ti) = self.table_idx.get(obj) else {
+            self.expr(index);
+            let msg = if self.lookup(obj).is_some() { format!("'{obj}' no es una tabla: solo se indexan las 'Final[Table[u8]]'") } else { format!("'{obj}' no esta declarada como tabla") };
+            self.d.error("PYP2162", obj_span, msg);
+            return self.set(e, Type::Error, None);
+        };
+        let len = self.tables[ti].1.len();
+        let t = self.expr(index);
+        match (t, self.konst(index)) {
+            (Type::Error, _) => self.set(e, Type::Error, None),
+            (_, Some(k)) if (0..len as i128).contains(&k) => {
+                self.coerce_literal(index, U8);
+                let v = self.tables[ti].1[k as usize] as i128;
+                self.set(e, U8, Some(v))
+            }
+            (_, Some(k)) => {
+                self.d.error("PYP2161", index.span, format!("el indice {k} esta fuera de la tabla '{obj}' (tiene {len} entradas: 0..={})", len - 1));
+                self.set(e, Type::Error, None)
+            }
+            (Type::Int { bits: 8, signed: false }, None) => {
+                self.table_gets.insert(e.id, ti);
+                if let Some(cur) = self.cur {
+                    self.functions[cur].uses_table = true;
+                }
+                self.set(e, U8, None)
+            }
+            (other, None) => {
+                self.d.error("PYP2163", index.span, format!("el indice de una tabla es un u8, no {other}: convierte con u8(...)"));
+                self.set(e, Type::Error, None)
+            }
+        }
+    }
+
     fn call_depth(&self, f: &str, visiting: &mut HashSet<String>, memo: &mut HashMap<String, u32>) -> u32 {
         if let Some(&d) = memo.get(f) {
             return d;
@@ -1522,7 +1620,8 @@ impl<'a> Checker<'a> {
             return 0;
         }
         let calls: Vec<String> = self.functions[i].calls.iter().cloned().collect();
-        let d = calls.iter().map(|c| 1 + self.call_depth(c, visiting, memo)).max().unwrap_or(0);
+        let own = self.functions[i].uses_table as u32;
+        let d = calls.iter().map(|c| 1 + self.call_depth(c, visiting, memo)).max().unwrap_or(0).max(own);
         visiting.remove(f);
         memo.insert(f.to_string(), d);
         d
@@ -1804,6 +1903,14 @@ impl<'a> Checker<'a> {
             ExprKind::Int(v) => self.set(e, Type::Literal, Some(*v)),
             ExprKind::Bool(b) => self.set(e, Type::Bool, Some(*b as i128)),
             ExprKind::Name(n) => self.name(e, n),
+            ExprKind::Index { obj, obj_span, index } => self.index_expr(e, obj, *obj_span, index),
+            ExprKind::List(items) => {
+                for it in items {
+                    self.expr(it);
+                }
+                self.d.error("PYP1025", e.span, "una lista solo se admite como valor de una tabla: NOMBRE: Final[Table[u8]] = [1, 2, 3]");
+                self.set(e, Type::Error, None)
+            }
             ExprKind::Bool_(_, vals) => {
                 for v in vals {
                     self.expect(v, Type::Bool, Some("los operandos de 'and'/'or' deben ser bool"));
@@ -1824,6 +1931,8 @@ impl<'a> Checker<'a> {
         }
         if self.timer_consts.contains(n) {
             self.d.error("PYP2128", e.span, format!("'{n}' es una constante de configuracion de temporizadores: solo se usa como argumento de TMRx.start(...)"));
+        } else if self.table_idx.contains_key(n) {
+            self.d.error("PYP2164", e.span, format!("'{n}' es una tabla: se lee con {n}[indice] y su tamano con len({n})"));
         } else if self.reg_names.contains_key(n) {
             self.d.error("PYP2136", e.span, format!("'{n}' es un registro: usa sus metodos ({n}.read(), {n}.write(v), {n}.BIT.set()...)"));
         } else if self.timer_names.contains_key(n) {
@@ -2123,6 +2232,22 @@ impl<'a> Checker<'a> {
     }
 
     fn call(&mut self, e: &Expr, func: &str, args: &[Expr]) -> Type {
+        if func == "len" && !self.fidx.contains_key("len") {
+            return match args {
+                [a] if matches!(&a.kind, ExprKind::Name(n) if self.table_idx.contains_key(n)) => {
+                    let ExprKind::Name(n) = &a.kind else { unreachable!() };
+                    let len = self.tables[self.table_idx[n]].1.len() as i128;
+                    self.set(e, Type::Literal, Some(len))
+                }
+                _ => {
+                    for a in args {
+                        self.expr(a);
+                    }
+                    self.d.error("PYP2162", e.span, "len() solo mide una tabla: len(TABLA)");
+                    self.set(e, Type::Error, None)
+                }
+            };
+        }
         if self.bits_fns.contains(func) {
             return self.bits_call(e, func, args);
         }

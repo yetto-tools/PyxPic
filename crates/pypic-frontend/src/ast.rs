@@ -92,11 +92,17 @@ pub enum ExprKind {
     Call { func: String, func_span: Span, args: Vec<Expr> },
     /// `pin.metodo(args)`, p. ej. `RD0.toggle()`.
     /// Con `attr`, es `REG.BIT.metodo(args)` (p. ej. `STATUS.RP0.set()`).
+    /// `[a, b, c]`: solo como valor de una tabla `Final[Table[u8]]`.
+    List(Vec<Expr>),
+    /// `TABLA[indice]`.
+    Index { obj: String, obj_span: Span, index: Box<Expr> },
     MethodCall { obj: String, obj_span: Span, attr: Option<Ident>, method: String, args: Vec<Expr>, kwargs: Vec<Kwarg> },
 }
 
 #[derive(Clone, Debug)]
 pub enum TypeExprKind {
+    /// `Table[u8]`: datos constantes en la memoria de programa.
+    Table(Box<TypeExpr>),
     Name(String),
     /// `Final[T]`
     Final(Box<TypeExpr>),

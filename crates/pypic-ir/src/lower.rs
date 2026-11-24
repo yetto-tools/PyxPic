@@ -14,9 +14,14 @@ pub fn lower(prog: &Program) -> Module {
     m.device = prog.device.clone();
     m.clock_hz = prog.clock_hz;
     m.clock_defaulted = prog.clock_defaulted;
+    m.tables = prog.tables.clone();
     let mut gidx = HashMap::new();
     for it in &prog.module.items {
         if let Item::Var(v) = it {
+            // las tablas viven en la memoria de programa, no son globales
+            if prog.tables.iter().any(|t| t.0 == v.name.name) {
+                continue;
+            }
             let sym = &prog.globals[&v.name.name];
             let init = v.value.as_ref().and_then(|e| prog.info[e.id as usize].konst).unwrap_or(0);
             gidx.insert(v.name.name.clone(), m.globals.len());
@@ -73,6 +78,7 @@ fn ann_type(te: &TypeExpr) -> Type {
         TypeExprKind::Name(n) => Type::from_name(n).unwrap_or(Type::Error),
         TypeExprKind::Final(inner) => ann_type(inner),
         TypeExprKind::None => Type::Void,
+        TypeExprKind::Table(_) => Type::Error,
     }
 }
 
@@ -189,6 +195,12 @@ impl<'a> FnLower<'a> {
                 }
                 self.cur = join;
             }
+            ExprKind::Index { index, .. } => {
+                let table = self.prog.table_gets[&e.id];
+                let index = self.value(index);
+                self.emit(Inst::TableGet { dst: dst.unwrap(), table, index });
+            }
+            ExprKind::List(_) => unreachable!("el frontend rechaza las listas fuera de una tabla"),
             ExprKind::Call { func, args, .. } => {
                 if self.prog.bits_calls.contains_key(&e.id) {
                     let op = self.prog.bits_calls[&e.id];

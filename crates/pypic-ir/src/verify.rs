@@ -97,6 +97,12 @@ fn verify_fn(m: &Module, f: &Function, errs: &mut Vec<String>) {
                         _ => {}
                     }
                 }
+                Inst::TableGet { dst, table, index } => {
+                    let u8_ty = Type::Int { bits: 8, signed: false };
+                    if *table >= m.tables.len() || !valid(*dst) || m.place_ty(f, *dst) != u8_ty || ty(index) != u8_ty {
+                        e(format!("{}: TableGet mal formado", at(i)));
+                    }
+                }
                 Inst::Bits { op, dst, src } => {
                     let u8_ty = Type::Int { bits: 8, signed: false };
                     let dst_ok = |t: Type| dst.is_some_and(|d| valid(d) && m.place_ty(f, d) == t);

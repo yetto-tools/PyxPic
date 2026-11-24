@@ -316,6 +316,13 @@ impl<'a> Parser<'a> {
                 let end = self.expect(Tok::RBracket, "']'")?;
                 Ok(TypeExpr { span: sp.to(end), kind: TypeExprKind::Final(Box::new(inner)) })
             }
+            Tok::Ident(s) if s == "Table" => {
+                self.bump();
+                self.expect(Tok::LBracket, "'[' (Table[tipo])")?;
+                let inner = self.type_expr(false)?;
+                let end = self.expect(Tok::RBracket, "']'")?;
+                Ok(TypeExpr { span: sp.to(end), kind: TypeExprKind::Table(Box::new(inner)) })
+            }
             Tok::Ident(s) if !UNSUPPORTED_KEYWORDS.contains(&s.as_str()) => {
                 self.bump();
                 Ok(TypeExpr { span: sp, kind: TypeExprKind::Name(s) })
@@ -720,7 +727,18 @@ impl<'a> Parser<'a> {
                 e
             }
             Tok::Str(..) => return self.err("PYP1021", sp, "las cadenas solo se admiten como cuerpo de una funcion @asm_function"),
-            Tok::LBracket => return self.err("PYP1025", sp, "las listas no estan soportadas"),
+            Tok::LBracket => {
+                self.bump();
+                let mut items = Vec::new();
+                while !self.at(&Tok::RBracket) {
+                    items.push(self.expr()?);
+                    if !self.eat(&Tok::Comma) {
+                        break;
+                    }
+                }
+                let end = self.expect(Tok::RBracket, "']'")?;
+                self.mk(sp.to(end), ExprKind::List(items))
+            }
             Tok::Ident(s) => match s.as_str() {
                 "True" | "False" => {
                     self.bump();
@@ -732,7 +750,12 @@ impl<'a> Parser<'a> {
                 }
                 _ => {
                     self.bump();
-                    if self.at(&Tok::LParen) {
+                    if self.at(&Tok::LBracket) {
+                        self.bump();
+                        let index = self.expr()?;
+                        let end = self.expect(Tok::RBracket, "']'")?;
+                        self.mk(sp.to(end), ExprKind::Index { obj: s, obj_span: sp, index: Box::new(index) })
+                    } else if self.at(&Tok::LParen) {
                         let args = self.call_args()?;
                         let span = sp.to(self.prev_span());
                         self.mk(span, ExprKind::Call { func: s, func_span: sp, args })
@@ -770,7 +793,7 @@ impl<'a> Parser<'a> {
             }
             Tok::LBracket => {
                 let s = self.span();
-                self.err("PYP1026", s, "el indexado (a[i]) no esta soportado todavia")
+                self.err("PYP1026", s, "solo se puede indexar el nombre de una tabla (TABLA[i]) y una sola vez")
             }
             Tok::LParen => {
                 let s = self.span();

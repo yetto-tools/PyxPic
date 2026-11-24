@@ -55,6 +55,6 @@ pub fn analyze(source: &str, target: &TargetProfile) -> Analysis {
         }
     }
     let c = check::check(&module, target, &mut d);
-    let program = (!d.has_errors()).then_some(Program { module, info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls });
+    let program = (!d.has_errors()).then_some(Program { module, info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, tables: c.tables, table_gets: c.table_gets });
     Analysis { program, diagnostics: d }
 }

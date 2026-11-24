@@ -19,6 +19,7 @@ use crate::samples::{BLINK_CONFIG1, BLINK_CONFIG2, CONFIG1, CONFIG2};
 // ---- registros y zonas de memoria (DS40001291H p.27-28; reparto en docs/abi-pic14.md) ----------
 const STATUS: u8 = 0x03;
 const PCLATH: u8 = 0x0A;
+const PCL: u8 = 0x02;
 const BIT_C: u8 = 0;
 const BIT_Z: u8 = 2;
 const BIT_RP0: u8 = 5;
@@ -189,6 +190,11 @@ enum Item {
     Call(Label),
     Label(Label),
     Org(u32),
+    /// Relleno antes de una tabla de `n` entradas: la primera va en `pc + 1` y las `n` deben caber en un bloque de 256 palabras
+    /// (`ADDWF PCL,F` no propaga el acarreo al byte alto del PC).
+    TablePad(u32),
+    /// `MOVLW` con PC<12:8> de la primera entrada de la tabla (la direccion de la etiqueta + 1).
+    HighOf(Label),
 }
 
 #[derive(Default)]
@@ -323,6 +329,9 @@ struct Gen<'a> {
     cpc: u32,
     timing: Vec<DelayReport>,
     registers: pypic_device::Registers,
+    /// Tablas constantes usadas: la etiqueta de cada una y el orden en que se emiten.
+    table_labels: HashMap<usize, Label>,
+    table_order: Vec<usize>,
 }
 
 impl<'a> Gen<'a> {
@@ -840,6 +849,7 @@ impl<'a> Gen<'a> {
             I::Timer { call, dst, arg } => self.timer(call, *dst, arg.as_ref()),
             I::Reg { call, dst, arg } => self.reg(call, *dst, arg.as_ref()),
             I::Bits { op, dst, src } => self.bits(*op, *dst, src.as_ref()),
+            I::TableGet { dst, table, index } => self.table_get(*dst, *table, index),
             I::PinCfg { pin, output } => self.pin_cfg(*pin, *output),
             I::PinSet { pin, value } => self.pin_set(*pin, value),
             I::PinToggle { pin } => {
@@ -1036,7 +1046,7 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
     let isr_ctx = reach(m, &isrs);
 
     let al = allocate(m, &live, opts)?;
-    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new(), registers: opts.registers.clone() };
+    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new(), registers: opts.registers.clone(), table_labels: HashMap::new(), table_order: Vec::new() };
     for &fi in &live {
         let l = g.asm.label(m.functions[fi].name.clone());
         g.fn_labels.insert(fi, l);
@@ -1101,6 +1111,7 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
         let bb_labels: Vec<Label> = (0..f.blocks.len()).map(|b| g.asm.label(format!("{}.bb{b}", f.name))).collect();
         g.function(fi, &bb_labels)?;
     }
+    g.emit_tables();
 
     // ---- ensamblado: direcciones y etiquetas ----
     let mut addr_of = vec![None::<u32>; g.asm.names.len()];
@@ -1109,6 +1120,12 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
     for it in &g.asm.items {
         match it {
             Item::Org(a) => pc = *a,
+            Item::TablePad(n) => {
+                let first = pc + 1;
+                if (first & 0xFF) + n > 256 {
+                    pc = first | 0xFF; // la primera entrada pasa al siguiente multiplo de 256
+                }
+            }
             Item::Label(l) => addr_of[*l] = Some(pc),
             other => {
                 placed.push((pc, other));
@@ -1127,6 +1144,7 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
             Item::Inst(i) => *i,
             Item::Goto(l) => Goto(addr_of[*l].expect("etiqueta sin colocar") as u16),
             Item::Call(l) => Call(addr_of[*l].expect("etiqueta sin colocar") as u16),
+            Item::HighOf(l) => Movlw(((addr_of[*l].expect("etiqueta sin colocar") + 1) >> 8 & 0x1F) as u8),
             _ => unreachable!(),
         };
         image.set(*a, inst.encode().expect("operandos validos")).expect("sin solapes");
@@ -1214,6 +1232,64 @@ impl<'a> Gen<'a> {
         let (addr, b) = self.bit_loc(name)?;
         self.banked(addr, |g, f| g.asm.i(if set { Bsf(f, b) } else { Bcf(f, b) }));
         Ok(())
+    }
+
+    /// `dst = TABLA[index]` (docs/sdk-tablas.md): una consulta de costo fijo con cualquier indice.
+    ///
+    /// ```text
+    ///   MOVF  index,W
+    ///   SUBLW n-1 / BTFSS STATUS,C / CLRW / SUBLW n-1   ; satura un indice >= n a n-1 (4 ciclos; se omite con 256 entradas)
+    ///   MOVWF dst                                         ; dst hace de variable temporal: no hay RAM compartida
+    ///   MOVLW HIGH(tabla+1) / MOVWF PCLATH                ; ADDWF PCL,F toma PC<12:8> de PCLATH
+    ///   MOVF  dst,W / CALL tabla / MOVWF dst
+    ///   CLRF  PCLATH                                      ; invariante de la ABI: PCLATH<4:3> = pagina 0
+    /// tabla: ADDWF PCL,F / RETLW k0 / RETLW k1 ...        ; las n entradas no cruzan un limite de 256 palabras
+    /// ```
+    fn table_get(&mut self, dst: Place, table: usize, index: &Operand) -> Result<(), CodegenError> {
+        let n = self.m.tables[table].1.len();
+        let d = self.regs(dst)?[0];
+        let label = match self.table_labels.get(&table) {
+            Some(&l) => l,
+            None => {
+                let l = self.asm.label(format!("table.{}", self.m.tables[table].0));
+                self.table_labels.insert(table, l);
+                self.table_order.push(table);
+                l
+            }
+        };
+        match self.bytes(index)?[0] {
+            B::Imm(k) => self.asm.i(Movlw(k.min((n - 1) as u8))),
+            B::Reg(r) => {
+                self.asm.i(Movf(r, W));
+                if n < 256 {
+                    self.asm.i(Sublw((n - 1) as u8));
+                    self.asm.i(Btfss(STATUS, BIT_C));
+                    self.asm.i(Clrw);
+                    self.asm.i(Sublw((n - 1) as u8));
+                }
+            }
+        }
+        self.asm.i(Movwf(d));
+        self.asm.items.push(Item::HighOf(label));
+        self.asm.i(Movwf(PCLATH));
+        self.asm.i(Movf(d, W));
+        self.asm.call(label);
+        self.asm.i(Movwf(d));
+        self.asm.i(Clrf(PCLATH));
+        Ok(())
+    }
+
+    /// Las tablas usadas, cada una con `ADDWF PCL,F` y un `RETLW` por entrada.
+    fn emit_tables(&mut self) {
+        for t in self.table_order.clone() {
+            let values = self.m.tables[t].1.clone();
+            self.asm.items.push(Item::TablePad(values.len() as u32));
+            self.asm.place(self.table_labels[&t]);
+            self.asm.i(Addwf(PCL, F));
+            for v in values {
+                self.asm.i(Retlw(v));
+            }
+        }
     }
 
     /// Intrinsecos de `pypic.bits`: cada uno es una instruccion (mas guardar el resultado).
