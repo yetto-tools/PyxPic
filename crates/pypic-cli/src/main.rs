@@ -242,6 +242,9 @@ fn asm_cmd(args: &[String]) -> ExitCode {
             return ExitCode::from(1);
         }
     };
+    for warning in &asm.warnings {
+        eprintln!("{file}:{}:{}: warning[{}]: {}", warning.line, warning.col, warning.code, warning.message);
+    }
     let out_path = out_path.unwrap_or_else(|| Path::new(&file).with_extension("hex").to_string_lossy().into_owned());
     if let Err(e) = std::fs::write(&out_path, asm.image.to_intel_hex(16)) {
         eprintln!("no se pudo escribir '{out_path}': {e}");

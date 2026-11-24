@@ -348,9 +348,12 @@ fn config_accepts_quotes_numbers_and_whole_registers() {
 fn config_accepts_digit_only_value_name_without_reinterpreting_hex_literals() {
     let a = ok("CONFIG WRT = 256\n");
     assert_eq!(a.image.get(0x2008), Some(0x3dff));
+    assert!(a.warnings.is_empty());
     let a = ok("CONFIG WRT = \"256\"\n");
     assert_eq!(a.image.get(0x2008), Some(0x3dff));
-    assert_eq!(ok("CONFIG WRT = 0x100\n").image.get(0x2008), Some(0x39ff));
+    let a = ok("CONFIG WRT = 0x100\n");
+    assert_eq!(a.image.get(0x2008), Some(0x39ff));
+    assert_eq!(a.warnings[0].code, "ASMW001");
 }
 
 #[test]

@@ -33,6 +33,8 @@ pub fn render_errors(errors: &[AsmError], file: &str) -> String {
 #[derive(Debug)]
 pub struct Assembled {
     pub image: Image,
+    /// Advertencias que no impiden generar la imagen.
+    pub warnings: Vec<AsmError>,
     /// Etiquetas (direccion final) y constantes `EQU`/`SET`.
     pub symbols: BTreeMap<String, i64>,
     pub listing: String,
@@ -1785,7 +1787,8 @@ pub fn assemble_with(src: &str, env: &AsmEnv) -> Result<Assembled, Vec<AsmError>
     }
 
     // ---- CONFIG ----------------------------------------------------------------------------------
-    apply_config(&a.configs, env, &syms, &mut image, &mut errors);
+    let mut warnings = Vec::new();
+    apply_config(&a.configs, env, &syms, &mut image, &mut errors, &mut warnings);
 
     if !errors.is_empty() {
         errors.sort_by_key(|e| (e.line, e.col));
@@ -1811,10 +1814,10 @@ pub fn assemble_with(src: &str, env: &AsmEnv) -> Result<Assembled, Vec<AsmError>
     let psects = a.psects.iter().enumerate().map(|(i, p)| (p.name.clone(), base[i], p.loc)).collect();
     // no se devuelven los simbolos de xc.inc, solo los del programa
     let user: BTreeMap<String, i64> = syms.into_iter().filter(|(k, _)| a.labels.contains_key(k) || !env.regs.iter().any(|r| r.name == *k || k.starts_with(&format!("{}_", r.name)))).collect();
-    Ok(Assembled { image, symbols: user, listing, psects })
+    Ok(Assembled { image, warnings, symbols: user, listing, psects })
 }
 
-fn apply_config(sets: &[ConfigSet], env: &AsmEnv, syms: &BTreeMap<String, i64>, image: &mut Image, errors: &mut Vec<AsmError>) {
+fn apply_config(sets: &[ConfigSet], env: &AsmEnv, syms: &BTreeMap<String, i64>, image: &mut Image, errors: &mut Vec<AsmError>, warnings: &mut Vec<AsmError>) {
     let mut words: BTreeMap<u32, (u16, BTreeSet<String>)> = BTreeMap::new();
     for c in sets {
         if env.config.is_empty() {
@@ -1846,7 +1849,14 @@ fn apply_config(sets: &[ConfigSet], env: &AsmEnv, syms: &BTreeMap<String, i64>, 
         let value: Option<u64> = match c.value.as_slice() {
             [(Tok::Ident(n) | Tok::Str(n), _)] if f.names.contains_key(n.as_str()) => Some(f.names[n.as_str()]),
             toks => match eval(toks, &ctx, c.col) {
-                Ok(v) if v >= 0 => Some((v as u64) & ((1u64 << f.width) - 1)),
+                Ok(v) if v >= 0 => {
+                    let mask = (1u64 << f.width) - 1;
+                    let truncated = (v as u64) & mask;
+                    if v as u64 > mask {
+                        warnings.push(AsmError { line: c.line, col: c.col, code: "ASMW001", message: format!("{} = {v} excede {} bit(s): se usa {truncated}", f.name, f.width) });
+                    }
+                    Some(truncated)
+                }
                 Ok(v) => {
                     errors.push(AsmError { line: c.line, col: c.col, code: "ASM004", message: format!("{} = {v}: el campo tiene {} bit(s)", f.name, f.width) });
                     None

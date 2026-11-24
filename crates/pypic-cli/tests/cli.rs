@@ -24,6 +24,19 @@ fn text(o: &Output) -> String {
 }
 
 #[test]
+fn asm_warns_when_numeric_config_value_is_truncated() {
+    let dir = tmp("config-warning");
+    let source = dir.join("config.s");
+    let output = dir.join("config.hex");
+    std::fs::write(&source, "PROCESSOR 16F887\nCONFIG WRT = 0x100\nPSECT test,class=CODE,delta=2,abs\n nop\nEND\n").unwrap();
+    let result = pypic(&root(), &["asm", source.to_str().unwrap(), "-o", output.to_str().unwrap()]);
+    assert!(result.status.success(), "{}", text(&result));
+    assert!(text(&result).contains("warning[ASMW001]") && text(&result).contains("se usa 0"), "{}", text(&result));
+    let image = Image::from_intel_hex(&std::fs::read_to_string(output).unwrap()).unwrap();
+    assert_eq!(image.get(0x2008), Some(0x39ff));
+}
+
+#[test]
 fn pic_as_blink_matches_native_assembler_when_xc8_and_dfp_are_configured() {
     let (Ok(pic_as), Ok(dfp)) = (std::env::var("PYPIC_TEST_PIC_AS"), std::env::var("PYPIC_TEST_XC8_DFP")) else {
         eprintln!("comparación XC8 omitida: configurar PYPIC_TEST_PIC_AS y PYPIC_TEST_XC8_DFP");
@@ -74,18 +87,19 @@ fn pic_as_numeric_config_values_match_when_xc8_is_configured() {
         return;
     };
     let dir = tmp("xc8-config-numeric");
-    for (index, value) in ["-1", "0", "1", "2", "3", "4", "0x100"].iter().enumerate() {
+    let cases = [("WRT", "-1", 0x2008), ("WRT", "0", 0x2008), ("WRT", "1", 0x2008), ("WRT", "2", 0x2008), ("WRT", "3", 0x2008), ("WRT", "4", 0x2008), ("WRT", "0x100", 0x2008), ("WDTE", "2", 0x2007), ("FOSC", "0x10", 0x2007)];
+    for (index, (field, value, address)) in cases.iter().enumerate() {
         let source = dir.join(format!("wrt{index}.s"));
         let official = dir.join(format!("official{index}.hex"));
         let native = dir.join(format!("native{index}.hex"));
-        std::fs::write(&source, format!("PROCESSOR 16F887\nCONFIG WRT = {value}\nPSECT test,class=CODE,delta=2,abs\n nop\nEND\n")).unwrap();
+        std::fs::write(&source, format!("PROCESSOR 16F887\nCONFIG {field} = {value}\nPSECT test,class=CODE,delta=2,abs\n nop\nEND\n")).unwrap();
         let xc8 = Command::new(&pic_as).current_dir(root()).arg("-mcpu=16F887")
             .arg(format!("-mdfp={dfp}")).arg(&source).arg("-o").arg(&official).output().unwrap();
         let own = pypic(&root(), &["asm", source.to_str().unwrap(), "-o", native.to_str().unwrap()]);
-        assert_eq!(own.status.success(), xc8.status.success(), "WRT={value}: XC8: {} PyPIC: {}", text(&xc8), text(&own));
+        assert_eq!(own.status.success(), xc8.status.success(), "{field}={value}: XC8: {} PyPIC: {}", text(&xc8), text(&own));
         if xc8.status.success() {
             let read = |path| Image::from_intel_hex(&std::fs::read_to_string(path).unwrap()).unwrap();
-            assert_eq!(read(&official).get(0x2008), read(&native).get(0x2008), "WRT={value}");
+            assert_eq!(read(&official).get(*address), read(&native).get(*address), "{field}={value}");
         }
     }
 }
