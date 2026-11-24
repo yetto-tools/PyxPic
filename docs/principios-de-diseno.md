@@ -1,0 +1,38 @@
+# Principios de diseño: ensamblador de alto nivel
+
+**PyPIC lleva el código de ensamblador a un lenguaje de alto nivel conservando la flexibilidad y la precisión de las instrucciones.**
+La sintaxis es Python; el resultado son instrucciones nativas del PIC (nunca un intérprete ni un runtime en el MCU, ver `docs/spec/00_PRINCIPIOS_NO_INTERPRETE.md`).
+Quien hoy escribe en ensamblador debe poder escribir lo mismo aquí, con menos errores y más legible.
+
+## Reglas que se derivan
+
+1. **Precisión.** El costo en ciclos es predecible, se puede conocer y se reporta. Una espera constante dura exactamente lo pedido (`docs/sdk-time.md`); `pypic build --timing` muestra lo emitido y el error.
+2. **Flexibilidad.** Todo lo que el ensamblador alcanza debe ser alcanzable: registros, bits, banderas, memoria, periféricos, interrupciones. Lo que el lenguaje aún no cubre tiene una salida de emergencia (ensamblador en línea).
+3. **Sin costos ocultos.** El código generado es legible (`--listing`), sin runtime, y las operaciones que necesitarían rutinas ocultas se rechazan o se piden explícitas (`*`, `//`, `%`).
+4. **Una sola forma por operación.** Sin sinónimos, para evitar ambigüedades (`pause` y no `delay_ms`).
+5. **Explícito antes que implícito.** Sin conversiones implícitas ni «verdad» de enteros; los tipos son de ancho fijo.
+6. **Conocimiento del dispositivo.** El programa declara su PIC (`from pypic.device import ...`) y el compilador valida pines, memoria, reloj y periféricos contra el Device Pack, cosa que el ensamblador no hace.
+
+## Inventario: qué hace el ensamblador y qué cubre PyPIC hoy
+
+| Capacidad del ensamblador | Estado en PyPIC |
+|---|---|
+| Aritmética y lógica de 8/16 bits, comparaciones, saltos, llamadas, bucles | ✅ implementado (verificado contra el simulador) |
+| Control de pines (TRIS, PORT, ANSEL) | ✅ `pypic.gpio` |
+| Esperas exactas al ciclo | ✅ `pypic.time` (`pause`, `wait`, `delay_us`, `delay_cycles`) |
+| Interrupciones con guardado de contexto | ✅ `@interrupt` |
+| Arranque y configuración inicial | ✅ `@init_device`, `CLOCK_HZ`, declaración del dispositivo |
+| Bajo consumo (`SLEEP`, watchdog) | ⏳ `nap`/`sleep` reservadas (#38) |
+| Timers (prescaler, desbordamiento, interrupciones) | ⏳ periféricos importables (#39) |
+| **Acceso directo a cualquier registro (SFR) y a sus bits** | ⏳ #40 (necesita `registers.json`, #22) |
+| **Rotación por el acarreo, `SWAPF`, prueba/puesta de bits y banderas C/Z/DC** | ⏳ #41 |
+| **Ensamblador en línea (`asm(...)`, `@asm_function`)**: la salida de emergencia | ⏳ #42 (necesita el ensamblador textual, #29) |
+| **Análisis estático de ciclos por función y contratos de tiempo máximo** (p. ej. «esta interrupción dura ≤ N ciclos») | ⏳ #43 |
+| Tablas constantes en flash (`RETLW`, `GOTO` calculado) | ⏳ #44 |
+| Arreglos y direccionamiento indirecto (`FSR`/`INDF`) | ⏳ #8 |
+| Multiplicar/dividir (rutinas nativas) | ⏳ #27 |
+| Varios bancos de datos y solapamiento de locales | ⏳ #26 |
+| Páginas de programa (`PCLATH`) para más de 2048 palabras | ⏳ #31 |
+| EEPROM de datos, ADC, UART, I²C, PWM... | ⏳ periféricos (#23) |
+
+La columna de estado es la hoja de ruta: cada fila pendiente tiene su issue.

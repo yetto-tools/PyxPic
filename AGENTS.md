@@ -4,3 +4,6 @@ Actúa como ingeniero de compiladores y firmware embebido. Este repositorio defi
 
 ## RESTRICCIÓN NO NEGOCIABLE
 **PyPIC solamente usa la sintaxis de Python; NO debe implementar, portar ni integrar un intérprete, VM o runtime Python en los PIC, ahora ni en versiones futuras.** La compilación y cualquier transpilación ocurren en el host; el MCU ejecuta exclusivamente firmware nativo. No propongas MicroPython, CircuitPython, CPython embebido, REPL ni ejecución de bytecode Python como solución. Una biblioteca mínima de rutinas nativas no equivale a intérprete. Consulta `docs/spec/00_PRINCIPIOS_NO_INTERPRETE.md` antes de modificar compilador o arquitectura.
+
+## Principio de diseño
+**PyPIC es un ensamblador de alto nivel**: lleva el código de ensamblador a alto nivel conservando la flexibilidad y la precisión de las instrucciones. Antes de añadir una función pregunta qué instrucción o idioma de ensamblador reemplaza y si conserva su control y su costo en ciclos; una sola forma por operación. Ver `docs/principios-de-diseno.md`.
