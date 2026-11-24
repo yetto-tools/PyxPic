@@ -1,32 +1,58 @@
 # Backlog de implementación
 
+Estado verificado (2026-11-24). Leyenda: **[x]** hecho y probado · **[~]** parcial, con su límite y el issue que lo cierra · **[ ]** sin empezar.
+Hecho = hay código, pruebas que pasan (`cargo test`: 389) y, donde aplica, verificación contra el datasheet o el simulador del núcleo.
+Nada de lo marcado [x] se ha probado todavía en **hardware real**: el blink y el pulsador se confirmaron en Proteus (#16).
+Los issues abiertos están en <https://github.com/yetto-tools/PyPic/issues>.
+
 ## Fase 0 — Diseño
-- [ ] Especificar gramática del subconjunto Python y sistema de tipos
-- [ ] Definir IR y ABI PIC14
-- [ ] Definir schema y validación Device Pack
-- [ ] Elegir licencia, estructura monorepo y políticas de contribución
+- [x] Gramática del subconjunto Python y sistema de tipos (`docs/frontend.md`)
+- [x] IR y ABI PIC14 (`docs/abi-pic14.md`); [~] el overlay de memoria y las páginas de programa (#26, #31)
+- [x] Esquema y validación del Device Pack (`docs/device-packs.md`, `pypic device validate`)
+- [~] Licencia, estructura monorepo y políticas de contribución: monorepo hecho; **licencia y CONTRIBUTING pendientes** (#18)
+
 ## Fase 1 — Compilador nativo
-- [ ] Parser y errores con ubicación
-- [ ] Tipado y constantes
-- [ ] Instrucciones PIC14 y encoder
-- [ ] Bancos, saltos, llamadas y linker
-- [ ] Intel HEX y config words
-- [ ] Blink real PIC16F887 + pruebas
+- [x] Parser y errores con ubicación (`crates/pypic-frontend`)
+- [x] Tipado y constantes; [~] sin `u32`/`i32` en el backend (#32)
+- [x] Instrucciones PIC14, codificador y desensamblador (las 35, ida y vuelta de las 16 384 palabras)
+- [~] Bancos, saltos y llamadas: todo el dato en el banco 0 y el programa en una página de 2048 palabras (#26, #31); sin enlazador entre módulos
+- [x] Intel HEX y palabras de configuración por nombre (`pypic build --config`)
+- [x] Blink y pulsador reales compilados desde `.py`, confirmados en Proteus; [ ] confirmación en hardware (#16)
+- [x] Ensamblador textual con la sintaxis de pic-as y ensamblador en línea (`@asm_function`); [~] restos en #49–#52 y #60
+- [x] Intérprete de referencia de la IR y simulador del núcleo PIC14 (solo en el host, para pruebas diferenciales)
+
 ## Fase 2 — Hardware-aware
-- [ ] Definición PIC16F887 validada
-- [ ] Diagnósticos LSP y pinout
-- [ ] SDK GPIO, timers, ADC, PWM, I²C, UART
+- [x] Device Pack del PIC16F887 verificado contra DS40001291H (registros, periféricos, pines, configuración); [~] solo el encapsulado DIP de 40 pines (#24)
+- [~] Diagnósticos con código, severidad y ubicación en `pypic check`; **salida JSON para el editor** (#10) y pinout gráfico: pendientes
+- SDK
+  - [x] GPIO (`pypic.periph.gpio`) · [x] temporizadores 0/1/2 (`pypic.periph.timer`) · [x] registros y bits (`pypic.regs`) · [x] bits y acarreo (`pypic.bits`)
+  - [x] esperas exactas al ciclo (`pypic.system.time`) · [x] tablas en flash (`Rom[u8]`) · [x] `*`, `//`, `%` y desplazamientos (rutinas nativas)
+  - [ ] ADC, PWM/CCP, UART, SPI, I²C, comparadores, EEPROM (#45) · [ ] WDT, `sleep`/`nap`, reloj y energía (#46, #38) · [ ] protocolos por software (#47)
+
 ## Fase 3 — Herramientas
 - [ ] VS Code y Project Wizard
-- [ ] Simulador y DAP
+- [~] Simulador: existe el simulador del núcleo para pruebas del backend; sin interfaz de usuario ni DAP
 - [ ] Terminal serial y plotter
 - [ ] I²C Scanner y explorador de registros
+
 ## Fase 4 — Extensibilidad
-- [ ] PIC12F625
-- [ ] Backend ASM PIC-AS y C XC8/SDCC
+- [ ] PIC12F625 (#25)
+- [ ] Backend ASM PIC-AS legible (#55) y C XC8/SDCC
 - [ ] Adaptadores de toolchains y programadores
 - [ ] Blockly y ecosistema de paquetes
 
 ## Criterio transversal de arquitectura
-- [ ] Confirmar que cada backend produce firmware nativo autónomo, sin intérprete/VM Python, REPL ni bytecode Python embebido.
-- [ ] Mantener la separación host (parseo/IR/transpilación) vs dispositivo (ejecución de instrucciones nativas).
+- [x] Cada backend produce firmware nativo autónomo, sin intérprete/VM Python, REPL ni bytecode Python embebido (el MCU solo ejecuta instrucciones del PIC; ver `docs/spec/00_PRINCIPIOS_NO_INTERPRETE.md`).
+- [x] Separación host (parseo, IR, transpilación, simulación) vs dispositivo (instrucciones nativas).
+
+## Cómo comprobar lo marcado como hecho
+```
+cargo test --workspace                                              # 389 pruebas; las diferenciales comparan el intérprete de la IR con el simulador del núcleo
+cargo test -p pypic-pic14 --test runtime                            # *, //, %: todos los pares de u8/i8, bordes de 16 bits, interrupciones inyectadas, costos
+cargo test -p pypic-pic14 --test asm                                # ensamblador pic-as; el blink en pic-as reproduce byte a byte el .hex probado en Proteus
+cargo test -p pypic-device                                          # Device Pack del PIC16F887 contra sus propias reglas de coherencia
+cargo run -p pypic-cli -- device validate devices/pic16f887
+cargo run -p pypic-cli -- build examples/blink.py -o /tmp/blink.hex --timing --listing
+cargo run -p pypic-cli -- asm examples/asm/blink_rd0.s -Wl,-presetVec=0h,-pintentry=4h -o /tmp/b.hex   # compare con examples/hex/blink_rd0.hex
+```
+Lo que **no** se puede comprobar con estos comandos: el comportamiento en hardware real (solo hay confirmación en Proteus, #16) y los nombres de valor de `CONFIG` frente al DFP de Microchip (#60).

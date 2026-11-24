@@ -1,40 +1,32 @@
-# Backlog propuesto como issues
+# Historia del backlog
 
-Borrador para crear en GitHub (`yetto-tools/PyPic`). Labels existentes: `bug`, `enhancement`, `documentation`,
-`question`, `good first issue`, `help wanted`. Sugerido anadir: `compiler`, `ir`, `backend`, `device-pack`, `testing`, `design-decision`.
+Este archivo era un borrador de issues. Los issues ya existen en GitHub (`yetto-tools/PyPic`) y **la fuente de verdad es GitHub**; aquí queda el mapa de lo que se propuso al empezar y en qué quedó,
+verificado el 2026-11-24. Para el estado por componente, ver [`TASKS.md`](../TASKS.md).
 
-## Hecho (cerrar al crear el primer commit)
-- Frontend: lexer, parser, verificador de tipos y constantes (`crates/pypic-frontend`, `docs/frontend.md`).
-- IR tipada + lowering + verificador + `pypic ir` (`crates/pypic-ir`).
+## Decisiones de diseño — resueltas
+| # | Decisión | Dónde quedó |
+|---|---|---|
+| #1 | Tipos anchos en MCU pequeños: se permiten y se emulan, con aviso de costo (`PYP3001`) | `docs/frontend.md` |
+| #2 | Semántica fijada (`//` y `%` truncan hacia cero, condiciones solo `bool`, conversiones explícitas, overflow constante = error) | `docs/frontend.md`, `docs/sdk-runtime.md` |
+| #3 | Reentrancia con memoria estática: una función no se comparte entre `main` y la interrupción (`PYP2060`) | `docs/abi-pic14.md` |
 
-## Decisiones de diseno (`question`, `design-decision`) — RESUELTAS (#1, #2, #3; ver docs/frontend.md)
-1. **Politica de tipos anchos en MCU pequenos.** Hoy `--max-int-bits 8` rechaza `u16`. Un PIC16 puede emular 16/32 bits por
-   software: decidir si el Device Pack lo permite con advertencia de coste.
-2. **Revisar semantica fijada:** `//` y `%` truncan hacia cero; condiciones solo `bool`; conversiones siempre explicitas;
-   overflow constante = error.
-3. **Reentrancia con memoria estatica.** Locales/parametros son slots estaticos: una funcion llamada desde `main` y desde
-   la `@interrupt` comparte sus slots. Definir regla (prohibirlo, duplicar o proteger) antes del ABI.
+## Hecho
+| # | Qué | Dónde |
+|---|---|---|
+| #7 | Intérprete de IR de referencia (solo host, oráculo de las pruebas diferenciales) | `crates/pypic-ir` |
+| #9 | Resolución de módulos del SDK contra el Device Pack | `docs/sdk-modulos.md` |
+| #12 | Esquema y validación del Device Pack; `TargetProfile` desde el pack | `docs/device-packs.md` |
+| #13 | ABI PIC14: temporales, W/STATUS/PCLATH, bancos, vectores | `docs/abi-pic14.md` |
+| #14 | Codificador de instrucciones y ensamblador propio (sintaxis de pic-as) | `docs/asm-pic14.md` |
+| #15 | Escritor/lector Intel HEX con palabras de configuración y checksum | `crates/pypic-pic14/src/hex.rs` |
+| #22, #23 | Device Pack del PIC16F887: registros y periféricos | `devices/pic16f887` |
 
-## Compilador / IR (`enhancement`, `compiler`/`ir`)
-4. **Mostrar errores de tipos aunque haya errores de sintaxis** (hoy el verificador no corre si el parser fallo).
-5. **Advertencias:** codigo inalcanzable, variables sin usar, parametros sin usar.
-6. **Optimizaciones de IR:** propagacion de copias/constantes, eliminacion de codigo muerto y bloques vacios (hoy `bb2: jump bb3`).
-7. **Interprete de IR de referencia (solo para tests en el host)** para validar semantica (p. ej. el bucle `range` sin wrap-around).
-   No es un interprete Python ni va al MCU; ver `docs/spec/00_PRINCIPIOS_NO_INTERPRETE.md`.
-8. **Arreglos estaticos** (`buf: u8[16]`) e indexado.
-9. **Resolucion de modulos del SDK** (`machine`, `gpio`, `time`...) con firmas por Device Pack.
-10. **Salida JSON de diagnosticos** (`pypic check --format json`) para LSP y VS Code.
-11. **Slots de `Const` locales**: no reservar memoria para constantes locales.
+Además se hicieron, sin estar en este borrador: temporizadores (#39), registros (#40), bits y acarreo (#41), configuración por nombre (#33), conflictos de pines (#54), tablas en flash (#44),
+rutinas de runtime (#27), macros del ensamblador (#58) y el arreglo del lector HEX (#61).
 
-## Backend PIC14 / Device Packs (`enhancement`, `backend`, `device-pack`)
-12. **Schema y validacion de Device Pack** (Fase 0) y construir `TargetProfile` desde el pack (no solo `max_int_bits`).
-13. **ABI PIC14:** registros temporales, W/STATUS/PCLATH, bancos, solapamiento de locales por grafo de llamadas, vectores.
-14. **Encoder de instrucciones PIC14 + ensamblador** (verificar contra datasheet oficial del PIC16F887).
-15. **Escritor Intel HEX** con config words y checksum.
-16. **Blink real en PIC16F887** (criterio MVP).
-
-## Infraestructura (`documentation`, `good first issue`)
-17. **CI en GitHub Actions:** `cargo test`, `cargo clippy`, `cargo fmt --check`.
-18. **Licencia y CONTRIBUTING** (Fase 0, `TASKS.md`).
-19. **Docs: sustituir "8 bits" / "PIC8" por "todos los PIC (PIC16/PIC18/PIC24/dsPIC/PIC32)"** en el `.docx`, README, AGENTS.md y los `0x_*.md`.
-20. **Archivo `pypic.pyi`** con los nombres predeclarados (`u8`, `Const`, `interrupt`...) para editores y linters Python.
+## Abierto (los números son los de GitHub)
+- **Compilador / IR:** #4 errores de tipos junto a errores de sintaxis · #5 advertencias de código inalcanzable y variables sin usar · #6 optimizaciones de IR · #8 arreglos estáticos · #10 diagnósticos en JSON · #11 constantes locales sin RAM · #43 análisis de ciclos
+- **Backend:** #26 overlay de memoria · #31 `PCLATH` (>2048 palabras) · #32 `u32`/`i32` · #25 PIC12F625 · #24 encapsulados de 44 pines
+- **SDK:** #45 periféricos (ADC, PWM, UART, SPI, I²C...) · #46 `wdt`, `sleep`, reloj · #38 `nap`/`sleep` · #47 protocolos por software · #36 pull-ups e interrupción por cambio · #53 puertos completos · #59 banderas Z y DC
+- **Ensamblador:** #48 validar contra el Device Pack · #49–#52 y #60 restos del ensamblador en línea y de pic-as · #55 exportar en pic-as · #56 migración desde MPASM · #57 guía de Python a ensamblador
+- **Infraestructura y documentación:** #16 blink en hardware real · #17 CI · #18 licencia y CONTRIBUTING · #19 quitar «8 bits» de la documentación · #20 y #35 stubs `.pyi` · #37 `pypic.toml` · #62 (este archivo, el README y `TASKS.md`)
