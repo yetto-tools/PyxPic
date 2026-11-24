@@ -83,4 +83,5 @@ pypic build examples/button_led.py -o examples/hex/button_led.hex
 
 Montaje: PIC16F887; LED + resistencia de 330 Ω entre **RD0 (pin 19)** y GND; un **pulsador en RB0 (pin 33)** hacia +5 V con una resistencia de **10 kΩ a GND**
 (o un `LOGIC STATE`). Program File: `examples/hex/button_led.hex`. Al pulsar, el LED se enciende; al soltar, se apaga. No depende del reloj.
-Estado: **no probado todavía en Proteus** (solo en el simulador del host).
+Estado: **funciona en Proteus** (el usuario lo confirmó el 2026-11-23 con este montaje): es el primer programa escrito en `.py` que recorre todo
+el compilador (frontend → IR → generador de código → HEX) y se ejecuta en el simulador. Además lo verifica el simulador del host. No se ha probado en hardware real.
