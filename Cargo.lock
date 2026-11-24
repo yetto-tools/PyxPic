@@ -56,6 +56,9 @@ dependencies = [
 [[package]]
 name = "pypic-pic14"
 version = "0.0.1"
+dependencies = [
+ "pypic-device",
+]
 
 [[package]]
 name = "quote"

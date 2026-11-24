@@ -35,7 +35,7 @@ crates/
   pypic-frontend/   lexer, parser, tipos y constantes (src/, tests/)
   pypic-ir/         IR tipada, lowering, verificador, intérprete de referencia (src/, tests/)
   pypic-device/     Device Packs: esquema, cargador y validador (src/, tests/)
-  pypic-pic14/      backend PIC14: instrucciones, codificador/decodificador, desensamblador, Intel HEX (src/, tests/)
+  pypic-pic14/      backend PIC14: instrucciones, codificador/decodificador, desensamblador, Intel HEX, simulador del núcleo (src/, tests/)
   pypic-cli/        binario `pypic` (check, ir, disasm, device validate)
 devices/
   pic16f887/        Device Pack verificado contra DS40001291H
@@ -43,9 +43,10 @@ docs/
   spec/             especificación (docx, ZIP y módulos 00–09)
   frontend.md       diseño y semántica del frontend
   device-packs.md   esquema y validación de Device Packs
+  proteus-blink.md  cómo probar el blink de muestra en Proteus
   abi-pic14.md      ABI de PIC14 (convención de llamada, banco, ISR, pila)
   ISSUES_BACKLOG.md backlog propuesto como issues
-examples/           programas PyPIC de ejemplo (.py)
+examples/           programas PyPIC de ejemplo (.py); hex/ = .hex de muestra
 AGENTS.md  TASKS.md
 ```
 Las pruebas de cada crate viven en su propio `tests/` (convención de Cargo). Los backends, Device Packs, simulador y

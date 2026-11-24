@@ -6,6 +6,8 @@
 
 pub mod hex;
 pub mod isa;
+pub mod samples;
+pub mod sim;
 
 pub use hex::{HexError, Image};
 pub use isa::{disassemble, Cycles, Dest, EncodeError, Flag, Inst};
