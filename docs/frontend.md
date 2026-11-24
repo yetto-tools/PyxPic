@@ -87,6 +87,8 @@ def main() -> None:
   `--devices-dir`, `$PYPIC_DEVICES` y `./devices`; si no existe, el error lista los disponibles. `--device <dir>` fuerza un pack concreto y debe coincidir con la declaración.
   `pypic check` y `pypic ir` funcionan sin declaración (análisis genérico, sin validar pines ni límites del dispositivo); `pypic build` la exige.
 - **`CLOCK_HZ: Const[uint32] = <hercios>`**: constante con ese nombre y forma exactos; se valida contra el reloj máximo del dispositivo. No ocupa RAM y no da el aviso de tipo emulado. Si el programa usa esperas (`pypic.system.time`, ver `docs/sdk-time.md`) y no la declara, se usa el reloj por defecto del dispositivo con un aviso.
+
+**Diseño acordado, pendiente de implementar:** declarar explícitamente la fuente y frecuencia con unidades, por ejemplo `CLOCK = Internal(4 * MHz)` o `CLOCK = Crystal(4 * MHz)`. Son ejemplos propuestos, no sintaxis disponible. La expresión debe resolverse en compilación; seleccionar la fuente debe configurar el hardware y validar las opciones del dispositivo. `CLOCK_HZ` seguirá admitiéndose como declaración de frecuencia compatible, sin atribuirle configuración automática del oscilador. La frecuencia declarada es FOSC; en PIC16F887 el reloj de instrucción es FOSC/4.
 - **`@init_device`**: una sola función `() -> None` (el nombre es libre); el arranque la llama **después de inicializar las variables y antes de `main`**.
   El código no puede llamarla. Cuenta en el análisis de pila y en la regla de no compartir funciones con la interrupción.
 - Las constantes `Const` se sustituyen por su valor al compilar: **no ocupan RAM** aunque sean de 32 bits.
