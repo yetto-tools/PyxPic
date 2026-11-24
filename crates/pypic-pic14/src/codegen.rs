@@ -242,13 +242,15 @@ enum B {
 struct Alloc {
     /// 5 bytes de contadores para las esperas (solo si el programa las usa; solo contexto principal).
     delay_ws: u8,
+    /// Bloque de trabajo de las rutinas de runtime de cada contexto (main, interrupcion): 0 si no las usa.
+    rt: [u8; 2],
     globals: Vec<u8>,
     locals: HashMap<usize, Vec<u8>>,
     temps: HashMap<usize, Vec<u8>>,
     used: usize,
 }
 
-fn allocate(m: &Module, live: &[usize], opts: &Options) -> Result<Alloc, CodegenError> {
+fn allocate(m: &Module, live: &[usize], isr_ctx: &HashSet<usize>, opts: &Options) -> Result<Alloc, CodegenError> {
     let mut next = opts.ram_start as usize;
     let mut take = |n: usize| -> u8 {
         let a = next;
@@ -273,12 +275,24 @@ fn allocate(m: &Module, live: &[usize], opts: &Options) -> Result<Alloc, Codegen
     }
     let uses_delay = live.iter().any(|&fi| m.functions[fi].blocks.iter().any(|b| b.insts.iter().any(|i| matches!(i, pypic_ir::ir::Inst::Delay { .. }))));
     let delay_ws = if uses_delay { take(5) } else { 0 };
+    // cada contexto que use una rutina de runtime (`*`, `//`, `%`) tiene su propio bloque de 9 bytes
+    let uses_rt = |isr: bool| {
+        live.iter().filter(|fi| isr_ctx.contains(fi) == isr).any(|&fi| {
+            let f = &m.functions[fi];
+            f.blocks.iter().flat_map(|b| b.insts.iter()).any(|i| {
+                let pypic_ir::ir::Inst::Binary { dst, op, lhs, rhs } = i else { return false };
+                let konst = |o: &Operand| if let Operand::Const { value, .. } = o { Some(*value) } else { None };
+                pypic_frontend::routine_for(*op, m.place_ty(f, *dst), konst(lhs), konst(rhs)).is_some()
+            })
+        })
+    };
+    let rt = [if uses_rt(false) { take(9) } else { 0 }, if uses_rt(true) { take(9) } else { 0 }];
     let used = next - opts.ram_start as usize;
     let available = (opts.ram_end - opts.ram_start + 1) as usize;
     if used > available {
         return Err(CodegenError::OutOfRam { needed: used, available });
     }
-    Ok(Alloc { delay_ws, globals, locals, temps, used })
+    Ok(Alloc { delay_ws, rt, globals, locals, temps, used })
 }
 
 // ---- grafo de llamadas -----------------------------------------------------------------------
@@ -332,6 +346,11 @@ struct Gen<'a> {
     /// Tablas constantes usadas: la etiqueta de cada una y el orden en que se emiten.
     rom_labels: HashMap<usize, Label>,
     rom_order: Vec<usize>,
+    /// Rutinas de runtime pedidas: (en la interrupcion, tipo, bytes) -> etiqueta, y el orden en que se emiten.
+    rt_labels: HashMap<(bool, u8, usize), Label>,
+    rt_order: Vec<(bool, u8, usize)>,
+    /// Al emitir una rutina, el contexto al que pertenece (su memoria de trabajo).
+    force_isr: Option<bool>,
 }
 
 impl<'a> Gen<'a> {
@@ -340,7 +359,7 @@ impl<'a> Gen<'a> {
     }
 
     fn in_isr(&self) -> bool {
-        self.isr_ctx.contains(&self.cur)
+        self.force_isr.unwrap_or_else(|| self.isr_ctx.contains(&self.cur))
     }
 
     fn scratch(&self) -> u8 {
@@ -475,7 +494,8 @@ impl<'a> Gen<'a> {
             }
             BinOp::Shl | BinOp::Shr => {
                 let Operand::Const { value: k, .. } = *rhs else {
-                    return unsupported("desplazamiento por una cantidad variable (necesita rutina de runtime, #27)");
+                    let signed = self.m.place_ty(self.f(), dst).is_signed();
+                    return self.var_shift(&d, op, signed, lhs, rhs);
                 };
                 let l = self.bytes(lhs)?;
                 for i in 0..n {
@@ -507,9 +527,7 @@ impl<'a> Gen<'a> {
                     }
                 }
             }
-            BinOp::Mul | BinOp::Div | BinOp::Mod => {
-                return unsupported(format!("la operacion '{}' (necesita rutina de runtime, #27)", op.symbol()));
-            }
+            BinOp::Mul | BinOp::Div | BinOp::Mod => return self.runtime_binop(dst, op, lhs, rhs),
         }
         Ok(())
     }
@@ -1045,8 +1063,8 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
     live.sort_unstable();
     let isr_ctx = reach(m, &isrs);
 
-    let al = allocate(m, &live, opts)?;
-    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new(), registers: opts.registers.clone(), rom_labels: HashMap::new(), rom_order: Vec::new() };
+    let al = allocate(m, &live, &isr_ctx, opts)?;
+    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new(), registers: opts.registers.clone(), rom_labels: HashMap::new(), rom_order: Vec::new(), rt_labels: HashMap::new(), rt_order: Vec::new(), force_isr: None };
     for &fi in &live {
         let l = g.asm.label(m.functions[fi].name.clone());
         g.fn_labels.insert(fi, l);
@@ -1112,6 +1130,7 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
         g.function(fi, &bb_labels)?;
     }
     g.emit_roms();
+    g.emit_runtime();
 
     // ---- ensamblado: direcciones y etiquetas ----
     let mut addr_of = vec![None::<u32>; g.asm.names.len()];
@@ -1345,6 +1364,340 @@ impl<'a> Gen<'a> {
             }
         }
         Ok(())
+    }
+
+    // ---- rutinas de runtime: * // % y desplazamientos por una cantidad variable (docs/sdk-runtime.md) ----
+
+    /// Base del bloque de 9 bytes de rutinas del contexto actual: A (2) B (2) R (2) CNT M SGN.
+    fn rt_base(&self) -> u8 {
+        if self.in_isr() { self.al.rt[1] } else { self.al.rt[0] }
+    }
+
+    fn rt_label(&mut self, isr: bool, kind: u8, n: usize) -> Label {
+        if let Some(&l) = self.rt_labels.get(&(isr, kind, n)) {
+            return l;
+        }
+        let name = match kind {
+            0 => "mul",
+            1 => "divmod",
+            _ => "sdivmod",
+        };
+        let l = self.asm.label(format!("rt.{name}{}{}", n * 8, if isr { ".isr" } else { "" }));
+        self.rt_labels.insert((isr, kind, n), l);
+        self.rt_order.push((isr, kind, n));
+        l
+    }
+
+    /// Un paso de desplazamiento de un bit sobre `d` (byte bajo primero).
+    fn shift_step(&mut self, d: &[u8], op: BinOp, signed: bool) {
+        match (op, signed) {
+            (BinOp::Shl, _) => {
+                self.asm.i(Bcf(STATUS, BIT_C));
+                for &r in d {
+                    self.asm.i(Rlf(r, F));
+                }
+            }
+            (_, false) => {
+                self.asm.i(Bcf(STATUS, BIT_C));
+                for &r in d.iter().rev() {
+                    self.asm.i(Rrf(r, F));
+                }
+            }
+            (_, true) => {
+                let hi = *d.last().unwrap();
+                self.asm.i(Rlf(hi, W)); // C = signo
+                for &r in d.iter().rev() {
+                    self.asm.i(Rrf(r, F));
+                }
+            }
+        }
+    }
+
+    /// `x << n` / `x >> n` con `n` en una variable: un bucle en linea (sin CALL ni RAM propia; usa el byte de trabajo del
+    /// contexto). La cantidad se acota al ancho del tipo: un desplazamiento de `8 * bytes` o mas da 0 (o el signo).
+    fn var_shift(&mut self, d: &[u8], op: BinOp, signed: bool, lhs: &Operand, rhs: &Operand) -> Result<(), CodegenError> {
+        let l = self.bytes(lhs)?;
+        for i in 0..d.len() {
+            self.ld(l[i]);
+            self.st(d[i]);
+        }
+        let s0 = self.scratch();
+        let rb = self.bytes(rhs)?;
+        self.ld(rb[0]);
+        self.st(s0);
+        if let Some(&hi) = rb.get(1) {
+            // un byte alto distinto de cero es una cantidad enorme
+            let ok = self.asm.label("shift.cnt");
+            match hi {
+                B::Reg(r) => self.asm.i(Movf(r, F)),
+                B::Imm(k) => {
+                    self.asm.i(Movlw(k));
+                    self.asm.i(Iorlw(0));
+                }
+            }
+            self.asm.i(Btfsc(STATUS, BIT_Z));
+            self.asm.goto(ok);
+            self.asm.i(Movlw(0xFF));
+            self.st(s0);
+            self.asm.place(ok);
+        }
+        let width = (8 * d.len()) as u8;
+        let (capped, top, done) = (self.asm.label("shift.cap"), self.asm.label("shift.lazo"), self.asm.label("shift.fin"));
+        self.asm.i(Movlw(width));
+        self.asm.i(Subwf(s0, W)); // C = (cantidad >= ancho)
+        self.asm.i(Btfss(STATUS, BIT_C));
+        self.asm.goto(capped);
+        self.asm.i(Movlw(width));
+        self.st(s0);
+        self.asm.place(capped);
+        self.asm.place(top);
+        self.asm.i(Movf(s0, F));
+        self.asm.i(Btfsc(STATUS, BIT_Z));
+        self.asm.goto(done);
+        self.shift_step(d, op, signed);
+        self.asm.i(Decf(s0, F));
+        self.asm.goto(top);
+        self.asm.place(done);
+        Ok(())
+    }
+
+    /// `*`, `//` y `%`: un desplazamiento o una mascara si el operando constante es una potencia de 2; si no, una llamada a la
+    /// rutina del contexto, con los operandos en su bloque de RAM y el resultado leido de el.
+    fn runtime_binop(&mut self, dst: Place, op: BinOp, lhs: &Operand, rhs: &Operand) -> Result<(), CodegenError> {
+        let d = self.regs(dst)?;
+        let n = d.len();
+        if n > 2 {
+            return unsupported(format!("'{}' sobre mas de 16 bits (las rutinas de runtime son de 8 y 16 bits)", op.symbol()));
+        }
+        let ty = self.m.place_ty(self.f(), dst);
+        let konst = |o: &Operand| if let Operand::Const { value, .. } = o { Some(*value) } else { None };
+        let (lk, rk) = (konst(lhs), konst(rhs));
+        let kind = pypic_frontend::routine_for(op, ty, lk, rk);
+        if kind.is_none() {
+            let bits = (8 * n) as u32;
+            match op {
+                BinOp::Mul => {
+                    // el operando constante es 0 o 2^k: se borra o se desplaza
+                    let (c, other) = if lk.is_some() { (lk.unwrap(), rhs) } else { (rk.unwrap(), lhs) };
+                    let o = self.bytes(other)?;
+                    match pypic_frontend::pow2_exp(c) {
+                        Some(k) if k < bits => {
+                            for i in 0..n {
+                                self.ld(o[i]);
+                                self.st(d[i]);
+                            }
+                            for _ in 0..k {
+                                self.shift_step(&d, BinOp::Shl, false);
+                            }
+                        }
+                        _ => {
+                            for &r in &d {
+                                self.asm.i(Clrf(r));
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    let k = pypic_frontend::pow2_exp(rk.unwrap()).unwrap();
+                    let l = self.bytes(lhs)?;
+                    if op == BinOp::Div {
+                        for i in 0..n {
+                            self.ld(l[i]);
+                            self.st(d[i]);
+                        }
+                        for _ in 0..k {
+                            self.shift_step(&d, BinOp::Shr, false);
+                        }
+                    } else {
+                        let mask = (1u64 << k) - 1;
+                        for i in 0..n {
+                            self.ld(l[i]);
+                            self.asm.i(Andlw((mask >> (8 * i)) as u8));
+                            self.st(d[i]);
+                        }
+                    }
+                }
+            }
+            return Ok(());
+        }
+        let kind = kind.unwrap();
+        let kind_id = match kind {
+            pypic_frontend::RtKind::Mul => 0u8,
+            pypic_frontend::RtKind::UDiv => 1,
+            pypic_frontend::RtKind::SDiv => 2,
+        };
+        let isr = self.in_isr();
+        let label = self.rt_label(isr, kind_id, n);
+        let base = self.rt_base();
+        let (a, b, r) = (base, base + 2, base + 4);
+        let (l, rr) = (self.bytes(lhs)?, self.bytes(rhs)?);
+        for i in 0..n {
+            self.ld(l[i]);
+            self.st(a + i as u8);
+            self.ld(rr[i]);
+            self.st(b + i as u8);
+        }
+        self.asm.call(label);
+        // la multiplicacion y el modulo dejan el resultado en R; el cociente queda en A
+        let from = if op == BinOp::Div { a } else { r };
+        for i in 0..n {
+            self.asm.i(Movf(from + i as u8, W));
+            self.st(d[i]);
+        }
+        Ok(())
+    }
+
+    /// Las rutinas pedidas, una copia por contexto (la memoria de trabajo es estatica y la interrupcion puede entrar a mitad).
+    fn emit_runtime(&mut self) {
+        let mut i = 0;
+        while i < self.rt_order.len() {
+            let (isr, kind, n) = self.rt_order[i];
+            i += 1;
+            self.force_isr = Some(isr);
+            let base = if isr { self.al.rt[1] } else { self.al.rt[0] };
+            let (a, b, r, cnt, m, sgn) = (base, base + 2, base + 4, base + 6, base + 7, base + 8);
+            let label = self.rt_labels[&(isr, kind, n)];
+            self.asm.place(label);
+            match kind {
+                0 => self.emit_mul(n, a, b, r, cnt, m),
+                1 => self.emit_udivmod(n, a, b, r, cnt, m),
+                _ => {
+                    let udiv = self.rt_label(isr, 1, n); // la division con signo llama a la sin signo
+                    self.emit_sdivmod(n, a, b, r, sgn, udiv);
+                }
+            }
+        }
+        self.force_isr = None;
+    }
+
+    fn emit_mul(&mut self, n: usize, a: u8, b: u8, r: u8, cnt: u8, m: u8) {
+        for i in 0..n as u8 {
+            self.asm.i(Clrf(r + i));
+        }
+        self.asm.i(Movlw(8 * n as u8));
+        self.st(cnt);
+        let top = self.asm.label("mul.lazo");
+        self.asm.place(top);
+        self.asm.i(Bcf(STATUS, BIT_C));
+        for i in (0..n as u8).rev() {
+            self.asm.i(Rrf(b + i, F)); // C = bit bajo del multiplicador
+        }
+        self.asm.i(Clrf(m));
+        self.asm.i(Btfsc(STATUS, BIT_C));
+        self.asm.i(Comf(m, F)); // M = 0xFF si el bit es 1
+        for i in 0..n as u8 {
+            self.asm.i(Movf(a + i, W));
+            self.asm.i(Andwf(m, W));
+            if i > 0 {
+                self.asm.i(Btfsc(STATUS, BIT_C));
+                self.asm.i(Addlw(1));
+            }
+            self.asm.i(Addwf(r + i, F)); // R += A si el bit es 1
+        }
+        self.asm.i(Bcf(STATUS, BIT_C));
+        for i in 0..n as u8 {
+            self.asm.i(Rlf(a + i, F));
+        }
+        self.asm.i(Decfsz(cnt, F));
+        self.asm.goto(top);
+        self.asm.i(Return);
+    }
+
+    /// Division por restas con restauracion: el cociente se forma en A, el resto en R. Con divisor 0 todos los
+    /// bits del cociente son 1 y el resto es el dividendo.
+    fn emit_udivmod(&mut self, n: usize, a: u8, b: u8, r: u8, cnt: u8, m: u8) {
+        for i in 0..n as u8 {
+            self.asm.i(Clrf(r + i));
+        }
+        self.asm.i(Movlw(8 * n as u8));
+        self.st(cnt);
+        let (top, skip) = (self.asm.label("div.lazo"), self.asm.label("div.sig"));
+        self.asm.place(top);
+        self.asm.i(Bcf(STATUS, BIT_C));
+        for i in 0..n as u8 {
+            self.asm.i(Rlf(a + i, F)); // el bit alto del dividendo sale por C...
+        }
+        for i in 0..n as u8 {
+            self.asm.i(Rlf(r + i, F)); // ...y entra por el bit bajo del resto; C = bit que se pierde del resto
+        }
+        self.asm.i(Clrf(m));
+        self.asm.i(Btfsc(STATUS, BIT_C));
+        self.asm.i(Incf(m, F));
+        let (rb, bb): (Vec<B>, Vec<B>) = ((0..n as u8).map(|i| B::Reg(r + i)).collect(), (0..n as u8).map(|i| B::Reg(b + i)).collect());
+        self.sub_flags(&rb, &bb, false); // C = (R >= B)
+        self.asm.i(Btfsc(STATUS, BIT_C));
+        self.asm.i(Incf(m, F));
+        self.asm.i(Movf(m, F));
+        self.asm.i(Btfsc(STATUS, BIT_Z));
+        self.asm.goto(skip); // R < B: no se resta
+        for i in 0..n {
+            self.ld(bb[i]);
+            if i > 0 {
+                self.asm.i(Btfss(STATUS, BIT_C));
+                self.asm.i(Addlw(1));
+            }
+            self.sub_from(rb[i]);
+            self.st(r + i as u8); // R -= B
+        }
+        self.asm.i(Bsf(a, 0)); // bit del cociente
+        self.asm.place(skip);
+        self.asm.i(Decfsz(cnt, F));
+        self.asm.goto(top);
+        self.asm.i(Return);
+    }
+
+    fn neg_bytes(&mut self, x: u8, n: usize) {
+        for i in 0..n as u8 {
+            self.asm.i(Comf(x + i, F));
+        }
+        self.asm.i(Incf(x, F));
+        if n == 2 {
+            self.asm.i(Btfsc(STATUS, BIT_Z));
+            self.asm.i(Incf(x + 1, F));
+        }
+    }
+
+    /// Division con signo: trunca hacia cero y el resto lleva el signo del dividendo (como C). Con divisor 0, igual que sin signo.
+    fn emit_sdivmod(&mut self, n: usize, a: u8, b: u8, r: u8, sgn: u8, udiv: Label) {
+        let hi = (n - 1) as u8;
+        let (nz, apos, bpos, n1, n2) = (self.asm.label("sdiv.nz"), self.asm.label("sdiv.ap"), self.asm.label("sdiv.bp"), self.asm.label("sdiv.q"), self.asm.label("sdiv.r"));
+        self.asm.i(Movf(b, W));
+        for i in 1..n as u8 {
+            self.asm.i(Iorwf(b + i, W));
+        }
+        self.asm.i(Btfss(STATUS, BIT_Z));
+        self.asm.goto(nz);
+        for i in 0..n as u8 {
+            self.asm.i(Movf(a + i, W));
+            self.st(r + i); // resto = dividendo
+            self.asm.i(Movlw(0xFF));
+            self.st(a + i); // cociente = todo unos
+        }
+        self.asm.i(Return);
+        self.asm.place(nz);
+        self.asm.i(Clrf(sgn));
+        self.asm.i(Btfss(a + hi, 7));
+        self.asm.goto(apos);
+        self.neg_bytes(a, n);
+        self.asm.i(Movlw(3));
+        self.st(sgn);
+        self.asm.place(apos);
+        self.asm.i(Btfss(b + hi, 7));
+        self.asm.goto(bpos);
+        self.neg_bytes(b, n);
+        self.asm.i(Movlw(1));
+        self.asm.i(Xorwf(sgn, F));
+        self.asm.place(bpos);
+        self.asm.call(udiv);
+        self.asm.i(Btfss(sgn, 0));
+        self.asm.goto(n1);
+        self.neg_bytes(a, n);
+        self.asm.place(n1);
+        self.asm.i(Btfss(sgn, 1));
+        self.asm.goto(n2);
+        self.neg_bytes(r, n);
+        self.asm.place(n2);
+        self.asm.i(Return);
     }
 
     /// Acceso a un registro por su direccion de 9 bits: el banco lo pone `banked` y se vuelve al banco 0 (ABI).

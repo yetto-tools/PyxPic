@@ -8,7 +8,6 @@ use crate::ir::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Trap {
-    DivByZero,
     StepLimit,
     NoSuchFunction(String),
     BadArgs,
@@ -185,14 +184,16 @@ impl<'m> Machine<'m> {
                     BinOp::Add => a + b,
                     BinOp::Sub => a - b,
                     BinOp::Mul => a * b,
-                    BinOp::Div | BinOp::Mod if b == 0 => return Err(Trap::DivByZero),
+                    // un divisor cero en ejecucion no tiene trampa en un PIC: a // 0 es todo unos y a % 0 es a (docs/sdk-runtime.md)
+                    BinOp::Div if b == 0 => -1,
+                    BinOp::Mod if b == 0 => a,
                     BinOp::Div => a / b, // trunca hacia cero
                     BinOp::Mod => a % b,
                     BinOp::BitAnd => a & b,
                     BinOp::BitOr => a | b,
                     BinOp::BitXor => a ^ b,
-                    BinOp::Shl => a << b,
-                    BinOp::Shr => a >> b,
+                    BinOp::Shl => if b >= 128 { 0 } else { a << b },
+                    BinOp::Shr => a >> b.min(127),
                 };
                 self.write(f, fr, *dst, r);
             }

@@ -36,9 +36,13 @@ fn signed_division_truncates_toward_zero() {
 }
 
 #[test]
-fn division_by_zero_traps() {
-    let m = build("def f(a: u8, b: u8) -> u8:\n    return a // b\n");
-    assert_eq!(Machine::new(&m).call("f", &[1, 0]), Err(Trap::DivByZero));
+fn division_by_zero_has_a_defined_result_and_no_trap() {
+    // un PIC no tiene excepciones: a // 0 es todo unos del ancho y a % 0 es a (docs/sdk-runtime.md)
+    assert_eq!(run("def f(a: u8, b: u8) -> u8:\n    return a // b\n", "f", &[77, 0]), Some(255));
+    assert_eq!(run("def f(a: u8, b: u8) -> u8:\n    return a % b\n", "f", &[77, 0]), Some(77));
+    assert_eq!(run("def f(a: i8, b: i8) -> i8:\n    return a // b\n", "f", &[-9, 0]), Some(-1));
+    assert_eq!(run("def f(a: i8, b: i8) -> i8:\n    return a % b\n", "f", &[-9, 0]), Some(-9));
+    assert_eq!(run("def f(a: u16, b: u16) -> u16:\n    return a // b\n", "f", &[5000, 0]), Some(65535));
 }
 
 #[test]

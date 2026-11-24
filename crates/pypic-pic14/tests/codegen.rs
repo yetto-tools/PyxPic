@@ -327,10 +327,6 @@ fn compile_err(src: &str) -> CodegenError {
 
 #[test]
 fn unsupported_features_fail_with_a_clear_error() {
-    let e = compile_err("a: u8 = 3\nr: u8 = 0\ndef main() -> None:\n    global r\n    r = a * a\n");
-    assert!(matches!(&e, CodegenError::Unsupported(s) if s.contains("'*'") && s.contains("main")), "{e}");
-    let e = compile_err("a: u8 = 3\nn: u8 = 2\nr: u8 = 0\ndef main() -> None:\n    global r\n    r = a << n\n");
-    assert!(matches!(&e, CodegenError::Unsupported(s) if s.contains("variable")), "{e}");
     let e = compile_err("a: u32 = 3\ndef main() -> None:\n    pass\n");
     assert!(matches!(&e, CodegenError::Unsupported(s) if s.contains("u32")), "{e}");
     assert_eq!(compile_err("def f() -> None:\n    pass\n"), CodegenError::NoMain);

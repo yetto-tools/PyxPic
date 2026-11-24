@@ -71,13 +71,12 @@ El cuerpo de la ISR debe borrar sus propios flags (responsabilidad del SDK). `FS
 - `0000h: GOTO startup` (tras el reset PCLATH = 0). `0001h–0003h` libres.
 - `startup`: pone banco 0, inicializa globales, `CALL` a la función `@init_device` (si existe), `CALL main`, y si `main` vuelve, `SLEEP` + salto a sí mismo. **Cada `CALL` desde `startup` consume 1 nivel de pila** (son secuenciales: cuenta el mayor de los dos).
 - ✅ **Profundidad de pila (`PYP2061`, decisión: error):** peor caso = `1 + profundidad(main)` + `1 + profundidad(ISR)` ≤ niveles del pack (8 en la F887).
-  La entrada a la interrupción empuja el PC (1 nivel). *Limitación:* el frontend solo cuenta llamadas del usuario; las llamadas a rutinas de runtime se
-  re-comprobarán en el backend.
+  La entrada a la interrupción empuja el PC (1 nivel). El frontend cuenta también las rutinas de runtime y las consultas de tablas `Rom` (un nivel cada una; la división con signo, dos).
 
 ## 7. Rutinas de runtime
 
 Multiplicación, división, módulo y desplazamientos por variable son rutinas nativas estáticas, nunca un intérprete. Como usan memoria estática,
-**(decisión) el compilador genera una copia por contexto** (principal / ISR) si ambos la usan; el usuario no ve nada y solo cuesta flash en ese caso.
+**(decisión) el compilador genera una copia por contexto** (principal / ISR) si ambos la usan: solo cuesta flash y 9 bytes de RAM por contexto en ese caso. Implementado: ver `docs/sdk-runtime.md`.
 
 ## 8. Qué está implementado
 
@@ -89,5 +88,6 @@ Multiplicación, división, módulo y desplazamientos por variable son rutinas n
 | Codificación/decodificación de las 35 instrucciones (`crates/pypic-pic14`) | ✅ verificada contra la tabla 15-2 (p.227), exhaustiva sobre las 16 384 palabras |
 | Escritor/lector de Intel HEX (palabra → 2 bytes little-endian, dirección de bytes = 2 × dirección de palabra; config en `400Eh`/`4010h`) | ✅ vectores calculados a mano + ida y vuelta (`crates/pypic-pic14`); **pendiente de verificar en Proteus** |
 | Convención de llamada, invariante de banco 0 (todo el dato en banco 0), temporales por contexto, prólogo/epílogo de ISR, arranque | ✅ `codegen` (ver `docs/backend-pic14.md`); verificado con pruebas diferenciales IR ↔ simulador PIC14 e interrupciones inyectadas |
-| Overlay de locales y otros bancos de datos, manejo de PCLATH (> 2048 palabras), rutinas de runtime | ⏳ backend (#26, #27 y nuevos issues) |
+| Rutinas de runtime (`*`, `//`, `%`, desplazamientos variables), una copia por contexto | ✅ `docs/sdk-runtime.md` |
+| Overlay de locales y otros bancos de datos, manejo de PCLATH (> 2048 palabras) | ⏳ backend (#26, #31) |
 | Re-comprobación de pila con rutinas de runtime | ⏳ backend |

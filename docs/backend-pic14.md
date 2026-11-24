@@ -32,7 +32,7 @@ pypic build programa.py -o salida.hex [--listing] [--device devices/pic16f887]
 ## Límites actuales (el compilador los rechaza con un error claro)
 
 - Solo genera código para el **PIC16F887**: el mapa de registros (PORTx, TRISx, ANSEL) está fijo en el backend (#22). Con otro dispositivo, o si el programa declara uno distinto del compilado, da un error en vez de código equivocado.
-- `*`, `//`, `%` y desplazamientos por variable: necesitan rutinas de runtime (#27).
+- `*`, `//`, `%` sobre más de 16 bits (`u32`/`i32`, #32).
 - `u32` / `i32`.
 - Más de 80 bytes de datos: no hay otros bancos ni solapamiento de locales (#26).
 - Más de 2048 palabras: no se maneja PCLATH.

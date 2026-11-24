@@ -8,7 +8,7 @@ Quien hoy escribe en ensamblador debe poder escribir lo mismo aquí, con menos e
 
 1. **Precisión.** El costo en ciclos es predecible, se puede conocer y se reporta. Una espera constante dura exactamente lo pedido (`docs/sdk-time.md`); `pypic build --timing` muestra lo emitido y el error.
 2. **Flexibilidad.** Todo lo que el ensamblador alcanza debe ser alcanzable: registros, bits, banderas, memoria, periféricos, interrupciones. Lo que el lenguaje aún no cubre tiene una salida de emergencia (ensamblador en línea).
-3. **Sin costos ocultos.** El código generado es legible (`--listing`), sin runtime, y las operaciones que necesitarían rutinas ocultas se rechazan o se piden explícitas (`*`, `//`, `%`).
+3. **Sin costos ocultos.** El código generado es legible (`--listing`), sin runtime, y las operaciones que necesitan una rutina nativa (`*`, `//`, `%`) la dicen: un aviso `PYP3011` con el nombre de la rutina, su costo documentado (`docs/sdk-runtime.md`) y la rutina visible en `--listing`.
 4. **Una sola forma por operación.** Sin sinónimos, para evitar ambigüedades (`pause` y no `delay_ms`).
 5. **Explícito antes que implícito.** Sin conversiones implícitas ni «verdad» de enteros; los tipos son de ancho fijo.
 6. **Conocimiento del dispositivo.** El programa declara su PIC (`from pypic.device import ...`) y el compilador valida pines, memoria, reloj y periféricos contra el Device Pack, cosa que el ensamblador no hace.
@@ -31,7 +31,7 @@ Quien hoy escribe en ensamblador debe poder escribir lo mismo aquí, con menos e
 | **Análisis estático de ciclos por función y contratos de tiempo máximo** (p. ej. «esta interrupción dura ≤ N ciclos») | ⏳ #43 |
 | Tablas constantes en flash (`RETLW`, `GOTO` calculado) | ✅ `Rom[u8]`, `docs/sdk-tablas.md` (#44) |
 | Arreglos y direccionamiento indirecto (`FSR`/`INDF`) | ⏳ #8 |
-| Multiplicar/dividir (rutinas nativas) | ⏳ #27 |
+| Multiplicar/dividir/módulo y desplazar por una variable (rutinas nativas) | ✅ `docs/sdk-runtime.md` (#27) |
 | Varios bancos de datos y solapamiento de locales | ⏳ #26 |
 | Páginas de programa (`PCLATH`) para más de 2048 palabras | ⏳ #31 |
 | EEPROM de datos, ADC, UART, I²C, PWM... | ⏳ periféricos (#23) |

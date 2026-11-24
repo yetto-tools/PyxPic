@@ -60,6 +60,8 @@ pub struct FuncInfo {
     pub calls: BTreeSet<String>,
     /// Lee alguna tabla con un indice variable: la consulta es un CALL (un nivel de pila).
     pub uses_rom: bool,
+    /// Niveles de pila que usa su peor rutina de runtime (`*`, `//`, `%`): 0 si no usa ninguna.
+    pub runtime_depth: u32,
     pub span: Span,
 }
 
@@ -191,6 +193,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         reg_calls: BTreeMap::new(),
         bits_fns: HashSet::new(),
         claims: Vec::new(),
+        rt_warned: BTreeSet::new(),
         roms: Vec::new(),
         rom_idx: HashMap::new(),
         rom_gets: BTreeMap::new(),
@@ -268,6 +271,8 @@ struct Checker<'a> {
     reg_calls: BTreeMap<u32, RegCall>,
     /// Pines que un periferico toma al encender un bit (por registros o por el reloj externo de un timer).
     claims: Vec<Claim>,
+    /// Rutinas de runtime ya avisadas (`PYP3011`): una vez por rutina y programa.
+    rt_warned: BTreeSet<String>,
     /// Tablas constantes declaradas, su indice por nombre y las lecturas variables.
     roms: Vec<(String, Vec<u8>)>,
     rom_idx: HashMap<String, usize>,
@@ -1377,6 +1382,7 @@ impl<'a> Checker<'a> {
             is_asm,
             calls: BTreeSet::new(),
             uses_rom: false,
+            runtime_depth: 0,
             span: f.name.span,
         });
     }
@@ -1621,7 +1627,7 @@ impl<'a> Checker<'a> {
             return 0;
         }
         let calls: Vec<String> = self.functions[i].calls.iter().cloned().collect();
-        let own = self.functions[i].uses_rom as u32;
+        let own = (self.functions[i].uses_rom as u32).max(self.functions[i].runtime_depth);
         let d = calls.iter().map(|c| 1 + self.call_depth(c, visiting, memo)).max().unwrap_or(0).max(own);
         visiting.remove(f);
         memo.insert(f.to_string(), d);
@@ -2096,7 +2102,29 @@ impl<'a> Checker<'a> {
                 }
             };
         }
+        self.note_runtime(e, op, t, a, b);
         self.set(e, t, None)
+    }
+
+    /// `*`, `//` y `%` que no se resuelven con un desplazamiento o una mascara usan una rutina nativa: pila y aviso.
+    fn note_runtime(&mut self, e: &Expr, op: BinOp, t: Type, a: Option<i128>, b: Option<i128>) {
+        let Some(kind) = crate::runtime::routine_for(op, t, a, b) else { return };
+        if let Some(cur) = self.cur {
+            let f = &mut self.functions[cur];
+            f.runtime_depth = f.runtime_depth.max(kind.stack_levels());
+        }
+        let name = kind.name(t.bits());
+        if self.rt_warned.insert(name.clone()) {
+            self.d.warning(
+                "PYP3011",
+                e.span,
+                format!(
+                    "'{}' sobre {t} se compila a la rutina nativa {name} (una copia por contexto si la usan main y la interrupcion; {} nivel(es) de pila; costo en ciclos en docs/sdk-runtime.md)",
+                    op.symbol(),
+                    kind.stack_levels()
+                ),
+            );
+        }
     }
 
     fn compare(&mut self, e: &Expr, op: CmpOp, l: &Expr, r: &Expr) -> Type {
