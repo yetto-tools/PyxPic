@@ -19,7 +19,7 @@ pub use check::{time_unit, DelayUnit, PinDecl, Program};
 pub use diag::{Diagnostic, Diagnostics, Severity, Span};
 pub use bits::BitsOp;
 pub use regs::{RegCall, RegOp};
-pub use target::{PinInfo, RegInfo, TargetProfile};
+pub use target::{PinClaim, PinInfo, RegInfo, TargetProfile};
 pub use timer::{TimerCall, TimerId, TimerOp, TimerStart};
 pub use types::Type;
 

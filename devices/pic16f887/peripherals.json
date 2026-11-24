@@ -21,7 +21,7 @@
       "pins": [
         {
           "function": "T0CKI",
-          "direction": "in"
+          "direction": "in", "claimed_by": ["T0CS"]
         }
       ]
     },
@@ -48,19 +48,19 @@
       "pins": [
         {
           "function": "T1CKI",
-          "direction": "in"
+          "direction": "in", "claimed_by": ["TMR1CS"]
         },
         {
           "function": "T1OSI",
-          "direction": "in"
+          "direction": "in", "claimed_by": ["T1OSCEN"]
         },
         {
           "function": "T1OSO",
-          "direction": "out"
+          "direction": "out", "claimed_by": ["T1OSCEN"]
         },
         {
           "function": "T1G",
-          "direction": "in"
+          "direction": "in", "claimed_by": ["TMR1GE"]
         }
       ]
     },
@@ -227,11 +227,11 @@
         },
         {
           "function": "C1OUT",
-          "direction": "out"
+          "direction": "out", "claimed_by": ["C1OE"]
         },
         {
           "function": "C2OUT",
-          "direction": "out"
+          "direction": "out", "claimed_by": ["C2OE"]
         }
       ]
     },
@@ -376,19 +376,19 @@
       "pins": [
         {
           "function": "TX",
-          "direction": "out"
+          "direction": "out", "claimed_by": ["SPEN"]
         },
         {
           "function": "RX",
-          "direction": "in"
+          "direction": "in", "claimed_by": ["SPEN"]
         },
         {
           "function": "CK",
-          "direction": "io"
+          "direction": "io", "claimed_by": ["SPEN"]
         },
         {
           "function": "DT",
-          "direction": "io"
+          "direction": "io", "claimed_by": ["SPEN"]
         }
       ]
     },
@@ -421,17 +421,17 @@
       "pins": [
         {
           "function": "SCK",
-          "direction": "io",
+          "direction": "io", "claimed_by": ["SSPEN"],
           "mode": "SPI"
         },
         {
           "function": "SDI",
-          "direction": "in",
+          "direction": "in", "claimed_by": ["SSPEN"],
           "mode": "SPI"
         },
         {
           "function": "SDO",
-          "direction": "out",
+          "direction": "out", "claimed_by": ["SSPEN"],
           "mode": "SPI"
         },
         {
@@ -441,12 +441,12 @@
         },
         {
           "function": "SCL",
-          "direction": "io",
+          "direction": "io", "claimed_by": ["SSPEN"],
           "mode": "I2C"
         },
         {
           "function": "SDA",
-          "direction": "io",
+          "direction": "io", "claimed_by": ["SSPEN"],
           "mode": "I2C"
         }
       ],

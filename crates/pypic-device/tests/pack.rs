@@ -410,3 +410,21 @@ fn a_build_default_that_does_not_fit_is_a_pack_error() {
     let e = mutated(|p| p.config.words[0].build_default = Some(pypic_device::Num(0x4000)));
     assert!(e.iter().any(|m| m.contains("build_default")), "{e:?}");
 }
+
+#[test]
+fn pin_claims_say_which_bit_takes_which_pin() {
+    let c = pack().pin_claims();
+    let tx = c["SPEN"].iter().find(|x| x.function == "TX").unwrap();
+    assert_eq!((tx.peripheral.as_str(), tx.pins.as_slice()), ("EUSART", ["RC6".to_string()].as_slice()));
+    let scl = c["SSPEN"].iter().find(|x| x.function == "SCL").unwrap();
+    assert!(scl.pins.contains(&"RC3".to_string()));
+    assert!(c["SSPEN"].iter().all(|x| x.function != "SS"));
+    assert_eq!(c["C1OE"][0].pins, ["RA4".to_string()]);
+    assert_eq!(c["T0CS"][0].pins, ["RA4".to_string()]);
+}
+
+#[test]
+fn a_claimed_by_bit_that_does_not_exist_is_a_pack_error() {
+    let e = mutated(|p| p.peripherals.peripherals.iter_mut().find(|x| x.name == "EUSART").unwrap().pins[0].claimed_by = vec!["NOPEBIT".into()]);
+    assert!(e.iter().any(|m| m.contains("NOPEBIT")), "{e:?}");
+}

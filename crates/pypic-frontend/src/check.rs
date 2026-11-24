@@ -183,6 +183,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         reg_names: HashMap::new(),
         reg_calls: BTreeMap::new(),
         bits_fns: HashSet::new(),
+        claims: Vec::new(),
         bits_calls: BTreeMap::new(),
         carry_ok: false,
         carry_prev: false,
@@ -255,6 +256,8 @@ struct Checker<'a> {
     /// Registros importados de `pypic.regs`.
     reg_names: HashMap<String, RegInfo>,
     reg_calls: BTreeMap<u32, RegCall>,
+    /// Pines que un periferico toma al encender un bit (por registros o por el reloj externo de un timer).
+    claims: Vec<Claim>,
     /// Funciones importadas de `pypic.bits` y sus llamadas por id de expresion.
     bits_fns: HashSet<String>,
     bits_calls: BTreeMap<u32, BitsOp>,
@@ -264,6 +267,16 @@ struct Checker<'a> {
     carry_fn: Option<usize>,
     /// Expresion completa de la sentencia en curso (asignacion, declaracion o expresion).
     stmt_top: Option<u32>,
+}
+
+/// Un periferico encendido que toma un pin.
+struct Claim {
+    pin: String,
+    function: String,
+    peripheral: String,
+    span: Span,
+    /// Viene de `TMRx.start(...)`: esos pines ya los comprueba `check_timer_usage` (PYP2125).
+    via_timer: bool,
 }
 
 struct TimerEvery {
@@ -307,6 +320,7 @@ impl<'a> Checker<'a> {
         self.check_stack_depth();
         self.check_pin_usage();
         self.check_timer_usage();
+        self.check_pin_claims();
         self.check_time_usage();
         self.check_asm_usage();
     }
@@ -810,14 +824,18 @@ impl<'a> Checker<'a> {
                         (TimerId::T1, TimerSource::T1osc) => ("T1OSC", Some("RC0")),
                         _ => ("", None),
                     };
+                    let per = if tid == TimerId::T0 { "TIMER0" } else { "TIMER1" };
                     if let Some(pin) = pin {
                         self.timer_pins.push((src, pin, e.span));
+                        self.claims.push(Claim { pin: pin.into(), function: src.into(), peripheral: per.into(), span: e.span, via_timer: true });
                         if src == "T1OSC" {
                             self.timer_pins.push((src, "RC1", e.span));
+                            self.claims.push(Claim { pin: "RC1".into(), function: src.into(), peripheral: per.into(), span: e.span, via_timer: true });
                         }
                     }
                     if matches!(st.gate, Some(Gate { source: GateSource::T1g, .. })) {
                         self.timer_pins.push(("T1G", "RB5", e.span));
+                        self.claims.push(Claim { pin: "RB5".into(), function: "T1G".into(), peripheral: per.into(), span: e.span, via_timer: true });
                     }
                 }
                 note(self, true);
@@ -924,6 +942,45 @@ impl<'a> Checker<'a> {
             None => {
                 self.d.error("PYP2101", span, format!("{who} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK_HZ: Final[u32] = 4_000_000'"));
                 None
+            }
+        }
+    }
+
+    fn note_claims(&mut self, bit: &str, span: Span) {
+        let Some(list) = self.target.pin_claims.as_ref().and_then(|m| m.get(bit)).cloned() else { return };
+        for c in list {
+            for pin in &c.pins {
+                self.claims.push(Claim { pin: pin.clone(), function: c.function.clone(), peripheral: c.peripheral.clone(), span, via_timer: false });
+            }
+        }
+    }
+
+    /// Pines que toma un periferico encendido: no pueden ser E/S del programa (PYP2150) ni de dos perifericos a la vez (PYP3010).
+    fn check_pin_claims(&mut self) {
+        let claims = std::mem::take(&mut self.claims);
+        let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
+        for c in &claims {
+            if !c.via_timer && self.pin_names.contains_key(&c.pin) && seen.insert((c.pin.clone(), "gpio".into())) {
+                self.d.error(
+                    "PYP2150",
+                    c.span,
+                    format!("el pin {0} es la funcion {1} de {2}, que este programa enciende aqui, y tambien se importa como pin de E/S ({0}.output()...): un pin no puede ser las dos cosas a la vez", c.pin, c.function, c.peripheral),
+                );
+            }
+        }
+        // dos perifericos distintos sobre el mismo pin
+        let mut by_pin: BTreeMap<&str, Vec<&Claim>> = BTreeMap::new();
+        for c in &claims {
+            by_pin.entry(c.pin.as_str()).or_default().push(c);
+        }
+        for (pin, list) in by_pin {
+            let first = list[0];
+            if let Some(other) = list.iter().find(|c| c.peripheral != first.peripheral) {
+                self.d.warning(
+                    "PYP3010",
+                    other.span,
+                    format!("el pin {pin} lo reclaman dos perifericos: {} ({}) y {} ({}); solo uno puede usarlo", first.peripheral, first.function, other.peripheral, other.function),
+                );
             }
         }
     }
@@ -1040,6 +1097,18 @@ impl<'a> Checker<'a> {
         }
         if op == RegOp::Write {
             self.expect(&args[0], U8, Some(&format!("{obj}.write recibe un u8")));
+        }
+        // encender un bit puede hacer que un periferico tome un pin: se anota para PYP2150/PYP3010
+        match (op, attr, self.konst(args.first().unwrap_or(e))) {
+            (RegOp::Set, Some(b), _) => self.note_claims(&b.name, e.span),
+            (RegOp::Write, _, Some(v)) => {
+                for (i, name) in info.bits.iter().enumerate() {
+                    if let (true, Some(n)) = (v >> i & 1 == 1, name) {
+                        self.note_claims(n, e.span);
+                    }
+                }
+            }
+            _ => {}
         }
         self.reg_calls.insert(e.id, RegCall { reg: obj.to_string(), addr: info.addr, bit, op });
         match op {

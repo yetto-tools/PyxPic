@@ -32,6 +32,14 @@ pub struct RegInfo {
     pub shared: bool,
 }
 
+/// Lo que un periferico toma al encender un bit: la funcion, el periferico y los pines (`RA4`) donde esta.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PinClaim {
+    pub function: String,
+    pub peripheral: String,
+    pub pins: Vec<String>,
+}
+
 #[derive(Clone, Debug)]
 pub struct TargetProfile {
     pub name: String,
@@ -56,11 +64,18 @@ pub struct TargetProfile {
     pub peripherals: Option<std::collections::BTreeSet<String>>,
     /// Registros por nombre (`STATUS`, `OPTION_REG`...). `None` = sin validar.
     pub registers: Option<BTreeMap<String, RegInfo>>,
+    /// Bits que reclaman pines (`SPEN`, `C1OE`...), de `peripherals.json`. `None` = sin validar.
+    pub pin_claims: Option<BTreeMap<String, Vec<PinClaim>>>,
 }
 
 impl TargetProfile {
     pub fn new(name: impl Into<String>, native_bits: u32, max_int_bits: u32) -> Self {
-        TargetProfile { name: name.into(), native_bits, max_int_bits, stack_levels: None, pins: None, device: None, max_clock_hz: None, clocks_per_cycle: None, default_clock_hz: None, peripherals: None, registers: None }
+        TargetProfile { name: name.into(), native_bits, max_int_bits, stack_levels: None, pins: None, device: None, max_clock_hz: None, clocks_per_cycle: None, default_clock_hz: None, peripherals: None, registers: None, pin_claims: None }
+    }
+
+    pub fn with_pin_claims(mut self, c: BTreeMap<String, Vec<PinClaim>>) -> Self {
+        self.pin_claims = Some(c);
+        self
     }
 
     pub fn with_registers(mut self, regs: BTreeMap<String, RegInfo>) -> Self {

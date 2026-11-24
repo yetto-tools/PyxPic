@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::Path;
 
-use pypic_frontend::{PinInfo, RegInfo, TargetProfile};
+use pypic_frontend::{PinClaim, PinInfo, RegInfo, TargetProfile};
 use serde::{Deserialize, Deserializer};
 
 /// Version del esquema que este crate sabe leer.
@@ -375,6 +375,10 @@ pub struct PeripheralPin {
     /// `in`, `out`, `io` o `analog`.
     pub direction: String,
     pub mode: Option<String>,
+    /// Bits (de `registers.json`) que, puestos a 1, hacen que el periferico tome el pin y deje de ser E/S digital
+    /// (`SPEN` para TX/RX, `C1OE` para `C1OUT`...). Vacio: el pin no se reclama al encender el periferico.
+    #[serde(default)]
+    pub claimed_by: Vec<String>,
 }
 
 impl Peripherals {
@@ -441,6 +445,7 @@ impl DevicePack {
             .with_stack_levels(self.memory.program.stack_levels)
             .with_peripherals(self.peripherals.peripherals.iter().map(|p| p.name.clone()))
             .with_pins(pins)
+            .with_pin_claims(self.pin_claims())
             .with_registers(
                 self.registers
                     .registers
@@ -451,6 +456,24 @@ impl DevicePack {
             .with_clocks_per_cycle(self.device.cpu.clocks_per_instruction)
             .with_default_clock(self.device.cpu.default_clock_hz)
             .with_device(self.device.name.clone(), self.device.cpu.max_clock_hz.min(u32::MAX as u64) as u32)
+    }
+
+    /// Para cada bit que reclama pines: lo que reclama (funcion, periferico y los pines del encapsulado que la tienen).
+    pub fn pin_claims(&self) -> BTreeMap<String, Vec<PinClaim>> {
+        let mut out: BTreeMap<String, Vec<PinClaim>> = BTreeMap::new();
+        let Some(pk) = self.pins.packages.first() else { return out };
+        for per in &self.peripherals.peripherals {
+            for x in &per.pins {
+                if x.claimed_by.is_empty() {
+                    continue;
+                }
+                let pins: Vec<String> = pk.pins.iter().filter(|p| p.port.is_some() && p.functions.contains(&x.function)).map(|p| p.name.clone()).collect();
+                for bit in &x.claimed_by {
+                    out.entry(bit.clone()).or_default().push(PinClaim { function: x.function.clone(), peripheral: per.name.clone(), pins: pins.clone() });
+                }
+            }
+        }
+        out
     }
 
     /// Funciones alternas de un pin y el periferico que las posee: `(funcion, periferico)`.
@@ -804,6 +827,11 @@ impl DevicePack {
             for x in &p.pins {
                 if !DIRS.contains(&x.direction.as_str()) {
                     e.push(format!("{ctx}: direccion '{}' invalida en {}", x.direction, x.function));
+                }
+                for b in &x.claimed_by {
+                    if !has_bit(b) {
+                        e.push(format!("{ctx}: el bit {b} que reclama el pin {} no existe en registers.json", x.function));
+                    }
                 }
                 if let Some(m) = &x.mode {
                     if !p.modes.contains(m) {

@@ -49,6 +49,21 @@ Para lo que el compilador reserva (cambiar de banco a mano, escribir `PCL`...) l
 - No se comprueba si el programa y un periférico declarado (`TMR2`, pines...) escriben el mismo registro: es el aviso de conflictos de #54.
 - `read()` de un puerto lee el pin; el latch se lee con el registro `PORTx` de la misma forma, como en ensamblador.
 
+## Pines que toma un periférico (`PYP2150`, `PYP3010`)
+
+Encender un periférico puede quitarle un pin al GPIO: con `RCSTA.SPEN` en 1, RC6 y RC7 pasan a ser `TX` y `RX`. `peripherals.json` dice qué bit reclama qué función
+(`claimed_by`: `SPEN` → `TX`/`RX`/`CK`/`DT`, `SSPEN` → `SCK`/`SDI`/`SDO`/`SCL`/`SDA`, `C1OE`/`C2OE` → `C1OUT`/`C2OUT`, `T0CS` → `T0CKI`, `TMR1CS` → `T1CKI`,
+`T1OSCEN` → `T1OSI`/`T1OSO`, `TMR1GE` → `T1G`), y el compilador lo aplica a lo que el programa enciende con `REG.BIT.set()` o con `REG.write(constante)`:
+
+| Código | Regla |
+|---|---|
+| `PYP2150` | Un pin que un periférico encendido toma también se importa como E/S (`from pypic.periph.gpio import RC6`): el mensaje nombra el pin, la función y el periférico |
+| `PYP3010` (aviso) | Dos periféricos distintos reclaman el mismo pin (`T0CKI` de Timer0 y `C1OUT` del comparador en RA4) |
+| `PYP2125` | Lo mismo que `PYP2150` para el reloj externo de un timer iniciado con `TMRx.start(...)` |
+
+No se reclama `SS` del MSSP (en maestro puede ser E/S). **No cubierto:** los modos SPI/I²C del MSSP (hace falta el campo `SSPM` y su módulo, #45) y el aviso de un pin
+analógico usado como digital: el compilador ya lo pasa a digital (borra su bit de `ANSEL`/`ANSELH`) en `pin.input()`/`pin.output()`.
+
 ## Verificación
 
 `crates/pypic-pic14/tests/regs.rs`: prueba diferencial entre el intérprete de la IR (que modela los registros como memoria plana) y el simulador del
