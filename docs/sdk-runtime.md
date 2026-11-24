@@ -27,13 +27,13 @@ Los ciclos de las rutinas incluyen la carga de operandos y la lectura del result
 
 ## Semántica
 
-- **Aritmética modular** en el ancho del tipo, igual que la suma: `u8: 200 * 2 = 144`. La multiplicación es la misma con y sin signo.
+- **Aritmética modular** en el ancho del tipo, igual que la suma: `uint8: 200 * 2 = 144`. La multiplicación es la misma con y sin signo.
 - **División y módulo con signo**: truncan hacia cero y el resto lleva el signo del dividendo (como C): `-7 // 2 = -3`, `-7 % 2 = -1`; `-128 // -1` envuelve a `-128`.
 - **Divisor cero en ejecución** (un divisor *constante* cero es un error de compilación): no hay trampa en un PIC, así que el resultado está **definido**: `a // 0` es **todo unos** del ancho del tipo
   (`255`, `65535`, y `-1` con signo) y `a % 0` es **`a`**. Es lo que sale de dividir por restas sucesivas, y el intérprete de referencia hace lo mismo.
 - **Desplazamientos variables**: la cantidad se acota al ancho del tipo. `x << n` y `x >> n` sin signo dan `0` si `n ≥ 8·bytes`; `>>` con signo rellena con el signo (`-2 >> 200 = -1`).
   Una cantidad de 16 bits con byte alto distinto de cero es una cantidad enorme.
-- Solo 8 y 16 bits. `u32`/`i32` son #32.
+- Solo 8 y 16 bits. `uint32`/`int32` son #32.
 
 ## Una copia por contexto
 
@@ -48,5 +48,5 @@ Los desplazamientos variables y las operaciones por potencia de 2 no usan pila.
 
 ## Verificación
 
-`crates/pypic-pic14/tests/runtime.rs` (todo contra el intérprete de la IR): **todos los pares** de `u8` e `i8` (65 536) para `*`, `//` y `%` incluido el divisor 0; 24 valores de borde de 16 bits (576 pares) con y sin signo;
-todos los desplazamientos de 0 a 39 en `u8`, `i8`, `u16` e `i16`; resultados conocidos; potencias de 2 sin rutina; una copia por contexto con interrupciones inyectadas; pila; y los costos de esta tabla.
+`crates/pypic-pic14/tests/runtime.rs` (todo contra el intérprete de la IR): **todos los pares** de `uint8` e `int8` (65 536) para `*`, `//` y `%` incluido el divisor 0; 24 valores de borde de 16 bits (576 pares) con y sin signo;
+todos los desplazamientos de 0 a 39 en `uint8`, `int8`, `uint16` e `int16`; resultados conocidos; potencias de 2 sin rutina; una copia por contexto con interrupciones inyectadas; pila; y los costos de esta tabla.

@@ -5,10 +5,10 @@
 ```python
 from pypic.periph.adc import ADC, AN0, AN5
 
-CLOCK_HZ: Const[u32] = 4_000_000
+CLOCK_HZ: Const[uint32] = 4_000_000
 
 ADC.start()                      # ADCON1/ADCON0: resultado a la derecha, referencia VDD/VSS, reloj de conversión elegido, ADC encendido
-v: u16 = ADC.read(AN0)           # 0..1023
+v: uint16 = ADC.read(AN0)           # 0..1023
 ```
 
 ## Las condiciones eléctricas que PyPIC asume
@@ -33,10 +33,10 @@ Si tu fuente tiene impedancia alta, el sensor está caliente o la alimentación 
 | `ADC.select(AN5)` | Pone el canal en `CHS`, el pin como **entrada analógica** (`TRIS` = 1, `ANSEL` = 1); no toca el reloj, GO ni ADON | 12 |
 | `ADC.go()` | `GO/DONE = 1` | 1 |
 | `ADC.done()` → `bool` | La conversión terminó | 3 |
-| `ADC.result()` → `u16` | `ADRESH:ADRESL` justificado a la derecha | 6 |
-| `ADC.read(AN5)` → `u16` | `select` + espera de adquisición + `go` + espera de `done` + `result` | **30 / 57 / 134 / 169** a 1 / 4 / 8 / 20 MHz (con la adquisición por defecto) |
+| `ADC.result()` → `uint16` | `ADRESH:ADRESL` justificado a la derecha | 6 |
+| `ADC.read(AN5)` → `uint16` | `select` + espera de adquisición + `go` + espera de `done` + `result` | **30 / 57 / 134 / 169** a 1 / 4 / 8 / 20 MHz (con la adquisición por defecto) |
 
-`read` **es exactamente esa secuencia**, no un sinónimo: las primitivas dan el control del ensamblador (arrancar una conversión y hacer otra cosa mientras tanto, o esperar un tiempo propio) y `read` es la forma corta. No hay `read10` ni una versión de 8 bits; para un byte, `u8(ADC.read(AN0) >> 2)`.
+`read` **es exactamente esa secuencia**, no un sinónimo: las primitivas dan el control del ensamblador (arrancar una conversión y hacer otra cosa mientras tanto, o esperar un tiempo propio) y `read` es la forma corta. No hay `read10` ni una versión de 8 bits; para un byte, `uint8(ADC.read(AN0) >> 2)`.
 Con las primitivas la espera de adquisición es tuya (`delay_us(12)` basta con la adquisición por defecto); el simulador la vigila.
 
 ## Reloj de conversión automático

@@ -11,7 +11,7 @@ from pypic.regs import OPTION_REG, WPUB, STATUS
 OPTION_REG.RBPU.clear()        # BCF OPTION_REG,RBPU
 WPUB.write(0b0000_0011)        # MOVLW / MOVWF WPUB
 v = OPTION_REG.read()          # MOVF OPTION_REG,W
-if STATUS.Z.value() == 1:      # el bit, como u8 (0 o 1)
+if STATUS.Z.value() == 1:      # el bit, como uint8 (0 o 1)
     ...
 ```
 
@@ -19,12 +19,12 @@ if STATUS.Z.value() == 1:      # el bit, como u8 (0 o 1)
 
 | Operación | Código | Instrucciones | Ciclos |
 |---|---|---|---|
-| Leer el byte | `REG.read()` → `u8` | `MOVF f,W` + guardar | 1 + banco |
-| Escribir el byte | `REG.write(v)` (`v` es `u8`) | cargar `W` + `MOVWF f` | 1 + banco |
+| Leer el byte | `REG.read()` → `uint8` | `MOVF f,W` + guardar | 1 + banco |
+| Escribir el byte | `REG.write(v)` (`v` es `uint8`) | cargar `W` + `MOVWF f` | 1 + banco |
 | Poner un bit | `REG.BIT.set()` | `BSF f,b` | 1 + banco |
 | Borrar un bit | `REG.BIT.clear()` | `BCF f,b` | 1 + banco |
 | Invertir un bit | `REG.BIT.toggle()` | `MOVLW m` + `XORWF f,F` | 2 + banco |
-| Leer un bit | `REG.BIT.value()` → `u8` (0 o 1) | `MOVF` + `ANDLW` + `BTFSS`/`INCF` | 5 + banco |
+| Leer un bit | `REG.BIT.value()` → `uint8` (0 o 1) | `MOVF` + `ANDLW` + `BTFSS`/`INCF` | 5 + banco |
 
 **Banco:** si el registro no está en el banco 0 se añaden `BSF/BCF STATUS,RP0/RP1` antes y después (2 ciclos por cada bit de banco; el banco 3 son 4).
 El código del programa siempre corre en el banco 0 (ABI, `docs/abi-pic14.md`), así que el compilador lo restablece tras cada acceso.

@@ -24,7 +24,7 @@ use crate::types::{Type, INFERENCE_ORDER, U16, U32, U8};
 
 /// Nombres predeclarados (no requieren import; `from pypic import ...` es
 /// opcional para que el archivo siga siendo Python valido en otros editores).
-const PREDECLARED: &[&str] = &["u8", "i8", "u16", "i16", "u32", "i32", "bool", "Const", "interrupt", "init_device", "asm_function"];
+const PREDECLARED: &[&str] = &["uint8", "int8", "uint16", "int16", "uint32", "int32", "u8", "i8", "u16", "i16", "u32", "i32", "bool", "Const", "interrupt", "init_device", "asm_function"];
 
 #[derive(Clone, Copy, Debug)]
 pub struct ExprInfo {
@@ -431,7 +431,7 @@ impl<'a> Checker<'a> {
             return;
         }
         if !is_final || ty != U32 {
-            self.d.error("PYP2093", v.name.span, "CLOCK_HZ debe declararse como 'CLOCK_HZ: Const[u32] = 4_000_000' (frecuencia del reloj del sistema en hercios)");
+            self.d.error("PYP2093", v.name.span, "CLOCK_HZ debe declararse como 'CLOCK_HZ: Const[uint32] = 4_000_000' (frecuencia del reloj del sistema en hercios)");
             return;
         }
         match konst {
@@ -623,7 +623,7 @@ impl<'a> Checker<'a> {
                         self.coerce_literal(a, U32);
                     }
                 }
-                _ => self.d.error("PYP2100", a.span, format!("{func}() necesita una constante: el tiempo se calcula al compilar, al ciclo; para una cantidad calculada usa pause o wait con un u16")),
+                _ => self.d.error("PYP2100", a.span, format!("{func}() necesita una constante: el tiempo se calcula al compilar, al ciclo; para una cantidad calculada usa pause o wait con un uint16")),
             },
             DelayUnit::Ms | DelayUnit::S => match t {
                 Type::Error => {}
@@ -631,7 +631,7 @@ impl<'a> Checker<'a> {
                     self.coerce_literal(a, U16);
                 }
                 t if t == U16 => {}
-                t => self.d.error("PYP2041", a.span, format!("{func}() recibe un u16 o una constante, no {t}")),
+                t => self.d.error("PYP2041", a.span, format!("{func}() recibe un uint16 o una constante, no {t}")),
             },
         }
         if let Some(cur) = self.cur {
@@ -652,14 +652,14 @@ impl<'a> Checker<'a> {
                     self.d.warning(
                         "PYP3004",
                         first.span,
-                        format!("no se declaro CLOCK_HZ: se usa el reloj por defecto de {} ({def} Hz); declara 'CLOCK_HZ: Const[u32] = {def}' para fijarlo y quitar este aviso", self.target.name),
+                        format!("no se declaro CLOCK_HZ: se usa el reloj por defecto de {} ({def} Hz); declara 'CLOCK_HZ: Const[uint32] = {def}' para fijarlo y quitar este aviso", self.target.name),
                     );
                     self.clock_hz = Some(def);
                     self.clock_defaulted = true;
                     def
                 }
                 None => {
-                    self.d.error("PYP2101", first.span, format!("{} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK_HZ: Const[u32] = 4_000_000'", first.name));
+                    self.d.error("PYP2101", first.span, format!("{} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK_HZ: Const[uint32] = 4_000_000'", first.name));
                     return;
                 }
             },
@@ -1050,14 +1050,14 @@ impl<'a> Checker<'a> {
                 self.d.warning(
                     "PYP3004",
                     span,
-                    format!("no se declaro CLOCK_HZ: se usa el reloj por defecto de {} ({def} Hz); declara 'CLOCK_HZ: Const[u32] = {def}' para fijarlo y quitar este aviso", self.target.name),
+                    format!("no se declaro CLOCK_HZ: se usa el reloj por defecto de {} ({def} Hz); declara 'CLOCK_HZ: Const[uint32] = {def}' para fijarlo y quitar este aviso", self.target.name),
                 );
                 self.clock_hz = Some(def);
                 self.clock_defaulted = true;
                 Some(def)
             }
             None => {
-                self.d.error("PYP2101", span, format!("{who} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK_HZ: Const[u32] = 4_000_000'"));
+                self.d.error("PYP2101", span, format!("{who} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK_HZ: Const[uint32] = 4_000_000'"));
                 None
             }
         }
@@ -1213,7 +1213,7 @@ impl<'a> Checker<'a> {
             }
         }
         if op == RegOp::Write {
-            self.expect(&args[0], U8, Some(&format!("{obj}.write recibe un u8")));
+            self.expect(&args[0], U8, Some(&format!("{obj}.write recibe un uint8")));
         }
         // encender un bit puede hacer que un periferico tome un pin: se anota para PYP2150/PYP3010
         match (op, attr, self.konst(args.first().unwrap_or(e))) {
@@ -1405,7 +1405,7 @@ impl<'a> Checker<'a> {
             return self.set(e, Type::Error, None);
         }
         if want == 1 {
-            self.expect(&args[0], U8, Some(&format!("UART.{method} envia un u8: convierte con u8(...)")));
+            self.expect(&args[0], U8, Some(&format!("UART.{method} envia un uint8: convierte con uint8(...)")));
         }
         self.uart_needs.get_or_insert(e.span);
         self.uart_calls.insert(e.id, UartCall { op });
@@ -1604,7 +1604,7 @@ impl<'a> Checker<'a> {
                             self.coerce_literal(a, U8);
                         }
                         t if t == U8 => {}
-                        t => self.d.error("PYP2041", a.span, format!("value() recibe un u8 o un bool, no {t}")),
+                        t => self.d.error("PYP2041", a.span, format!("value() recibe un uint8 o un bool, no {t}")),
                     }
                     self.set(e, Type::Void, None)
                 }
@@ -1655,7 +1655,7 @@ impl<'a> Checker<'a> {
                     Type::Error
                 }
                 None => {
-                    self.d.error("PYP2001", te.span, format!("tipo '{n}' no valido; usa u8, i8, u16, i16, u32, i32 o bool"));
+                    self.d.error("PYP2001", te.span, format!("tipo '{n}' no valido; usa uint8, int8, uint16, int16, uint32, int32 o bool"));
                     Type::Error
                 }
             },
@@ -1743,7 +1743,7 @@ impl<'a> Checker<'a> {
                     self.d.error("PYP2110", f.name.span, "una funcion @asm_function lleva el ensamblador como unica cadena en su cuerpo");
                 }
                 if !params.iter().all(|(_, t)| small(t)) || !(ret == Type::Void || small(&ret)) {
-                    self.d.error("PYP2112", f.name.span, "una funcion @asm_function usa parametros y retorno de hasta 16 bits (u8, i8, u16, i16, bool)");
+                    self.d.error("PYP2112", f.name.span, "una funcion @asm_function usa parametros y retorno de hasta 16 bits (uint8, int8, uint16, int16, bool)");
                 }
             } else if dec.name == "init_device" {
                 if self.functions.iter().any(|x| x.is_init) {
@@ -1942,8 +1942,8 @@ impl<'a> Checker<'a> {
             self.d.error("PYP2160", v.span, format!("'{name}': una tabla Rom se declara a nivel de modulo, no dentro de una funcion"));
         }
         match &inner.kind {
-            TypeExprKind::Name(n) if n == "u8" => {}
-            _ => self.d.error("PYP2160", inner.span, "Rom solo admite u8 por ahora: cada entrada es un RETLW"),
+            TypeExprKind::Name(n) if Type::from_name(n) == Some(U8) => {}
+            _ => self.d.error("PYP2160", inner.span, "Rom solo admite uint8 por ahora: cada entrada es un RETLW"),
         }
         if self.globals.contains_key(name) || self.rom_idx.contains_key(name) || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.reg_names.contains_key(name) || self.timer_names.contains_key(name) || self.bits_fns.contains(name) {
             self.d.error("PYP2009", v.name.span, format!("'{name}' ya esta declarado"));
@@ -1958,7 +1958,7 @@ impl<'a> Checker<'a> {
             return;
         };
         if items.is_empty() || items.len() > 256 {
-            self.d.error("PYP2160", val.span, format!("una tabla tiene de 1 a 256 entradas (el indice es un u8), '{name}' tiene {}", items.len()));
+            self.d.error("PYP2160", val.span, format!("una tabla tiene de 1 a 256 entradas (el indice es un uint8), '{name}' tiene {}", items.len()));
         }
         let mut values = Vec::new();
         for it in items {
@@ -1966,7 +1966,7 @@ impl<'a> Checker<'a> {
             match (t, self.konst(it)) {
                 (Type::Error, _) => {}
                 (_, Some(k)) if (0..=255).contains(&k) => values.push(k as u8),
-                (_, Some(k)) => self.d.error("PYP2160", it.span, format!("la entrada {k} no cabe en un u8 (0..=255)")),
+                (_, Some(k)) => self.d.error("PYP2160", it.span, format!("la entrada {k} no cabe en un uint8 (0..=255)")),
                 (_, None) => self.d.error("PYP2160", it.span, "las entradas de una tabla son constantes: se escriben en la memoria de programa al compilar"),
             }
         }
@@ -1978,7 +1978,7 @@ impl<'a> Checker<'a> {
     fn index_expr(&mut self, e: &Expr, obj: &str, obj_span: Span, index: &Expr) -> Type {
         let Some(&ti) = self.rom_idx.get(obj) else {
             self.expr(index);
-            let msg = if self.lookup(obj).is_some() { format!("'{obj}' no es una tabla: solo se indexan las 'Rom[u8]'") } else { format!("'{obj}' no esta declarada como tabla") };
+            let msg = if self.lookup(obj).is_some() { format!("'{obj}' no es una tabla: solo se indexan las 'Rom[uint8]'") } else { format!("'{obj}' no esta declarada como tabla") };
             self.d.error("PYP2162", obj_span, msg);
             return self.set(e, Type::Error, None);
         };
@@ -2003,7 +2003,7 @@ impl<'a> Checker<'a> {
                 self.set(e, U8, None)
             }
             (other, None) => {
-                self.d.error("PYP2163", index.span, format!("el indice de una tabla es un u8, no {other}: convierte con u8(...)"));
+                self.d.error("PYP2163", index.span, format!("el indice de una tabla es un uint8, no {other}: convierte con uint8(...)"));
                 self.set(e, Type::Error, None)
             }
         }
@@ -2183,7 +2183,7 @@ impl<'a> Checker<'a> {
 
     fn assign_target(&mut self, t: &Ident) -> Option<Symbol> {
         let Some(sym) = self.lookup(&t.name) else {
-            self.d.error("PYP2022", t.span, format!("'{0}' no esta declarada; declarala con tipo: '{0}: u8 = ...'", t.name));
+            self.d.error("PYP2022", t.span, format!("'{0}' no esta declarada; declarala con tipo: '{0}: uint8 = ...'", t.name));
             return None;
         };
         if sym.is_final {
@@ -2306,7 +2306,7 @@ impl<'a> Checker<'a> {
                 for it in items {
                     self.expr(it);
                 }
-                self.d.error("PYP1025", e.span, "una lista solo se admite como valor de una tabla: NOMBRE: Rom[u8] = [1, 2, 3]");
+                self.d.error("PYP1025", e.span, "una lista solo se admite como valor de una tabla: NOMBRE: Rom[uint8] = [1, 2, 3]");
                 self.set(e, Type::Error, None)
             }
             ExprKind::Bool_(_, vals) => {
@@ -2378,7 +2378,7 @@ impl<'a> Checker<'a> {
             }
             UnOp::Invert => {
                 if t == Type::Literal {
-                    self.d.error("PYP2044", e.span, "'~' requiere un operando con tipo explicito (p. ej. ~u8(5))");
+                    self.d.error("PYP2044", e.span, "'~' requiere un operando con tipo explicito (p. ej. ~uint8(5))");
                     return self.set(e, Type::Error, None);
                 }
                 c.map(|c| t.wrap(!c))
@@ -2452,7 +2452,7 @@ impl<'a> Checker<'a> {
                     };
                 }
                 if rt != Type::Error {
-                    self.d.error("PYP2049", l.span, "el operando izquierdo de un desplazamiento necesita tipo explicito (p. ej. u8(1) << n)");
+                    self.d.error("PYP2049", l.span, "el operando izquierdo de un desplazamiento necesita tipo explicito (p. ej. uint8(1) << n)");
                 }
                 return self.set(e, Type::Error, None);
             }
@@ -2588,14 +2588,14 @@ impl<'a> Checker<'a> {
         let top = self.stmt_top == Some(e.id);
         let op = match func {
             "swap" => {
-                self.expect(&args[0], U8, Some("swap recibe un u8"));
+                self.expect(&args[0], U8, Some("swap recibe un uint8"));
                 self.bits_calls.insert(e.id, BitsOp::Swap);
                 return self.set(e, U8, None);
             }
             "rol_c" | "ror_c" => {
                 let ty = var(self, &args[0], false);
                 if ty.is_some_and(|t| t != U8) {
-                    self.d.error("PYP2141", args[0].span, format!("{func} rota un u8 ({}): para mas ancho, encadena una rotacion por byte", ty.unwrap()));
+                    self.d.error("PYP2141", args[0].span, format!("{func} rota un uint8 ({}): para mas ancho, encadena una rotacion por byte", ty.unwrap()));
                 }
                 if !top {
                     self.d.error("PYP2142", e.span, format!("{func} debe ser la expresion completa de la sentencia ('y = {func}(x)'): el acarreo se pierde con cualquier otra operacion"));

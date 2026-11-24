@@ -20,7 +20,7 @@ Todo es código nativo generado en el host; no hay intérprete ni VM de Python e
 
 ## 2. Tipos y representación
 
-`u8 i8 bool` = 1 byte; `u16 i16` = 2 bytes; `u32 i32` = 4 bytes. **Little-endian** (byte bajo en la dirección menor); enteros con
+`uint8 int8 bool` = 1 byte; `uint16 int16` = 2 bytes; `uint32 int32` = 4 bytes. **Little-endian** (byte bajo en la dirección menor); enteros con
 signo en complemento a dos; `bool` es 0 o 1. La aritmética es modular en el ancho del tipo (ver `docs/frontend.md`).
 Los tipos más anchos que 8 bits se compilan con secuencias nativas (cadenas de acarreo) o rutinas de runtime (§7).
 
@@ -37,7 +37,7 @@ Los tipos más anchos que 8 bits se compilan con secuencias nativas (cadenas de 
 ## 4. Convención de llamada
 
 - **Argumentos:** el llamador escribe cada argumento en la posición estática del parámetro del llamado, antes del `CALL`.
-- **Retorno:** `u8`/`i8`/`bool` en **W**. Valores de 16/32 bits: byte bajo en W y el resto en `RETV1..RETV3` (posiciones estáticas del **contexto** del llamado).
+- **Retorno:** `uint8`/`int8`/`bool` en **W**. Valores de 16/32 bits: byte bajo en W y el resto en `RETV1..RETV3` (posiciones estáticas del **contexto** del llamado).
 - **Banco (decisión):** **invariante de banco 0** — toda función entra y sale con RP1:RP0 = 00 y IRP = 0. Quien use otro banco lo restaura antes de `RETURN`.
 - **PCLATH:** como `CALL`/`GOTO` siempre toman PCLATH<4:3>, antes de cada llamada se carga PCLATH con la página destino y al volver se restablece la actual.
   Invariante en los límites de función: PCLATH<4:3> = página del código en ejecución. Un programa que cabe en **una página (2048 palabras)** no hace nada de esto.

@@ -1,5 +1,11 @@
 # Frontend del compilador (`pypic-frontend`)
 
+## Nombres de tipos enteros y migración
+
+Los nombres recomendados son `uint8`, `int8`, `uint16`, `int16`, `uint32` e `int32`: `uint` indica sin signo, `int` indica con signo y el número especifica los bits. Sus rangos y representación no cambian: los tipos de 8, 16 y 32 bits almacenan respectivamente 1, 2 y 4 bytes de datos; el código y los temporales pueden necesitar recursos adicionales.
+
+Para migrar, sustituye `u8` por `uint8`, `i8` por `int8`, `u16` por `uint16`, `i16` por `int16`, `u32` por `uint32` e `i32` por `int32`, también en conversiones y declaraciones `Const` y `Rom`. Los nombres anteriores siguen aceptándose por compatibilidad; no se ha fijado una fecha de eliminación ni se emite aún un aviso de obsolescencia. Las capacidades de cada backend no cambian por renombrar los tipos.
+
 **Estado: implementado (primer corte).** Parseo + validacion del subconjunto + tipos + constantes.
 No genera IR ni codigo todavia. Escrito en Rust; Python es solo la sintaxis del lenguaje fuente.
 Todo corre en el host: no hay interprete ni VM de Python en el MCU
@@ -12,7 +18,7 @@ fuente .py -> lexer -> parser (AST propio) -> check (tipos, constantes, reglas) 
 ## Independencia del ancho del MCU
 
 PyPIC no es "solo 8 bits": cubre cada MCU PIC. El lenguaje tiene enteros de ancho fijo
-(`u8 i8 u16 i16 u32 i32`) y `bool`; **no hay `int` nativo ni ancho de palabra asumido**.
+(`uint8 int8 uint16 int16 uint32 int32`) y `bool`; **no hay `int` nativo ni ancho de palabra asumido**.
 Que tipos admite un destino lo decide `TargetProfile` (mas adelante lo llenara el Device Pack):
 
 - `native_bits`: ancho nativo de la CPU (8 en PIC16, 16 en PIC24/dsPIC, 32 en PIC32...).
@@ -24,13 +30,13 @@ nativas de software; el compilador emite una advertencia de coste (`PYP3001`, un
 
 ## Subconjunto soportado
 
-- Nivel de modulo: `x: u8 = 0`, `K: Const[u8] = 5` (constante), funciones, `from pypic import ...`.
+- Nivel de modulo: `x: uint8 = 0`, `K: Const[uint8] = 5` (constante), funciones, `from pypic import ...`.
 - Funciones: parametros y retorno tipados (`-> None` si no devuelve), `@interrupt` (una sola, sin parametros).
 - Sentencias: asignacion, `+= -= *= //= %= &= |= ^= <<= >>=`, `if/elif/else`, `while`,
   `for i in range(...)`, `return`, `break`, `continue`, `pass`, `global`, llamadas.
 - Expresiones: enteros (dec/hex/bin/octal), `True/False`, aritmetica, bit a bit, desplazamientos,
-  comparaciones, `and/or/not`, llamadas, conversiones `u8(x)`.
-- `u8 i8 u16 i16 u32 i32 bool Const interrupt` estan predeclarados; `from pypic import ...` es opcional
+  comparaciones, `and/or/not`, llamadas, conversiones `uint8(x)`.
+- `uint8 int8 uint16 int16 uint32 int32 bool Const interrupt` estan predeclarados; `from pypic import ...` es opcional
   (mantiene el archivo valido para otros editores).
 
 Todo lo demas se rechaza con un diagnostico especifico: clases, listas/tuplas, cadenas, floats, `/`, `**`,
@@ -41,10 +47,10 @@ lambdas, `try`, `import` general, atributos, indexado, argumentos con nombre, co
 | Tema | Regla |
 |---|---|
 | Literales | Sin tipo propio; toman el del contexto si su valor cabe (`PYP2040` si no). |
-| Conversiones | Siempre explicitas: `u16(a) + b`. Mezclar tipos es `PYP2047`. |
+| Conversiones | Siempre explicitas: `uint16(a) + b`. Mezclar tipos es `PYP2047`. |
 | Overflow en ejecucion | Modular (wrap-around) en el ancho del tipo. |
 | Overflow constante | Error (`PYP2045`/`PYP2040`), nunca truncado en silencio. |
-| Cast explicito | Trunca a proposito: `u8(u16(300)) == 44`. |
+| Cast explicito | Trunca a proposito: `uint8(uint16(300)) == 44`. |
 | `//` y `%` | Truncan hacia cero (como C), **no** como Python. `/` no existe. |
 | Condiciones | Deben ser `bool` (sin truthiness): `if x != 0`. |
 | Variables | Siempre inicializadas al declararse; las globales con constante. Declarar con tipo antes de asignar. |
@@ -53,7 +59,7 @@ lambdas, `try`, `import` general, atributos, indexado, argumentos con nombre, co
 | Recursion | Prohibida (memoria estatica, pila de hardware limitada): `PYP2013`. |
 | ISR vs main | **Decision #3.** Una funcion alcanzable desde `main` y desde la `@interrupt` es error (`PYP2060`): su memoria estatica seria compartida y la ISR podria corromperla. Se escribe una version por contexto. El contexto principal es `main`; si no existe, toda funcion sin llamadores que no sea la ISR. Compartir *globales* si esta permitido. |
 | Pila de retorno | Si el destino declara `stack_levels` (8 en PIC16), el peor caso `1 + prof(main) + 1 + prof(ISR)` no puede exceder el limite: `PYP2061` (ver `docs/abi-pic14.md`). |
-| Ensanchamiento | Sin conversion implicita ni siquiera sin perdida (`u8` + `u16` es `PYP2047`). |
+| Ensanchamiento | Sin conversion implicita ni siquiera sin perdida (`uint8` + `uint16` es `PYP2047`). |
 | Desplazamientos | Cantidad literal `0..bits-1` o entero sin signo; el operando izquierdo necesita tipo. |
 
 ## Declaración del dispositivo, reloj y arranque
@@ -64,7 +70,7 @@ Un programa dice **a qué PIC está orientado** en su primera línea, y de ahí 
 from pypic.device import PIC16F887        # 1. declaración inicial: obligatoria para compilar (pypic build)
 from pypic.periph.gpio import RB0, RD0
 
-CLOCK_HZ: Const[u32] = 4_000_000          # 2. frecuencia del reloj del sistema (opcional)
+CLOCK_HZ: Const[uint32] = 4_000_000          # 2. frecuencia del reloj del sistema (opcional)
 
 
 @init_device                               # 3. se ejecuta una vez, antes de main
@@ -80,7 +86,7 @@ def main() -> None:
 - **`from pypic.device import <DISPOSITIVO>`**: debe ser la **primera línea** y única. `pypic` busca el Device Pack con ese nombre (`devices/pic16f887`) en
   `--devices-dir`, `$PYPIC_DEVICES` y `./devices`; si no existe, el error lista los disponibles. `--device <dir>` fuerza un pack concreto y debe coincidir con la declaración.
   `pypic check` y `pypic ir` funcionan sin declaración (análisis genérico, sin validar pines ni límites del dispositivo); `pypic build` la exige.
-- **`CLOCK_HZ: Const[u32] = <hercios>`**: constante con ese nombre y forma exactos; se valida contra el reloj máximo del dispositivo. No ocupa RAM y no da el aviso de tipo emulado. Si el programa usa esperas (`pypic.system.time`, ver `docs/sdk-time.md`) y no la declara, se usa el reloj por defecto del dispositivo con un aviso.
+- **`CLOCK_HZ: Const[uint32] = <hercios>`**: constante con ese nombre y forma exactos; se valida contra el reloj máximo del dispositivo. No ocupa RAM y no da el aviso de tipo emulado. Si el programa usa esperas (`pypic.system.time`, ver `docs/sdk-time.md`) y no la declara, se usa el reloj por defecto del dispositivo con un aviso.
 - **`@init_device`**: una sola función `() -> None` (el nombre es libre); el arranque la llama **después de inicializar las variables y antes de `main`**.
   El código no puede llamarla. Cuenta en el análisis de pila y en la regla de no compartir funciones con la interrupción.
 - Las constantes `Const` se sustituyen por su valor al compilar: **no ocupan RAM** aunque sean de 32 bits.

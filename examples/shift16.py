@@ -2,10 +2,10 @@
 from pypic.device import PIC16F887
 from pypic.bits import clear_carry, rol_c, carry, bit_set
 
-lo: u8 = 0x81
-hi: u8 = 0x40
+lo: uint8 = 0x81
+hi: uint8 = 0x40
 overflow: bool = False
-flags: u8 = 0
+flags: uint8 = 0
 
 
 def main() -> None:

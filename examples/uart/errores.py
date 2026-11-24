@@ -14,7 +14,7 @@ from pypic.device import PIC16F887
 from pypic.periph.uart import UART
 from pypic.system.time import pause
 
-CLOCK_HZ: Const[u32] = 4_000_000
+CLOCK_HZ: Const[uint32] = 4_000_000
 
 
 def main() -> None:
@@ -25,7 +25,7 @@ def main() -> None:
             UART.write(79)
         if UART.rx_ready():
             con_error: bool = UART.framing_error()
-            dato: u8 = UART.recv()
+            dato: uint8 = UART.recv()
             if con_error:
                 UART.write(63)
             else:

@@ -33,7 +33,7 @@ El acceso a registros y a ensamblador en sintaxis PIC-AS permite un control prog
 | Ensamblador textual de las 35 instrucciones (`pypic asm`), con la sintaxis oficial de **pic-as** (XC8) | ✅ `docs/asm-pic14.md` |
 | **Ensamblador en línea (`@asm_function`)**: la salida de emergencia | ✅ `docs/asm-inline.md` (pendiente en #42: llamadas a otras funciones y desde la interrupción) |
 | **Análisis estático de ciclos por función y contratos de tiempo máximo** (p. ej. «esta interrupción dura ≤ N ciclos») | ⏳ #43 |
-| Tablas constantes en flash (`RETLW`, `GOTO` calculado) | ✅ `Rom[u8]`, `docs/sdk-tablas.md` (#44) |
+| Tablas constantes en flash (`RETLW`, `GOTO` calculado) | ✅ `Rom[uint8]`, `docs/sdk-tablas.md` (#44) |
 | Arreglos y direccionamiento indirecto (`FSR`/`INDF`) | ⏳ #8 |
 | Multiplicar/dividir/módulo y desplazar por una variable (rutinas nativas) | ✅ `docs/sdk-runtime.md` (#27) |
 | Varios bancos de datos y solapamiento de locales | ⏳ #26 |

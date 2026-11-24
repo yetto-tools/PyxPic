@@ -14,6 +14,11 @@ fn assert_err(src: &str, code: &str) {
     assert!(c.contains(&code), "esperaba {code}, hubo {c:?}\n{src}");
 }
 
+#[test]
+fn integer_type_names_support_annotations_casts_rom_and_legacy_names() {
+    assert_ok("from pypic import uint8, int8, uint16, int16, uint32, int32\nTABLE: Rom[uint8] = [1, 2]\na: uint8 = 1\nb: int8 = -1\nc: uint16 = 256\nd: int16 = -256\ne: uint32 = 65536\nf: int32 = -65536\ndef main() -> None:\n    x: uint8 = uint8(c)\n    y: u16 = u16(x)\n    z: uint8 = TABLE[x]\n");
+}
+
 const VALID: &str = r#"
 """docstring ignorada"""
 from pypic import u8, u16, Const, interrupt

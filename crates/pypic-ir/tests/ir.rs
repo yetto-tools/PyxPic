@@ -17,7 +17,7 @@ fn example_program_lowers_and_verifies() {
 #[test]
 fn constants_become_immediates() {
     let out = ir("K: Const[u8] = 2 * 3\ndef f() -> u8:\n    return K + 1\n");
-    assert!(out.contains("return 7:u8"), "{out}");
+    assert!(out.contains("return 7:uint8"), "{out}");
 }
 
 #[test]
@@ -36,13 +36,13 @@ fn for_loop_cannot_wrap_counter() {
     // range(0, 255, 10) sobre u8: un `i += 10` ingenuo daria la vuelta en 250 -> 4.
     let out = ir("def f() -> None:\n    for i in range(0, 255, 10):\n        pass\n");
     assert!(out.contains("cast"), "{out}");
-    assert!(out.contains("<= 10:u8"), "{out}");
+    assert!(out.contains("<= 10:uint8"), "{out}");
 }
 
 #[test]
 fn signed_descending_loop() {
     let out = ir("def f() -> None:\n    for i in range(100, -100, -1):\n        pass\n");
-    assert!(out.contains("> -100:i8") || out.contains("> -100:i16"), "{out}");
+    assert!(out.contains("> -100:int8") || out.contains("> -100:int16"), "{out}");
 }
 
 #[test]

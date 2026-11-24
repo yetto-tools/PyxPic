@@ -9,7 +9,7 @@ pypic build programa.py -o salida.hex [--listing] [--device devices/pic16f887]
 
 ## Qué soporta
 
-- Tipos `u8`, `i8`, `bool`, `u16`, `i16`. Little-endian, aritmética modular.
+- Tipos `uint8`, `int8`, `bool`, `uint16`, `int16`. Little-endian, aritmética modular.
 - `+ - & | ^ ~`, negación, `not`, comparaciones (con y sin signo, 8 y 16 bits), desplazamientos por **constante**, conversiones.
 - `if/elif/else`, `while`, `for range`, `break/continue`, `and/or/not` con cortocircuito.
 - Funciones con argumentos y retorno (8/16 bits), globales inicializados en el arranque, `@interrupt` con guardado de contexto.
@@ -32,8 +32,8 @@ pypic build programa.py -o salida.hex [--listing] [--device devices/pic16f887]
 ## Límites actuales (el compilador los rechaza con un error claro)
 
 - Solo genera código para el **PIC16F887**: el mapa de registros (PORTx, TRISx, ANSEL) está fijo en el backend (#22). Con otro dispositivo, o si el programa declara uno distinto del compilado, da un error en vez de código equivocado.
-- `*`, `//`, `%` sobre más de 16 bits (`u32`/`i32`, #32).
-- `u32` / `i32`.
+- `*`, `//`, `%` sobre más de 16 bits (`uint32`/`int32`, #32).
+- `uint32` / `int32`.
 - Más de 80 bytes de datos: no hay otros bancos ni solapamiento de locales (#26).
 - Más de 2048 palabras: no se maneja PCLATH.
 - Acceso a pines (`pypic.periph.gpio`, ver `docs/sdk-gpio.md`) solo en los puertos A–E; sin retardos (`sleep_ms`) todavía.
@@ -43,7 +43,7 @@ pypic build programa.py -o salida.hex [--listing] [--device devices/pic16f887]
 `crates/pypic-pic14/tests/codegen.rs`: pruebas **diferenciales**. El mismo programa se ejecuta en el intérprete de referencia de la IR
 (el oráculo) y, ya compilado, en el simulador del núcleo PIC14; los globales finales deben coincidir.
 
-- Más de 3 000 casos de `+ - & | ^` y más de 4 000 de comparaciones, en `u8/i8/u16/i16`, con operandos límite y aleatorios (semilla fija).
+- Más de 3 000 casos de `+ - & | ^` y más de 4 000 de comparaciones, en `uint8/int8/uint16/int16`, con operandos límite y aleatorios (semilla fija).
 - Constantes en cualquier operando, desplazamientos, conversiones, bucles, llamadas anidadas, cortocircuito.
 - **Una interrupción inyectada tras cada instrucción posible de `main`** no altera su resultado (verifica el guardado de W, STATUS y PCLATH).
 

@@ -12,7 +12,7 @@ Politica ante lo inesperado:
 from pypic.device import PIC16F887
 from pypic.periph.uart import UART
 
-CLOCK_HZ: Const[u32] = 4_000_000
+CLOCK_HZ: Const[uint32] = 4_000_000
 
 
 def main() -> None:

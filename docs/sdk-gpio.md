@@ -34,8 +34,8 @@ Se descartó el estilo `led = Pin("RD0", Pin.OUT)` (el de MicroPython) para evit
 | `RD0.input()` | Pin como entrada digital |
 | `RD0.on()` / `RD0.off()` | Pone el latch en alto / bajo |
 | `RD0.toggle()` | Invierte el latch (una sola instrucción de lectura-modificación-escritura) |
-| `RD0.value()` | Lee el pin: `u8`, 0 o 1 |
-| `RD0.value(x)` | Escribe el pin: `x` es `u8` o `bool`; distinto de 0 = alto. Sin parpadeos intermedios |
+| `RD0.value()` | Lee el pin: `uint8`, 0 o 1 |
+| `RD0.value(x)` | Escribe el pin: `x` es `uint8` o `bool`; distinto de 0 = alto. Sin parpadeos intermedios |
 
 ## Comprobaciones del compilador
 

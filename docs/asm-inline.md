@@ -5,13 +5,13 @@
 
 ```python
 from pypic.device import PIC16F887
-from pypic import u8, asm_function
+from pypic import uint8, asm_function
 
-swapped: u8 = 0
+swapped: uint8 = 0
 
 
 @asm_function
-def swap_nibbles(x: u8) -> u8:
+def swap_nibbles(x: uint8) -> uint8:
     """
     SWAPF x,W       ; los parametros y los globales se usan por su nombre
     RETURN          ; el resultado de 8 bits vuelve en W
@@ -39,7 +39,7 @@ Se adoptó lo útil de otros lenguajes y se descartó lo incómodo:
 ## Interfaz con el resto del programa
 
 - El cuerpo es **una sola cadena** (normalmente de tres comillas). Es la única cadena que admite el lenguaje.
-- **Parámetros y retorno** de hasta 16 bits (`u8`, `i8`, `u16`, `i16`, `bool`). Cada parámetro es un símbolo con la dirección de su byte bajo; un `u16` ocupa `x` (bajo) y `x+1` (alto).
+- **Parámetros y retorno** de hasta 16 bits (`uint8`, `int8`, `uint16`, `int16`, `bool`). Cada parámetro es un símbolo con la dirección de su byte bajo; un `uint16` ocupa `x` (bajo) y `x+1` (alto).
 - **Resultado**: el byte bajo en `W`; en un resultado de 16 bits, el alto se escribe antes en `RETV` (`0x7C`).
 - **Globales**: por su nombre (`hits`, `marker`...); las constantes `Const` valen su valor.
 - **Registros y bits predefinidos**: los mismos que da `#include <xc.inc>` en `pypic asm`, desde `registers.json` del Device Pack (73 registros del PIC16F887).

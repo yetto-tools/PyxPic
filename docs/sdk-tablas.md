@@ -1,24 +1,24 @@
-# Tablas constantes en la memoria de programa (`Rom[u8]`)
+# Tablas constantes en la memoria de programa (`Rom[uint8]`)
 
 **Estado: implementado (#44).** El equivalente de las tablas de búsqueda del ensamblador (`ADDWF PCL,F` + `RETLW`) y de `DT`: datos que no gastan RAM, con una lectura de **costo fijo**
 y el manejo correcto de `PCLATH` y de los límites de 256 palabras.
 
 ```python
-SINE: Rom[u8] = [128, 176, 218, 245, 255, 245, 218, 176]    # 8 RETLW en flash
+SINE: Rom[uint8] = [128, 176, 218, 245, 255, 245, 218, 176]    # 8 RETLW en flash
 
-level: u8 = SINE[step]        # step: u8 en ejecución
-first: u8 = SINE[0]           # índice constante: se resuelve al compilar, sin consulta
-n: u8 = len(SINE)             # 8, constante
+level: uint8 = SINE[step]        # step: uint8 en ejecución
+first: uint8 = SINE[0]           # índice constante: se resuelve al compilar, sin consulta
+n: uint8 = len(SINE)             # 8, constante
 ```
 
 ## Reglas
 
-- Se declara **a nivel de módulo** como `NOMBRE: Rom[u8] = [...]`. `Rom` es memoria de solo lectura (la de programa, no RAM), así que **no lleva `Const`** (se acepta `Const[Rom[u8]]`); dentro de una función es el error `PYP2160`.
+- Se declara **a nivel de módulo** como `NOMBRE: Rom[uint8] = [...]`. `Rom` es memoria de solo lectura (la de programa, no RAM), así que **no lleva `Const`** (se acepta `Const[Rom[uint8]]`); dentro de una función es el error `PYP2160`.
 - El nombre es `Rom` y solo ese: no hay sinónimos (`Table`, `Flash`...).
-- De **1 a 256** entradas, cada una una constante `u8`. El índice es un `u8`.
+- De **1 a 256** entradas, cada una una constante `uint8`. El índice es un `uint8`.
 - `T[i]` con índice constante se sustituye por el valor; un índice constante fuera de la tabla es error de compilación (`PYP2161`).
 - `len(T)` es una constante (un literal que se adapta al tipo que lo recibe).
-- Un índice que no es `u8` es el error `PYP2163` (convierte con `u8(...)`); indexar otra cosa, `PYP2162`; usar la tabla como valor, `PYP2164`.
+- Un índice que no es `uint8` es el error `PYP2163` (convierte con `uint8(...)`); indexar otra cosa, `PYP2162`; usar la tabla como valor, `PYP2164`.
 - Un **índice en ejecución mayor que el último devuelve la última entrada**: nunca se ejecuta código ajeno. Es una decisión de diseño; en ensamblador, un `ADDWF PCL,F` desbordado salta a
   lo que haya a continuación.
 
@@ -51,9 +51,9 @@ anterior para que la tabla caiga a ambos lados de `0x100` y comprueba que ningun
 
 ## Límites
 
-- Solo `u8` (cada entrada es un `RETLW`); tablas de `u16` y de cadenas, más adelante.
+- Solo `uint8` (cada entrada es un `RETLW`); tablas de `uint16` y de cadenas, más adelante.
 - Con un programa de más de una página (docs/abi-pic14.md, «Programas de más de una página») la consulta cuesta **18 ciclos** (restablece los bits de página de PCLATH en lugar de limpiarlo).
-- La tabla se declara una vez a nivel de módulo; no hay arreglos en RAM (`buf: u8[16]` sigue siendo #8).
+- La tabla se declara una vez a nivel de módulo; no hay arreglos en RAM (`buf: uint8[16]` sigue siendo #8).
 
 ## Verificación
 

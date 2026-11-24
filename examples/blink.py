@@ -3,7 +3,7 @@ from pypic.device import PIC16F887
 from pypic.periph.gpio import RD0
 from pypic.system.time import pause
 
-CLOCK_HZ: Const[u32] = 4_000_000
+CLOCK_HZ: Const[uint32] = 4_000_000
 
 
 @init_device

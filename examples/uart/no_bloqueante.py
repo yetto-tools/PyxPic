@@ -12,13 +12,13 @@ from pypic.device import PIC16F887
 from pypic.periph.gpio import RD0
 from pypic.periph.uart import UART
 
-CLOCK_HZ: Const[u32] = 4_000_000
+CLOCK_HZ: Const[uint32] = 4_000_000
 
 
 def main() -> None:
     RD0.output()
     UART.start(baud=9600)
-    pasadas: u16 = 0
+    pasadas: uint16 = 0
     while True:
         if UART.overrun():
             UART.clear_overrun()

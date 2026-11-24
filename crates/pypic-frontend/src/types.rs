@@ -30,12 +30,12 @@ pub const INFERENCE_ORDER: [Type; 6] = [U8, U16, I8, I16, U32, I32];
 impl Type {
     pub fn from_name(name: &str) -> Option<Type> {
         Some(match name {
-            "u8" => U8,
-            "i8" => I8,
-            "u16" => U16,
-            "i16" => I16,
-            "u32" => U32,
-            "i32" => I32,
+            "uint8" | "u8" => U8,
+            "int8" | "i8" => I8,
+            "uint16" | "u16" => U16,
+            "int16" | "i16" => I16,
+            "uint32" | "u32" => U32,
+            "int32" | "i32" => I32,
             "bool" => Type::Bool,
             _ => return None,
         })
@@ -94,7 +94,7 @@ impl Type {
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Type::Int { bits, signed } => write!(f, "{}{}", if *signed { "i" } else { "u" }, bits),
+            Type::Int { bits, signed } => write!(f, "{}{}", if *signed { "int" } else { "uint" }, bits),
             Type::Bool => f.write_str("bool"),
             Type::Void => f.write_str("None"),
             Type::Literal => f.write_str("int literal"),

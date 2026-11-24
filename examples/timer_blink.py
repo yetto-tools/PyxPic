@@ -3,7 +3,7 @@ from pypic.device import PIC16F887
 from pypic.periph.gpio import RD0
 from pypic.periph.timer import TMR2
 
-CLOCK_HZ: Const[u32] = 4_000_000
+CLOCK_HZ: Const[uint32] = 4_000_000
 
 
 @init_device
@@ -12,7 +12,7 @@ def configurar() -> None:
 
 
 def main() -> None:
-    cuenta: u8 = 0
+    cuenta: uint8 = 0
     TMR2.every_ms(20)
     while True:
         if TMR2.expired():

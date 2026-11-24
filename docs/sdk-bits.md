@@ -14,12 +14,12 @@ sale = carry()       # el valor de C como bool
 
 | Función | Instrucción | Ciclos | Notas |
 |---|---|---|---|
-| `swap(x)` → `u8` | `SWAPF x,W` (o `x,F` si es `x = swap(x)`) | 1 (+1 si se guarda) | `x` puede ser una expresión u8 o una constante |
-| `rol_c(x)` → `u8` | `RLF x,F` o `RLF x,W` + `MOVWF` | 1 (+1) | `x` es una variable `u8`; usa el acarreo de entrada |
-| `ror_c(x)` → `u8` | `RRF` igual | 1 (+1) | |
+| `swap(x)` → `uint8` | `SWAPF x,W` (o `x,F` si es `x = swap(x)`) | 1 (+1 si se guarda) | `x` puede ser una expresión uint8 o una constante |
+| `rol_c(x)` → `uint8` | `RLF x,F` o `RLF x,W` + `MOVWF` | 1 (+1) | `x` es una variable `uint8`; usa el acarreo de entrada |
+| `ror_c(x)` → `uint8` | `RRF` igual | 1 (+1) | |
 | `clear_carry()` / `set_carry()` | `BCF`/`BSF STATUS,C` | 1 | |
 | `carry()` → `bool` | `CLRF d` · `BTFSC STATUS,C` · `INCF d,F` | 3 | |
-| `bit_set(x, n)` / `bit_clear(x, n)` | `BSF`/`BCF x,n` | 1 | `x` variable de hasta 16 bits; `n` constante (en un `u16`, `n ≥ 8` toca el byte alto) |
+| `bit_set(x, n)` / `bit_clear(x, n)` | `BSF`/`BCF x,n` | 1 | `x` variable de hasta 16 bits; `n` constante (en un `uint16`, `n ≥ 8` toca el byte alto) |
 | `bit_test(x, n)` → `bool` | `CLRF d` · `BTFSC x,n` · `INCF d,F` | 3 | |
 
 ## La regla del acarreo
@@ -34,7 +34,7 @@ El compilador no promete qué deja en `C` una suma o una comparación, así que 
 | Error | Qué dice |
 |---|---|
 | `PYP2140` | `pypic.bits` no exporta ese nombre |
-| `PYP2141` | Aridad o tipo (`rol_c` rota un `u8`; `bit_*` hasta 16 bits) |
+| `PYP2141` | Aridad o tipo (`rol_c` rota un `uint8`; `bit_*` hasta 16 bits) |
 | `PYP2142` | El acarreo no está definido aquí / no es la expresión completa |
 | `PYP2143` | El argumento debe ser una variable (no una expresión ni una constante `Const`) |
 | `PYP2144` | El número de bit debe ser constante y caber en el ancho de la variable |
@@ -48,5 +48,5 @@ código de usuario existe `pypic.regs` (`STATUS.Z.value()`, sin garantía de con
 ## Verificación
 
 `crates/pypic-pic14/tests/bits.rs`: prueba diferencial entre el intérprete de la IR (que modela C exactamente) y el simulador del núcleo — desplazamiento de
-16 bits encadenado, rotación a la derecha con `C` puesto, `swap`, bits en `u8`/`u16`/locales, un bucle que multiplica por 2^12 — más todos los rechazos de arriba.
+16 bits encadenado, rotación a la derecha con `C` puesto, `swap`, bits en `uint8`/`uint16`/locales, un bucle que multiplica por 2^12 — más todos los rechazos de arriba.
 Ejemplo: `examples/shift16.py`.

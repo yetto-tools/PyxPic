@@ -181,7 +181,7 @@ fn a_table_declaration_is_checked() {
     let e = errors(&format!("{HEAD}T: Rom[u8] = [{many}]\ndef main() -> None:\n    pass\n"));
     assert!(e[0].starts_with("PYP2160") && e[0].contains("257"), "{e:?}");
     let e = errors(&format!("{HEAD}T: Rom[u16] = [1]\ndef main() -> None:\n    pass\n"));
-    assert!(e[0].starts_with("PYP2160") && e[0].contains("u8"), "{e:?}");
+    assert!(e[0].starts_with("PYP2160") && e[0].contains("uint8"), "{e:?}");
     let e = errors(&format!("{HEAD}x: u8 = 3\nT: Rom[u8] = [x]\ndef main() -> None:\n    pass\n"));
     assert!(e[0].starts_with("PYP2160") && e[0].contains("constantes"), "{e:?}");
     let e = errors(&format!("{HEAD}def main() -> None:\n    T: Rom[u8] = [1]\n"));
@@ -196,7 +196,7 @@ fn indexing_rules() {
     let e = errors(&format!("{HEAD}{t}x: u8 = T[3]\ndef main() -> None:\n    pass\n"));
     assert!(e.iter().any(|m| m.starts_with("PYP2161") && m.contains("0..=2")), "{e:?}");
     let e = errors(&format!("{HEAD}{t}k: u16 = 1\ndef main() -> None:\n    x: u8 = T[k]\n"));
-    assert!(e[0].starts_with("PYP2163") && e[0].contains("u8"), "{e:?}");
+    assert!(e[0].starts_with("PYP2163") && e[0].contains("uint8"), "{e:?}");
     let e = errors(&format!("{HEAD}{t}k: i8 = 1\ndef main() -> None:\n    x: u8 = T[k]\n"));
     assert!(e[0].starts_with("PYP2163"), "{e:?}");
     let e = errors(&format!("{HEAD}{t}n: u8 = 1\ndef main() -> None:\n    x: u8 = n[0]\n"));

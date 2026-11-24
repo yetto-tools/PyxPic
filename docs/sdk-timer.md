@@ -14,14 +14,14 @@ con el mismo control y el mismo costo en ciclos.
 
 | Método | TMR0 | TMR1 | TMR2 | Qué hace |
 |---|---|---|---|---|
-| `start(...)` | ✅ | ✅ | ✅ | Configura y arranca (argumentos con nombre, ver abajo) |
-| `every_us(n)` / `every_ms(n)` | – | – | ✅ | Azúcar: resuelve en compilación `prescaler × (PR2+1) × postscaler` **exactos** |
-| `stop()` | – | ✅ | ✅ | Detiene (`TMR1ON`/`TMR2ON`). Timer0 no se puede detener en hardware |
-| `value()` | u8 | u16 | u8 | Lee el contador (Timer1: lectura coherente H-L-H, DS40001291H 6.5.1) |
-| `set(v)` | ✅ | ✅ | ✅ | Precarga el contador |
-| `expired()` | ✅ | ✅ | ✅ | `True` si la bandera (`T0IF`, `TMR1IF`, `TMR2IF`) está activa |
-| `clear()` | ✅ | ✅ | ✅ | Baja la bandera |
-| `interrupt_on()` / `interrupt_off()` | ✅ | ✅ | ✅ | Habilita/inhabilita la interrupción (activa `PEIE` en Timer1/2) |
+| `start(...)` | ✓ | ✓ | ✓ | Configura y arranca (argumentos con nombre, ver abajo) |
+| `every_us(n)` / `every_ms(n)` | – | – | ✓ | Azúcar: resuelve en compilación `prescaler × (PR2+1) × postscaler` **exactos** |
+| `stop()` | – | ✓ | ✓ | Detiene (`TMR1ON`/`TMR2ON`). Timer0 no se puede detener en hardware |
+| `value()` | uint8 | uint16 | uint8 | Lee el contador (Timer1: lectura coherente H-L-H, DS40001291H 6.5.1) |
+| `set(v)` | ✓ | ✓ | ✓ | Precarga el contador |
+| `expired()` | ✓ | ✓ | ✓ | `True` si la bandera (`T0IF`, `TMR1IF`, `TMR2IF`) está activa |
+| `clear()` | ✓ | ✓ | ✓ | Baja la bandera |
+| `interrupt_on()` / `interrupt_off()` | ✓ | ✓ | ✓ | Habilita/inhabilita la interrupción (activa `PEIE` en Timer1/2) |
 
 ## Argumentos de `start`
 

@@ -17,17 +17,17 @@ from pypic.device import PIC16F887
 from pypic.periph.gpio import RD0
 from pypic.periph.uart import UART
 
-CLOCK_HZ: Const[u32] = 4_000_000
+CLOCK_HZ: Const[uint32] = 4_000_000
 
 # "GPGGA": el tipo de trama que se cuenta aparte
-TIPO_GGA: Rom[u8] = [71, 80, 71, 71, 65]
+TIPO_GGA: Rom[uint8] = [71, 80, 71, 71, 65]
 
-validas: u8 = 0
-invalidas: u8 = 0
-gga: u8 = 0
+validas: uint8 = 0
+invalidas: uint8 = 0
+gga: uint8 = 0
 
 
-def valor_hex(c: u8) -> u8:
+def valor_hex(c: uint8) -> uint8:
     if c >= 48 and c <= 57:
         return c - 48
     if c >= 65 and c <= 70:
@@ -39,16 +39,16 @@ def main() -> None:
     global validas, invalidas, gga
     RD0.output()
     UART.start(baud=9600)
-    estado: u8 = 0          # 0 espera '$', 1 cuerpo, 2 primer digito del checksum, 3 segundo digito
-    suma: u8 = 0
-    largo: u8 = 0
+    estado: uint8 = 0          # 0 espera '$', 1 cuerpo, 2 primer digito del checksum, 3 segundo digito
+    suma: uint8 = 0
+    largo: uint8 = 0
     es_gga: bool = False
-    alto: u8 = 0
+    alto: uint8 = 0
     while True:
         if UART.overrun():
             UART.clear_overrun()
         if UART.rx_ready():
-            c: u8 = UART.recv()
+            c: uint8 = UART.recv()
             if c == 36:
                 estado = 1
                 suma = 0
@@ -72,7 +72,7 @@ def main() -> None:
                 else:
                     estado = 3
             elif estado == 3:
-                bajo: u8 = valor_hex(c)
+                bajo: uint8 = valor_hex(c)
                 estado = 0
                 if bajo != 255 and ((alto << 4) | bajo) == suma:
                     validas += 1

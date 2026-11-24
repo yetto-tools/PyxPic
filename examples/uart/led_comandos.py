@@ -11,7 +11,7 @@ from pypic.device import PIC16F887
 from pypic.periph.gpio import RD0
 from pypic.periph.uart import UART
 
-CLOCK_HZ: Const[u32] = 4_000_000
+CLOCK_HZ: Const[uint32] = 4_000_000
 
 
 def main() -> None:
@@ -22,7 +22,7 @@ def main() -> None:
         if UART.overrun():
             UART.clear_overrun()
         if UART.rx_ready():
-            comando: u8 = UART.recv()
+            comando: uint8 = UART.recv()
             if comando == 65:
                 RD0.on()
             elif comando == 66:

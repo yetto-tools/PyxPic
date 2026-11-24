@@ -8,7 +8,7 @@ from pypic.device import PIC16F887
 from pypic.periph.gpio import RD0
 from pypic.system.time import pause
 
-CLOCK_HZ: Const[u32] = 4_000_000
+CLOCK_HZ: Const[uint32] = 4_000_000
 
 @init_device
 def configurar() -> None:
@@ -28,8 +28,8 @@ PyPIC no tiene sinónimos: cada operación tiene **un** nombre, para evitar ambi
 |---|---|---|---|---|
 | `delay_cycles(n)` | ciclos de instrucción | constante | espera activa | **exacta**: la unidad mínima del hardware |
 | `delay_us(n)` | microsegundos | constante | espera activa | exacta al ciclo más cercano (aviso si no cae en ciclos enteros) |
-| `pause(n)` | milisegundos (como `PAUSE` de PICAXE) | constante o `u16` | espera activa | exacta con constante; con variable, `n` ms + 8 ciclos fijos |
-| `wait(n)` | segundos | constante o `u16` | espera activa | igual que `pause` |
+| `pause(n)` | milisegundos (como `PAUSE` de PICAXE) | constante o `uint16` | espera activa | exacta con constante; con variable, `n` ms + 8 ciclos fijos |
+| `wait(n)` | segundos | constante o `uint16` | espera activa | igual que `pause` |
 | `nap(n)` | *(por definir)* | | bajo consumo (watchdog) | aproximada. **Reservada**, distinta de `sleep` |
 | `sleep(n)` | *(por definir)* | | bajo consumo (watchdog) | aproximada. **Reservada**, distinta de `nap` |
 
@@ -41,7 +41,7 @@ como dos funciones con el comportamiento de PICAXE tras leer la sección del wat
 - **Constante → ciclos exactos.** El compilador convierte el tiempo en un número entero de ciclos (`ciclos = tiempo × CLOCK_HZ / (relojes por ciclo × unidad)`, redondeado una sola vez
   sobre el total, sin acumular error por milisegundo) y genera código que dura **exactamente** ese número, con 1, 2 o 3 contadores y relleno. Verificado contra el simulador
   para cualquier cantidad de 0 a 400, en todos los umbrales, hasta 100 millones de ciclos y con valores pseudoaleatorios.
-- **Variable (`u16`)**: `n` vueltas de exactamente 1 unidad más **8 ciclos fijos** de entrada (9 si `n = 0`).
+- **Variable (`uint16`)**: `n` vueltas de exactamente 1 unidad más **8 ciclos fijos** de entrada (9 si `n = 0`).
 - **Un ciclo de instrucción = 4 relojes** en el PIC16F887 (DS40001291H p.1: 20 MHz → 200 ns); el dato sale del Device Pack (`cpu.clocks_per_instruction`).
 - **Informe de tiempos**: `pypic build prog.py --timing` muestra, por cada espera, lo pedido, los ciclos emitidos, el tiempo real y el error.
 - **Avisos**: `PYP3003` si el tiempo pedido no cae en ciclos enteros (con el error de redondeo), `PYP3002` si con cantidad variable una unidad no es un número entero de ciclos.
@@ -49,7 +49,7 @@ como dos funciones con el comportamiento de PICAXE tras leer la sección del wat
 
 ## Reloj
 
-- `CLOCK_HZ: Const[u32] = <hercios>` declara la frecuencia del reloj del sistema.
+- `CLOCK_HZ: Const[uint32] = <hercios>` declara la frecuencia del reloj del sistema.
 - **Sin `CLOCK_HZ`** el compilador usa el reloj por defecto del dispositivo (PIC16F887: 4 MHz, `OSCCON<IRCF> = 110`, p.64) y lo **avisa** (`PYP3004`).
 - Si declaras un reloj distinto del que da la configuración por defecto, avisa (`PYP3005`): el compilador **todavía no programa el oscilador** (`OSCCON`, palabras de configuración, #33), así que los
   tiempos solo serán correctos si el reloj real es el declarado. En Proteus, la propiedad *Processor Clock Frequency* del PIC debe coincidir.

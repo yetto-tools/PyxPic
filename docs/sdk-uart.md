@@ -5,11 +5,11 @@
 ```python
 from pypic.periph.uart import UART
 
-CLOCK_HZ: Const[u32] = 4_000_000
+CLOCK_HZ: Const[uint32] = 4_000_000
 
 UART.start(baud=9600)        # SPBRG, BRGH, BRG16 calculados; SPEN, TXEN y CREN encendidos
 UART.write(65)               # espera TXIF y escribe TXREG
-dato: u8 = UART.read()       # espera RCIF y lee RCREG
+dato: uint8 = UART.read()       # espera RCIF y lee RCREG
 ```
 
 Los pines son **RC6/TX** y **RC7/RX**. Con `SPEN` el chip los toma solos (TX pasa a salida y RX a entrada, sin tocar TRIS: p.153), así que importarlos como E/S (`RC6`, `RC7`) es el error `PYP2150`.
@@ -20,10 +20,10 @@ Un nivel RS-232 (±12 V) o RS-485 necesita **un transceptor externo** (MAX232, M
 | Operación | Qué hace | Ciclos |
 |---|---|---|
 | `UART.start(baud=N)` | Configura y enciende: `BAUDCTL`, `SPBRGH:SPBRG`, `TXSTA` (TXEN), `RCSTA` (SPEN, CREN) | 20 |
-| `UART.write(x)` | Espera `TXIF` y envía el `u8` | 5 con el transmisor libre |
-| `UART.read()` → `u8` | Espera `RCIF` y lee | 4 con un byte esperando |
+| `UART.write(x)` | Espera `TXIF` y envía el `uint8` | 5 con el transmisor libre |
+| `UART.read()` → `uint8` | Espera `RCIF` y lee | 4 con un byte esperando |
 | `UART.send(x)` | Escribe `TXREG` **sin esperar**, y un `NOP` | 3 |
-| `UART.recv()` → `u8` | Lee `RCREG` sin esperar | 2 |
+| `UART.recv()` → `uint8` | Lee `RCREG` sin esperar | 2 |
 | `UART.tx_ready()` → `bool` | `TXIF`: `TXREG` está vacío | 3 |
 | `UART.rx_ready()` → `bool` | `RCIF`: hay un carácter sin leer | 3 |
 | `UART.sending()` → `bool` | El registro de desplazamiento sigue ocupado (`TRMT` = 0): sirve para esperar a que **salga el último bit** | 7 |
