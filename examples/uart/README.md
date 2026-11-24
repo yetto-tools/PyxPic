@@ -37,7 +37,7 @@ Los `.hex` ya generados están en `examples/hex/uart_*.hex`. Para verlos funcion
 ## Verificación: qué está probado y qué no
 
 - **Simulador** (`uart_examples.rs`): cada ejemplo compila para el PIC16F887 y se prueba con entrada inyectada: orden y contenido de los bytes, el LED, el error de trama, el desbordamiento y, en el GPS, checksum válido, inválido y trama truncada.
-- **Proteus** (terminal virtual, PIC a 4 MHz): `saludo.hex` transmite bien y `led_comandos.hex` recibe: `A` enciende el LED y `B` lo apaga. En las propiedades del PIC hay que poner **Processor Clock Frequency = el `CLOCK_HZ` del programa** (por defecto Proteus usa 1 MHz y la terminal muestra basura).
+- **Proteus** (terminal virtual, PIC a 4 MHz): `saludo.hex` transmite bien y `led_comandos.hex` recibe: `A` enciende el LED y `B` lo apaga; `no_bloqueante.hex` parpadea y hace eco a la vez. En las propiedades del PIC hay que poner **Processor Clock Frequency = el `CLOCK_HZ` del programa** (por defecto Proteus usa 1 MHz y la terminal muestra basura).
 - **Hardware real: ninguno.** No se ha probado con un adaptador ni con un GPS. El simulador usa la misma tabla de baudios que el compilador, así que no ve la desviación del oscilador interno ni los niveles eléctricos.
 - `gps_nmea.py` **no es un analizador GPS**: solo valida y cuenta tramas.
 
