@@ -1,6 +1,8 @@
 # Blink de muestra para Proteus (`examples/hex/blink_rd0.hex`)
 
-**Estado: verificado solo en el simulador del host (`pypic-pic14`), NO en Proteus todavía** (issue de seguimiento en GitHub).
+**Estado:** verificado a nivel de ciclo en el simulador del host (`pypic-pic14`). En **Proteus** el usuario reportó que
+funcionó (captura del 2026-11-23: RD0 en alto y el LED encendido con el montaje descrito abajo). **Falta confirmar el
+período del parpadeo (~1,18 s)**, que una imagen fija no muestra. Seguimiento en el issue #30.
 Es un programa hecho a mano con el codificador de PyPIC (`crates/pypic-pic14/src/samples.rs`), no salida del compilador.
 
 ## Montaje en Proteus
