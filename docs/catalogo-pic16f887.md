@@ -83,7 +83,7 @@ RE3 funciona únicamente como entrada cuando se deshabilita MCLR (✔, coincide 
 
 ## 6. Librerías propuestas para el SDK (provisional)
 
-Propuesta recibida, **pendiente de decidir** (espacio de nombres, y cómo se distingue hardware de software; ver el issue #23):
+Propuesta recibida. **Decidido (2026-11-23):** espacio `pypic.*` (no `machine`), hardware y software en módulos distintos, y subpaquetes por categoría (`pypic.periph.*`, `pypic.system.*`, `pypic.soft.*`); ver `docs/sdk-modulos.md`:
 
 | Hardware / sistema | Software (sobre cualquier GPIO) |
 |---|---|

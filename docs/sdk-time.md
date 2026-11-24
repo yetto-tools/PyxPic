@@ -1,12 +1,12 @@
-# SDK: manejo del tiempo (`pypic.time`)
+# SDK: manejo del tiempo (`pypic.system.time`)
 
 **Estado: esperas activas implementadas; `nap`/`sleep` definidas y reservadas.** Todo se resuelve al compilar a instrucciones nativas
 (sin runtime). La razón de ser de un PIC es su **manejo del tiempo preciso y determinista**, y por eso el compilador trabaja en la unidad del hardware: el **ciclo de instrucción**.
 
 ```python
 from pypic.device import PIC16F887
-from pypic.gpio import RD0
-from pypic.time import pause
+from pypic.periph.gpio import RD0
+from pypic.system.time import pause
 
 CLOCK_HZ: Final[u32] = 4_000_000
 
@@ -72,5 +72,5 @@ Cada espera usa 5 bytes de contadores (compartidos por todas las esperas del pro
 ## Lo que sigue: timers como periféricos
 
 Los timers (Timer0, Timer1, Timer2) son **periféricos**: se declararán en el Device Pack (`peripherals.json`, #23) y se importarán como nombres, igual que los pines
-(`from pypic.timer import TMR1`), validados contra el dispositivo. Objetivo: la misma precisión y flexibilidad que en ensamblador (prescaler, postscaler,
+(`from pypic.periph.timer import TMR1`), validados contra el dispositivo. Objetivo: la misma precisión y flexibilidad que en ensamblador (prescaler, postscaler,
 desbordamiento, lectura/escritura del contador, interrupciones, cristal de 32 kHz de Timer1).

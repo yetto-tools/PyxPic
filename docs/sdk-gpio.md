@@ -1,4 +1,4 @@
-# SDK: acceso a pines (`pypic.gpio`)
+# SDK: acceso a pines (`pypic.periph.gpio`)
 
 **Estado: primer corte implementado.** Todo se resuelve al compilar; el MCU ejecuta solo instrucciones nativas
 (sin intérprete ni runtime Python). Los nombres siguen la idea de MicroPython (`on/off/toggle/value`) pero PyPIC **no** es MicroPython.
@@ -7,7 +7,7 @@
 
 ```python
 from pypic.device import PIC16F887
-from pypic.gpio import RD0, RB0
+from pypic.periph.gpio import RD0, RB0
 
 def main() -> None:
     RD0.output()
@@ -22,7 +22,7 @@ def main() -> None:
 Se descartó el estilo `led = Pin("RD0", Pin.OUT)` (el de MicroPython) para evitar confusiones:
 
 - No hay cadenas ni constructores: un pin mal escrito es un **nombre no definido** y el compilador lo rechaza.
-- `pypic.gpio` exporta **un nombre por pin de E/S del dispositivo** (según el Device Pack); importar uno que no existe es un error
+- `pypic.periph.gpio` exporta **un nombre por pin de E/S del dispositivo** (según el Device Pack); importar uno que no existe es un error
   que lista los pines disponibles. Las patas de alimentación no se exportan.
 - No hay objetos que se puedan crear en ejecución, pasar como argumento o guardar: cada `RD0` es el pin físico.
 

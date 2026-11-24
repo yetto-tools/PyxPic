@@ -77,7 +77,7 @@ fn same_trace(src: &str) -> Vec<(String, bool)> {
 #[test]
 fn toggling_and_writing_pins_matches_the_oracle() {
     let t = same_trace(
-        "from pypic.gpio import RD0, RB0, RA1\n\
+        "from pypic.periph.gpio import RD0, RB0, RA1\n\
          def main() -> None:\n    RD0.output()\n    RB0.output()\n    RA1.output()\n\
          \x20   for i in range(10):\n        RD0.toggle()\n        if i > 4:\n            RB0.on()\n        else:\n            RB0.off()\n\
          \x20   RD0.value(1)\n    x: u8 = 0\n    RB0.value(x)\n    RB0.value(True)\n    RA1.value(7)\n    RA1.off()\n",
@@ -90,7 +90,7 @@ fn toggling_and_writing_pins_matches_the_oracle() {
 fn direction_changes_are_traced_too() {
     // salida -> entrada -> salida: al volver a ser salida reaparece el nivel del latch
     same_trace(
-        "from pypic.gpio import RC3\n\
+        "from pypic.periph.gpio import RC3\n\
          def main() -> None:\n    RC3.output()\n    RC3.on()\n    RC3.input()\n    RC3.toggle()\n    RC3.output()\n    RC3.toggle()\n",
     );
 }
@@ -98,7 +98,7 @@ fn direction_changes_are_traced_too() {
 #[test]
 fn variable_values_drive_pins_without_glitches() {
     let (m, c) = build(
-        "from pypic.gpio import RD1\nn: u8 = 0\n\
+        "from pypic.periph.gpio import RD1\nn: u8 = 0\n\
          def main() -> None:\n    global n\n    RD1.output()\n    for i in range(6):\n        n = n + 1\n        RD1.value(n & 1)\n        RD1.value(n & 2)\n",
     );
     let (want, _) = ir_trace(&m, &[]);
@@ -113,7 +113,7 @@ fn variable_values_drive_pins_without_glitches() {
 #[test]
 fn reading_an_input_pin_matches_the_oracle() {
     let (m, c) = build(
-        "from pypic.gpio import RA0, RD2\nseen: u8 = 9\nflag: bool = False\n\
+        "from pypic.periph.gpio import RA0, RD2\nseen: u8 = 9\nflag: bool = False\n\
          def main() -> None:\n    global seen, flag\n    RA0.input()\n    RD2.output()\n    seen = RA0.value()\n    flag = RA0.value() == 1\n    if seen == 1:\n        RD2.on()\n",
     );
     for level in [false, true] {
@@ -129,7 +129,7 @@ fn reading_an_input_pin_matches_the_oracle() {
 #[test]
 fn startup_clears_port_latches_and_pin_cfg_sets_tris_ansel_and_keeps_bank0() {
     let (_, c) = build(
-        "from pypic.gpio import RB0, RD0, RE3\n\
+        "from pypic.periph.gpio import RB0, RD0, RE3\n\
          def main() -> None:\n    RB0.output()\n    RD0.output()\n    RE3.input()\n",
     );
     let mut s = Sim::new(&c.image);
@@ -151,7 +151,7 @@ fn startup_clears_port_latches_and_pin_cfg_sets_tris_ansel_and_keeps_bank0() {
 
 #[test]
 fn analog_pins_in_ansel_are_cleared() {
-    let (_, c) = build("from pypic.gpio import RA0, RA5\ndef main() -> None:\n    RA0.output()\n    RA5.input()\n");
+    let (_, c) = build("from pypic.periph.gpio import RA0, RA5\ndef main() -> None:\n    RA0.output()\n    RA5.input()\n");
     let s = {
         let mut s = Sim::new(&c.image);
         s.run_until(100_000, |s| s.halted);
@@ -163,7 +163,7 @@ fn analog_pins_in_ansel_are_cleared() {
 
 #[test]
 fn unsupported_port_is_reported() {
-    let r = analyze("from pypic.gpio import RF0\ndef main() -> None:\n    RF0.output()\n", &TargetProfile::generic());
+    let r = analyze("from pypic.periph.gpio import RF0\ndef main() -> None:\n    RF0.output()\n", &TargetProfile::generic());
     let m = lower(&r.program.unwrap());
     let e = compile(&m, &Options::default()).unwrap_err();
     assert!(matches!(&e, CodegenError::Unsupported(s) if s.contains("RF0") && s.contains("A a E")), "{e}");
@@ -171,7 +171,7 @@ fn unsupported_port_is_reported() {
 
 #[test]
 fn ir_dump_names_the_pin_operations() {
-    let (m, _) = build("from pypic.gpio import RD0\ndef main() -> None:\n    RD0.output()\n    RD0.toggle()\n    RD0.on()\n");
+    let (m, _) = build("from pypic.periph.gpio import RD0\ndef main() -> None:\n    RD0.output()\n    RD0.toggle()\n    RD0.on()\n");
     let out = pypic_ir::print(&m);
     assert!(out.contains("pin RD0 (puerto D, bit 0)") && out.contains("pin RD0 = output") && out.contains("pin RD0 toggle"), "{out}");
 }

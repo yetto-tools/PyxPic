@@ -55,7 +55,7 @@ pub struct FuncInfo {
     pub span: Span,
 }
 
-/// Unidad de una espera (`pypic.time`).
+/// Unidad de una espera (`pypic.system.time`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DelayUnit {
     /// Ciclos de instruccion: la unidad minima del hardware.
@@ -65,7 +65,7 @@ pub enum DelayUnit {
     S,
 }
 
-/// Funciones de `pypic.time` implementadas (nombre -> unidad). Una sola forma por operacion, sin sinonimos:
+/// Funciones de `pypic.system.time` implementadas (nombre -> unidad). Una sola forma por operacion, sin sinonimos:
 /// `pause` = milisegundos (como PICAXE), `wait` = segundos, `delay_us` = microsegundos, `delay_cycles` = ciclos.
 pub fn time_unit(name: &str) -> Option<DelayUnit> {
     match name {
@@ -87,7 +87,7 @@ struct TimeUse {
     amount: Option<i128>,
 }
 
-/// Un pin importado con `from pypic.gpio import RD0` (no ocupa memoria: se resuelve al compilar).
+/// Un pin importado con `from pypic.periph.gpio import RD0` (no ocupa memoria: se resuelve al compilar).
 #[derive(Clone, Debug)]
 pub struct PinDecl {
     /// Nombre del pin en el dispositivo y en el programa (`RD0`).
@@ -197,7 +197,7 @@ struct Checker<'a> {
     loop_depth: u32,
     /// Tipos emulados ya avisados (un aviso por tipo).
     warned: HashSet<Type>,
-    /// Pines importados de `pypic.gpio`, en orden de importacion.
+    /// Pines importados de `pypic.periph.gpio`, en orden de importacion.
     pins: Vec<PinDecl>,
     pin_names: HashMap<String, usize>,
     pin_uses: Vec<PinUse>,
@@ -207,7 +207,7 @@ struct Checker<'a> {
     clock_defaulted: bool,
     /// Verdadero mientras se resuelve el tipo de una constante `Final`: no cuesta nada en el dispositivo.
     in_const_decl: bool,
-    /// Funciones de `pypic.time` importadas.
+    /// Funciones de `pypic.system.time` importadas.
     time_fns: HashMap<String, DelayUnit>,
     time_uses: Vec<TimeUse>,
 }
@@ -294,7 +294,11 @@ impl<'a> Checker<'a> {
     }
 
     fn check_import(&mut self, span: Span, module: &str, names: &[Ident]) {
-        if module == "pypic.time" {
+        if let Some((code, msg)) = module_problem(module) {
+            self.d.error(code, span, msg);
+            return;
+        }
+        if module == "pypic.system.time" {
             for n in names {
                 if let Some(u) = time_unit(&n.name) {
                     self.time_fns.insert(n.name.clone(), u);
@@ -311,12 +315,12 @@ impl<'a> Checker<'a> {
                         format!("'{}' (espera de bajo consumo con el watchdog, aproximada) todavia no esta implementada; para una espera exacta usa pause o wait", n.name),
                     );
                 } else {
-                    self.d.error("PYP1002", n.span, format!("'pypic.time' no exporta '{}' (exporta: delay_cycles, delay_us, pause, wait; reservadas: nap, sleep)", n.name));
+                    self.d.error("PYP1002", n.span, format!("'pypic.system.time' no exporta '{}' (exporta: delay_cycles, delay_us, pause, wait; reservadas: nap, sleep)", n.name));
                 }
             }
             return;
         }
-        if module == "pypic.gpio" {
+        if module == "pypic.periph.gpio" {
             for n in names {
                 match self.pin_info(&n.name) {
                     Some(info) => {
@@ -329,7 +333,7 @@ impl<'a> Checker<'a> {
                     None => {
                         let msg = match &self.target.pins {
                             Some(map) => format!(
-                                "'pypic.gpio' no exporta '{}' en '{}' (pines de E/S: {})",
+                                "'pypic.periph.gpio' no exporta '{}' en '{}' (pines de E/S: {})",
                                 n.name,
                                 self.target.name,
                                 map.keys().map(String::as_str).collect::<Vec<_>>().join(", ")
@@ -347,7 +351,7 @@ impl<'a> Checker<'a> {
             self.d.error(
                 "PYP1002",
                 span,
-                format!("import de '{module}' no soportado; modulos disponibles: 'pypic' (tipos), 'pypic.gpio' (pines) y 'pypic.time' (esperas)"),
+                format!("import de '{module}' no soportado; modulos disponibles: 'pypic' (tipos), 'pypic.device', y por categoria 'pypic.periph.*' (hardware), 'pypic.system.*' (CPU, reloj, energia) y 'pypic.soft.*' (software)"),
             );
         }
     }
@@ -498,7 +502,7 @@ impl<'a> Checker<'a> {
 
     fn method_call(&mut self, e: &Expr, obj: &str, obj_span: Span, method: &str, args: &[Expr]) -> Type {
         let Some(&pi) = self.pin_names.get(obj) else {
-            let hint = if self.pin_info(obj).is_some() { format!("; importalo con 'from pypic.gpio import {obj}'") } else { String::new() };
+            let hint = if self.pin_info(obj).is_some() { format!("; importalo con 'from pypic.periph.gpio import {obj}'") } else { String::new() };
             self.d.error("PYP2078", obj_span, format!("'{obj}' no es un pin importado{hint}"));
             for a in args {
                 self.expr(a);
@@ -1346,7 +1350,7 @@ impl<'a> Checker<'a> {
         } else if let Some(&i) = self.fidx.get(func) {
             return self.call_user(e, i, args);
         } else {
-            let hint = if time_unit(func).is_some() { format!("; importala con 'from pypic.time import {func}'") } else { String::new() };
+            let hint = if time_unit(func).is_some() { format!("; importala con 'from pypic.system.time import {func}'") } else { String::new() };
             self.d.error("PYP2043", e.span, format!("funcion '{func}' no definida{hint}"));
         }
         for a in args {
@@ -1418,6 +1422,50 @@ impl<'a> Checker<'a> {
         }
         self.set(e, f.ret, None)
     }
+}
+
+// ---- arbol de modulos del SDK: tres categorias ------------------------------------------------------
+/// `pypic.periph.*`: hardware integrado del chip (validado por el Device Pack).
+const PERIPH_MODULES: &[&str] = &["gpio", "adc", "timer", "pwm", "ccp", "eccp", "uart", "spi", "i2c", "comparator", "vref", "eeprom", "latch"];
+/// `pypic.system.*`: CPU, reloj y energia.
+const SYSTEM_MODULES: &[&str] = &["time", "irq", "wdt", "clock", "power", "flash"];
+/// `pypic.soft.*`: implementaciones por software sobre cualquier GPIO (cuestan ciclos de CPU).
+const SOFT_MODULES: &[&str] = &["spi", "i2c", "uart", "onewire"];
+const IMPLEMENTED_MODULES: &[&str] = &["pypic.periph.gpio", "pypic.system.time"];
+
+/// Problema con la ruta de un modulo `pypic.*` (renombrado, categoria sin modulo, inexistente o aun no implementado).
+/// `None` si es un modulo implementado o no es del arbol de categorias.
+fn module_problem(module: &str) -> Option<(&'static str, String)> {
+    for (old, new) in [("pypic.gpio", "pypic.periph.gpio"), ("pypic.time", "pypic.system.time")] {
+        if module == old {
+            return Some((
+                "PYP2106",
+                format!("'{old}' se llama ahora '{new}': los modulos se agrupan por categoria (periph = hardware del chip, system = CPU, reloj y energia, soft = implementaciones por software)"),
+            ));
+        }
+    }
+    let categories: [(&str, &[&str], &str); 3] = [
+        ("periph", PERIPH_MODULES, "periferico por hardware del chip"),
+        ("system", SYSTEM_MODULES, "servicio del sistema: CPU, reloj o energia"),
+        ("soft", SOFT_MODULES, "implementacion por software sobre cualquier GPIO"),
+    ];
+    for (cat, names, what) in categories {
+        let pkg = format!("pypic.{cat}");
+        if module == pkg {
+            return Some(("PYP1002", format!("'{pkg}' es una categoria, no un modulo: importa desde uno de sus modulos ({})", names.join(", "))));
+        }
+        if let Some(name) = module.strip_prefix(&format!("{pkg}.")) {
+            if IMPLEMENTED_MODULES.contains(&module) {
+                return None;
+            }
+            return Some(if names.contains(&name) {
+                ("PYP2105", format!("'{module}' ({what}) todavia no esta implementado; ver docs/catalogo-pic16f887.md y el issue #23"))
+            } else {
+                ("PYP1002", format!("'{module}' no existe; en '{pkg}' hay: {}", names.join(", ")))
+            });
+        }
+    }
+    None
 }
 
 /// `PIC16F887`, `dsPIC33...`

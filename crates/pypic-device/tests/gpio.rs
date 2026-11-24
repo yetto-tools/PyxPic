@@ -1,4 +1,4 @@
-//! `from pypic.gpio import ...` validado contra los pines reales del Device Pack del PIC16F887.
+//! `from pypic.periph.gpio import ...` validado contra los pines reales del Device Pack del PIC16F887.
 
 use std::path::PathBuf;
 
@@ -29,29 +29,29 @@ fn profile_carries_the_pack_pins_with_analog_channels() {
 
 #[test]
 fn real_pins_are_accepted_and_missing_ones_are_not() {
-    assert!(analyze("from pypic.gpio import RD0, RB0, RA0, RE3, RC7\ndef main() -> None:\n    pass\n", &target()).program.is_some());
-    assert_eq!(codes("from pypic.gpio import RD9\n"), vec!["PYP2074"]); // el F887 no tiene RD9
-    assert_eq!(codes("from pypic.gpio import RF0\n"), vec!["PYP2074"]); // ni puerto F
-    assert_eq!(codes("from pypic.gpio import VDD\n"), vec!["PYP2074"]); // alimentacion, no E/S
+    assert!(analyze("from pypic.periph.gpio import RD0, RB0, RA0, RE3, RC7\ndef main() -> None:\n    pass\n", &target()).program.is_some());
+    assert_eq!(codes("from pypic.periph.gpio import RD9\n"), vec!["PYP2074"]); // el F887 no tiene RD9
+    assert_eq!(codes("from pypic.periph.gpio import RF0\n"), vec!["PYP2074"]); // ni puerto F
+    assert_eq!(codes("from pypic.periph.gpio import VDD\n"), vec!["PYP2074"]); // alimentacion, no E/S
 }
 
 #[test]
 fn error_lists_the_available_pins() {
-    let src = "from pypic.gpio import RD9\n";
+    let src = "from pypic.periph.gpio import RD9\n";
     let out = analyze(src, &target()).diagnostics.render(src, "t.py");
     assert!(out.contains("PIC16F887") && out.contains("RD0") && out.contains("RE3"), "{out}");
 }
 
 #[test]
 fn input_only_pin_cannot_be_an_output() {
-    assert_eq!(codes("from pypic.gpio import RE3\ndef main() -> None:\n    RE3.output()\n"), vec!["PYP2075"]);
-    let ok = "from pypic.gpio import RE3\ndef main() -> None:\n    RE3.input()\n    x: u8 = RE3.value()\n";
+    assert_eq!(codes("from pypic.periph.gpio import RE3\ndef main() -> None:\n    RE3.output()\n"), vec!["PYP2075"]);
+    let ok = "from pypic.periph.gpio import RE3\ndef main() -> None:\n    RE3.input()\n    x: u8 = RE3.value()\n";
     assert!(analyze(ok, &target()).program.is_some());
 }
 
 #[test]
 fn the_ir_keeps_port_bit_and_analog_channel() {
-    let src = "from pypic.gpio import RB0, RD0\ndef main() -> None:\n    RB0.output()\n    RD0.output()\n";
+    let src = "from pypic.periph.gpio import RB0, RD0\ndef main() -> None:\n    RB0.output()\n    RD0.output()\n";
     let p = analyze(src, &target()).program.unwrap();
     let pins = &p.pins;
     assert_eq!((pins[0].pin.as_str(), pins[0].port, pins[0].bit, pins[0].analog), ("RB0", 'B', 0, Some(12)));

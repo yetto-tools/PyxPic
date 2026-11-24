@@ -111,7 +111,7 @@ fn clock_above_the_device_maximum_is_reported_with_the_source_location() {
 fn pins_are_validated_against_the_declared_device() {
     let dir = tmp("pins");
     let src = dir.join("p.py");
-    std::fs::write(&src, "from pypic.device import PIC16F887\nfrom pypic.gpio import RD9\ndef main() -> None:\n    pass\n").unwrap();
+    std::fs::write(&src, "from pypic.device import PIC16F887\nfrom pypic.periph.gpio import RD9\ndef main() -> None:\n    pass\n").unwrap();
     let o = pypic(&root(), &["check", src.to_str().unwrap()]);
     assert_eq!(o.status.code(), Some(1));
     assert!(text(&o).contains("PYP2074") && text(&o).contains("RD0"), "{}", text(&o));
@@ -142,7 +142,7 @@ fn blink_example_builds_and_the_timing_report_shows_exact_cycles() {
 fn a_missing_clock_hz_uses_the_device_default_and_says_so() {
     let dir = tmp("noclock");
     let src = dir.join("p.py");
-    std::fs::write(&src, "from pypic.device import PIC16F887\nfrom pypic.time import pause\ndef main() -> None:\n    pause(1)\n").unwrap();
+    std::fs::write(&src, "from pypic.device import PIC16F887\nfrom pypic.system.time import pause\ndef main() -> None:\n    pause(1)\n").unwrap();
     let o = pypic(&root(), &["build", src.to_str().unwrap(), "-o", dir.join("p.hex").to_str().unwrap()]);
     assert!(o.status.success(), "{}", text(&o));
     let t = text(&o);
@@ -153,7 +153,7 @@ fn a_missing_clock_hz_uses_the_device_default_and_says_so() {
 fn removed_aliases_point_to_the_single_name() {
     let dir = tmp("alias");
     let src = dir.join("p.py");
-    std::fs::write(&src, "from pypic.device import PIC16F887\nfrom pypic.time import delay_ms\ndef main() -> None:\n    pass\n").unwrap();
+    std::fs::write(&src, "from pypic.device import PIC16F887\nfrom pypic.system.time import delay_ms\ndef main() -> None:\n    pass\n").unwrap();
     let o = pypic(&root(), &["check", src.to_str().unwrap()]);
     assert_eq!(o.status.code(), Some(1));
     assert!(text(&o).contains("PYP2104") && text(&o).contains("pause"), "{}", text(&o));

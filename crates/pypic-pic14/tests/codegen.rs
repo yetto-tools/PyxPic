@@ -376,7 +376,7 @@ fn init_device_runs_before_main_on_both_the_oracle_and_the_pic() {
 #[test]
 fn init_device_can_call_helpers_and_use_pins() {
     let g = same(
-        "from pypic.gpio import RD0\nready: u8 = 0\n\
+        "from pypic.periph.gpio import RD0\nready: u8 = 0\n\
          def prepara() -> u8:\n    return 3\n\
          @init_device\ndef configurar() -> None:\n    global ready\n    RD0.output()\n    ready = prepara()\n\
          def main() -> None:\n    RD0.value(ready)\n",

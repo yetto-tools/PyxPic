@@ -18,8 +18,8 @@ Quien hoy escribe en ensamblador debe poder escribir lo mismo aquí, con menos e
 | Capacidad del ensamblador | Estado en PyPIC |
 |---|---|
 | Aritmética y lógica de 8/16 bits, comparaciones, saltos, llamadas, bucles | ✅ implementado (verificado contra el simulador) |
-| Control de pines (TRIS, PORT, ANSEL) | ✅ `pypic.gpio` |
-| Esperas exactas al ciclo | ✅ `pypic.time` (`pause`, `wait`, `delay_us`, `delay_cycles`) |
+| Control de pines (TRIS, PORT, ANSEL) | ✅ `pypic.periph.gpio` |
+| Esperas exactas al ciclo | ✅ `pypic.system.time` (`pause`, `wait`, `delay_us`, `delay_cycles`) |
 | Interrupciones con guardado de contexto | ✅ `@interrupt` |
 | Arranque y configuración inicial | ✅ `@init_device`, `CLOCK_HZ`, declaración del dispositivo |
 | Bajo consumo (`SLEEP`, watchdog) | ⏳ `nap`/`sleep` reservadas (#38) |

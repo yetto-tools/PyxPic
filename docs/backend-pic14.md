@@ -36,7 +36,7 @@ pypic build programa.py -o salida.hex [--listing] [--device devices/pic16f887]
 - `u32` / `i32`.
 - Más de 80 bytes de datos: no hay otros bancos ni solapamiento de locales (#26).
 - Más de 2048 palabras: no se maneja PCLATH.
-- Acceso a pines (`pypic.gpio`, ver `docs/sdk-gpio.md`) solo en los puertos A–E; sin retardos (`sleep_ms`) todavía.
+- Acceso a pines (`pypic.periph.gpio`, ver `docs/sdk-gpio.md`) solo en los puertos A–E; sin retardos (`sleep_ms`) todavía.
 
 ## Cómo se verifica
 

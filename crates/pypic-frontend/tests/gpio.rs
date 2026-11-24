@@ -1,4 +1,4 @@
-//! Acceso a pines: `from pypic.gpio import RD0` y metodos output/input/on/off/toggle/value.
+//! Acceso a pines: `from pypic.periph.gpio import RD0` y metodos output/input/on/off/toggle/value.
 
 use pypic_frontend::{analyze, TargetProfile};
 
@@ -16,11 +16,11 @@ fn err(src: &str, code: &str) {
     assert!(c.contains(&code), "esperaba {code}, hubo {c:?}\n{src}");
 }
 
-const HEAD: &str = "from pypic.gpio import RD0, RB0\n";
+const HEAD: &str = "from pypic.periph.gpio import RD0, RB0\n";
 
 #[test]
 fn valid_gpio_program() {
-    ok("from pypic.gpio import RD0, RB0\n\
+    ok("from pypic.periph.gpio import RD0, RB0\n\
         def main() -> None:\n    RD0.output()\n    RB0.input()\n    while True:\n        RD0.toggle()\n        if RB0.value() == 1:\n            RD0.off()\n        else:\n            RD0.on()\n");
 }
 
@@ -35,9 +35,9 @@ fn value_returns_u8_and_accepts_u8_bool_or_literal() {
 #[test]
 fn pins_must_be_imported_and_exist() {
     err("def main() -> None:\n    RD0.output()\n", "PYP2078");
-    err("from pypic.gpio import LED\ndef main() -> None:\n    pass\n", "PYP2074");
-    err("from pypic.gpio import RD0\nfrom pypic.foo import x\n", "PYP1002");
-    err("from pypic.gpio import RD0\ndef main() -> None:\n    RB0.output()\n", "PYP2078"); // RB0 no importado
+    err("from pypic.periph.gpio import LED\ndef main() -> None:\n    pass\n", "PYP2074");
+    err("from pypic.periph.gpio import RD0\nfrom pypic.foo import x\n", "PYP1002");
+    err("from pypic.periph.gpio import RD0\ndef main() -> None:\n    RB0.output()\n", "PYP2078"); // RB0 no importado
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn attributes_strings_and_old_syntax_are_rejected() {
     err(&format!("{HEAD}def main() -> None:\n    x: u8 = RD0.mode\n"), "PYP1026");
     err(&format!("{HEAD}def main() -> None:\n    RD0.output()\n    RD0.value(\"a\")\n"), "PYP1021");
     // el estilo con objeto (Pin(...)) no existe: no hay constructor
-    err("from pypic.gpio import Pin\n", "PYP2074");
+    err("from pypic.periph.gpio import Pin\n", "PYP2074");
     err("led = Pin(\"RD0\", 1)\n", "PYP1001");
 }
 

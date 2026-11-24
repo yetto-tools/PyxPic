@@ -24,7 +24,7 @@ fn declared_device_is_found_without_analysing_the_program() {
     assert_eq!(declared_device("from pypic.device import PIC16F887\n"), Some("PIC16F887".to_string()));
     assert_eq!(declared_device("\"\"\"doc\"\"\"\nfrom pypic.device import PIC12F625\ndef main() -> None:\n    pass\n"), Some("PIC12F625".to_string()));
     assert_eq!(declared_device("def main() -> None:\n    pass\n"), None);
-    assert_eq!(declared_device("from pypic.gpio import RD0\n"), None);
+    assert_eq!(declared_device("from pypic.periph.gpio import RD0\n"), None);
     // tolera errores en el resto del programa
     assert_eq!(declared_device("from pypic.device import PIC16F887\nx: = \n"), Some("PIC16F887".to_string()));
 }
@@ -100,7 +100,7 @@ fn final_constants_do_not_trigger_the_emulated_type_warning() {
 
 #[test]
 fn init_device_is_marked_by_a_decorator_and_any_name_works() {
-    let src = "from pypic.gpio import RD0\n@init_device\ndef configurar() -> None:\n    RD0.output()\ndef main() -> None:\n    RD0.on()\n";
+    let src = "from pypic.periph.gpio import RD0\n@init_device\ndef configurar() -> None:\n    RD0.output()\ndef main() -> None:\n    RD0.on()\n";
     let p = analyze(src, &generic()).program.unwrap();
     assert!(p.functions.iter().any(|f| f.name == "configurar" && f.is_init));
     assert!(p.functions.iter().any(|f| f.name == "main" && !f.is_init));

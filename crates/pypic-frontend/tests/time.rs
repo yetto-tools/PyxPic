@@ -1,4 +1,4 @@
-//! `from pypic.time import pause, wait, delay_us, delay_cycles`: reglas del frontend.
+//! `from pypic.system.time import pause, wait, delay_us, delay_cycles`: reglas del frontend.
 
 use pypic_frontend::{analyze, TargetProfile};
 
@@ -15,7 +15,7 @@ fn codes(src: &str, t: &TargetProfile) -> Vec<&'static str> {
     analyze(src, t).diagnostics.codes()
 }
 
-const HEAD: &str = "from pypic.device import PIC16F887\nfrom pypic.time import pause, wait, delay_us, delay_cycles\nCLOCK_HZ: Final[u32] = 4_000_000\n";
+const HEAD: &str = "from pypic.device import PIC16F887\nfrom pypic.system.time import pause, wait, delay_us, delay_cycles\nCLOCK_HZ: Final[u32] = 4_000_000\n";
 
 fn body(stmt: &str) -> String {
     format!("{HEAD}def main() -> None:\n    {stmt}\n")
@@ -36,19 +36,19 @@ fn valid_calls() {
 
 #[test]
 fn there_is_one_name_per_operation() {
-    assert_eq!(codes("from pypic.time import delay_ms\n", &generic()), vec!["PYP2104"]);
-    assert_eq!(codes("from pypic.time import delay\n", &generic()), vec!["PYP2104"]);
-    let out = analyze("from pypic.time import delay_ms\n", &generic()).diagnostics.render("from pypic.time import delay_ms\n", "t.py");
+    assert_eq!(codes("from pypic.system.time import delay_ms\n", &generic()), vec!["PYP2104"]);
+    assert_eq!(codes("from pypic.system.time import delay\n", &generic()), vec!["PYP2104"]);
+    let out = analyze("from pypic.system.time import delay_ms\n", &generic()).diagnostics.render("from pypic.system.time import delay_ms\n", "t.py");
     assert!(out.contains("pause") && out.contains("wait") && out.contains("delay_us"), "{out}");
 }
 
 #[test]
 fn nap_and_sleep_are_reserved_and_distinct_not_aliases() {
-    assert_eq!(codes("from pypic.time import nap\n", &generic()), vec!["PYP2103"]);
-    assert_eq!(codes("from pypic.time import sleep\n", &generic()), vec!["PYP2103"]);
-    let src = "from pypic.time import nap, sleep\n";
+    assert_eq!(codes("from pypic.system.time import nap\n", &generic()), vec!["PYP2103"]);
+    assert_eq!(codes("from pypic.system.time import sleep\n", &generic()), vec!["PYP2103"]);
+    let src = "from pypic.system.time import nap, sleep\n";
     assert_eq!(codes(src, &generic()), vec!["PYP2103", "PYP2103"]); // dos errores, uno por nombre
-    assert_eq!(codes("from pypic.time import bogus\n", &generic()), vec!["PYP1002"]);
+    assert_eq!(codes("from pypic.system.time import bogus\n", &generic()), vec!["PYP1002"]);
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn must_be_imported_with_a_hint() {
     let src = "from pypic.device import PIC16F887\nCLOCK_HZ: Final[u32] = 4_000_000\ndef main() -> None:\n    pause(5)\n";
     assert_eq!(codes(src, &pic()), vec!["PYP2043"]);
     let out = analyze(src, &pic()).diagnostics.render(src, "t.py");
-    assert!(out.contains("from pypic.time import pause"), "{out}");
+    assert!(out.contains("from pypic.system.time import pause"), "{out}");
 }
 
 // ---- argumentos --------------------------------------------------------------------------------------------
@@ -82,7 +82,7 @@ fn ms_and_seconds_take_a_u16_or_a_constant() {
 
 #[test]
 fn names_cannot_clash_with_imported_waits() {
-    let src = "from pypic.time import pause\ndef pause() -> None:\n    pass\n";
+    let src = "from pypic.system.time import pause\ndef pause() -> None:\n    pass\n";
     assert!(codes(src, &generic()).contains(&"PYP2009"));
 }
 
@@ -90,7 +90,7 @@ fn names_cannot_clash_with_imported_waits() {
 
 #[test]
 fn without_clock_hz_the_device_default_is_used_with_a_warning() {
-    let src = "from pypic.device import PIC16F887\nfrom pypic.time import pause\ndef main() -> None:\n    pause(1)\n";
+    let src = "from pypic.device import PIC16F887\nfrom pypic.system.time import pause\ndef main() -> None:\n    pause(1)\n";
     let r = analyze(src, &pic());
     assert_eq!(r.diagnostics.codes(), vec!["PYP3004"]);
     let p = r.program.unwrap();
@@ -101,7 +101,7 @@ fn without_clock_hz_the_device_default_is_used_with_a_warning() {
 
 #[test]
 fn without_clock_hz_and_without_a_device_default_it_is_an_error() {
-    let src = "from pypic.time import pause\ndef main() -> None:\n    pause(1)\n";
+    let src = "from pypic.system.time import pause\ndef main() -> None:\n    pause(1)\n";
     assert_eq!(codes(src, &generic()), vec!["PYP2101"]);
 }
 

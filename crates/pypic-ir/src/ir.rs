@@ -98,7 +98,7 @@ pub struct Global {
     pub is_const: bool,
 }
 
-/// Pin de E/S usado por el programa (importado de `pypic.gpio`).
+/// Pin de E/S usado por el programa (importado de `pypic.periph.gpio`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pin {
     pub name: String,
