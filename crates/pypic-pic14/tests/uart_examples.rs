@@ -220,3 +220,26 @@ fn adc_serial_sends_the_converted_value_as_text_for_two_different_readings() {
         assert!(s.uart_violations.is_empty() && s.adc_violations.is_empty(), "{:?} {:?}", s.uart_violations, s.adc_violations);
     }
 }
+
+#[test]
+fn linea_comandos_obeys_on_off_and_reports_unknown_lines() {
+    let c = build("linea_comandos");
+    let mut s = sim(&c);
+    // cada linea llega cuando la anterior ya se contesto (una terminal espera la respuesta)
+    let lines: [&[u8]; 6] = [b"ON\n", b"\n", b"off\n", b"OFF\r\n", b"ABCDEFGHIJKLMNOPQRST\n", b"ON\n"];
+    let (gap, step) = (90_000u64, FRAME + 400);
+    for (k, l) in lines.iter().enumerate() {
+        for (i, b) in l.iter().enumerate() {
+            s.uart_feed(*b, 3_000 + k as u64 * gap + i as u64 * step, true);
+        }
+    }
+    let after = |k: usize| 3_000 + (k as u64 + 1) * gap - 5_000;
+    let mut pins = Vec::new();
+    for k in 0..lines.len() {
+        run(&mut s, after(k));
+        pins.push(s.pin('D', 0));
+    }
+    assert_eq!(pins, vec![Some(true), Some(true), Some(true), Some(false), Some(false), Some(true)], "RD0 tras cada linea");
+    assert_eq!(String::from_utf8(sent(&s)).unwrap(), "OK\r\nERR 3\r\nOK\r\nERR 16\r\nOK\r\n");
+    assert!(s.uart_violations.is_empty(), "{:?}", s.uart_violations);
+}

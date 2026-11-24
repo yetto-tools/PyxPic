@@ -103,7 +103,7 @@ fn verify_fn(m: &Module, f: &Function, errs: &mut Vec<String>) {
                     let dst_is = |t: Type| dst.is_some_and(|d| valid(d) && m.place_ty(f, d) == t);
                     let bad = match call.op {
                         UartOp::Write | UartOp::Send => dst.is_some() || arg.as_ref().is_none_or(|a| ty(a) != u8_ty),
-                        UartOp::WriteText(_) | UartOp::WriteFmt => true, // la IR no lo lleva: lower lo desarma
+                        UartOp::WriteText(_) | UartOp::WriteFmt | UartOp::ReadLine(_) | UartOp::WriteBuf(_) => true, // la IR no lo lleva: lower lo desarma
                         UartOp::Write9 | UartOp::Send9 => dst.is_some() || arg.as_ref().is_none_or(|a| ty(a) != u16_ty),
                         UartOp::Read | UartOp::Recv => arg.is_some() || !dst_is(u8_ty),
                         UartOp::Read9 | UartOp::Recv9 => arg.is_some() || !dst_is(u16_ty),

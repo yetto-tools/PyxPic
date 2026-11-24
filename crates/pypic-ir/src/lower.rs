@@ -216,6 +216,18 @@ impl<'a> FnLower<'a> {
                     self.write_text(rom);
                     return;
                 }
+                match call.op {
+                    pypic_frontend::UartOp::ReadLine(arr) => {
+                        self.read_line(arr, dst);
+                        return;
+                    }
+                    pypic_frontend::UartOp::WriteBuf(arr) => {
+                        let n = self.value(&args[1]);
+                        self.write_buf(arr, n);
+                        return;
+                    }
+                    _ => {}
+                }
                 if call.op == pypic_frontend::UartOp::WriteFmt {
                     let parts = self.prog.uart_fmt[&e.id].clone();
                     self.write_fmt(&args[0], &parts);
@@ -444,6 +456,92 @@ impl<'a> FnLower<'a> {
     /// el contador daria la vuelta (250 + 10 = 4) y el bucle no terminaria. Al final de
     /// cada iteracion se comprueba el recorrido restante (en el tipo sin signo del mismo
     /// ancho, donde la resta es exacta) y solo se avanza si queda al menos un paso.
+    /// `UART.read_line(buf)`: lee bytes con `UART.read` hasta un `\n`. El `\r` se ignora; el resto se guarda en el arreglo mientras
+    /// quepa y, si la linea es mas larga, **se descarta el exceso** (sigue leyendo hasta el `\n` para no dejar media linea en el
+    /// puerto). Devuelve cuantos bytes guardo (el `\n` no cuenta ni se guarda). Bloquea hasta recibir el `\n`.
+    ///
+    /// Un desbordamiento del receptor (`OERR`) detendria la recepcion para siempre y `read_line` se quedaria esperando: por eso se
+    /// borra (`clear_overrun`) y **se reinicia la linea en curso**: lo guardado hasta entonces esta danado (faltan bytes) y los
+    /// caracteres que quedaron en el FIFO del receptor (DS40001291H 12.1.2.5: siguen siendo legibles) se descartan; el resto de esa
+    /// linea llegara como una linea mas.
+    fn read_line(&mut self, arr: usize, dst: Option<Place>) {
+        let u8t = Type::Int { bits: 8, signed: false };
+        let len = self.prog.arrays[arr].1 as i128;
+        let n = self.pooled("line_n", u8t);
+        let byte = self.pooled("byte", u8t);
+        let c = self.pooled("cond", Type::Bool);
+        self.emit(Inst::Copy { dst: n, src: Operand::Const { value: 0, ty: u8t } });
+        let (header, clear, flush, flush_take, poll, take, not_nl, not_cr, store, exit) = (self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block());
+        self.terminate(Terminator::Jump(header));
+        // espera activa con las primitivas: comprueba el desbordamiento y la llegada de un byte
+        self.cur = header;
+        let uart = |op| pypic_frontend::UartCall { op };
+        self.emit(Inst::Uart { call: uart(pypic_frontend::UartOp::Overrun), dst: Some(c), arg: None });
+        self.terminate(Terminator::Branch { cond: Operand::Place(c), then_bb: clear, else_bb: poll });
+        self.cur = clear;
+        self.emit(Inst::Uart { call: uart(pypic_frontend::UartOp::ClearOverrun), dst: None, arg: None });
+        self.emit(Inst::Copy { dst: n, src: Operand::Const { value: 0, ty: u8t } });
+        self.terminate(Terminator::Jump(flush));
+        self.cur = flush;
+        self.emit(Inst::Uart { call: uart(pypic_frontend::UartOp::RxReady), dst: Some(c), arg: None });
+        self.terminate(Terminator::Branch { cond: Operand::Place(c), then_bb: flush_take, else_bb: poll });
+        self.cur = flush_take;
+        self.emit(Inst::Uart { call: uart(pypic_frontend::UartOp::Recv), dst: Some(byte), arg: None });
+        self.terminate(Terminator::Jump(flush));
+        self.cur = poll;
+        self.emit(Inst::Uart { call: uart(pypic_frontend::UartOp::RxReady), dst: Some(c), arg: None });
+        self.terminate(Terminator::Branch { cond: Operand::Place(c), then_bb: take, else_bb: header });
+        self.cur = take;
+        self.emit(Inst::Uart { call: uart(pypic_frontend::UartOp::Recv), dst: Some(byte), arg: None });
+        let eq = |this: &mut Self, v: i128| this.emit(Inst::Compare { dst: c, op: CmpOp::Eq, lhs: Operand::Place(byte), rhs: Operand::Const { value: v, ty: u8t } });
+        eq(self, 10);
+        self.terminate(Terminator::Branch { cond: Operand::Place(c), then_bb: exit, else_bb: not_nl });
+        self.cur = not_nl;
+        eq(self, 13);
+        self.terminate(Terminator::Branch { cond: Operand::Place(c), then_bb: header, else_bb: not_cr });
+        self.cur = not_cr;
+        self.emit(Inst::Compare { dst: c, op: CmpOp::Lt, lhs: Operand::Place(n), rhs: Operand::Const { value: len, ty: u8t } });
+        self.terminate(Terminator::Branch { cond: Operand::Place(c), then_bb: store, else_bb: header });
+        self.cur = store;
+        self.emit(Inst::ArrSet { arr, index: Operand::Place(n), value: Operand::Place(byte) });
+        self.emit(Inst::Binary { dst: n, op: BinOp::Add, lhs: Operand::Place(n), rhs: Operand::Const { value: 1, ty: u8t } });
+        self.terminate(Terminator::Jump(header));
+        self.cur = exit;
+        if let Some(d) = dst {
+            self.emit(Inst::Copy { dst: d, src: Operand::Place(n) });
+        }
+    }
+
+    /// `UART.write_buf(buf, n)`: `UART.write(buf[i])` para `i` de 0 a `min(n, capacidad)`.
+    fn write_buf(&mut self, arr: usize, n: Operand) {
+        let u8t = Type::Int { bits: 8, signed: false };
+        let len = self.prog.arrays[arr].1 as i128;
+        let i = self.pooled("idx", u8t);
+        let lim = self.pooled("lim", u8t);
+        let byte = self.pooled("byte", u8t);
+        let c = self.pooled("cond", Type::Bool);
+        self.emit(Inst::Copy { dst: lim, src: n });
+        let (clamp, header, body, exit) = (self.new_block(), self.new_block(), self.new_block(), self.new_block());
+        self.emit(Inst::Compare { dst: c, op: CmpOp::Gt, lhs: Operand::Place(lim), rhs: Operand::Const { value: len, ty: u8t } });
+        self.terminate(Terminator::Branch { cond: Operand::Place(c), then_bb: clamp, else_bb: header });
+        self.cur = clamp;
+        self.emit(Inst::Copy { dst: lim, src: Operand::Const { value: len, ty: u8t } });
+        self.terminate(Terminator::Jump(header));
+        self.cur = header;
+        self.emit(Inst::Copy { dst: i, src: Operand::Const { value: 0, ty: u8t } });
+        let loop_head = self.new_block();
+        self.terminate(Terminator::Jump(loop_head));
+        self.cur = loop_head;
+        self.emit(Inst::Compare { dst: c, op: CmpOp::Lt, lhs: Operand::Place(i), rhs: Operand::Place(lim) });
+        self.terminate(Terminator::Branch { cond: Operand::Place(c), then_bb: body, else_bb: exit });
+        self.cur = body;
+        self.emit(Inst::ArrGet { dst: byte, arr, index: Operand::Place(i) });
+        self.uart_put(Operand::Place(byte));
+        self.emit(Inst::Binary { dst: i, op: BinOp::Add, lhs: Operand::Place(i), rhs: Operand::Const { value: 1, ty: u8t } });
+        self.terminate(Terminator::Jump(loop_head));
+        self.cur = exit;
+    }
+
     fn uart_put(&mut self, ch: Operand) {
         let call = pypic_frontend::UartCall { op: pypic_frontend::UartOp::Write };
         self.emit(Inst::Uart { call, dst: None, arg: Some(ch) });

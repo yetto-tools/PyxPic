@@ -118,6 +118,10 @@ pub enum UartOp {
     WriteText(usize),
     /// `UART.write_text(f"...")`: las partes estan en `Program.uart_fmt` (por id de expresion); la IR lo desarma en bucles y aritmetica.
     WriteFmt,
+    /// `UART.read_line(buf)`: lee hasta `\n` en el arreglo (indice en `Program.arrays`); devuelve cuantos bytes guardo.
+    ReadLine(usize),
+    /// `UART.write_buf(buf, n)`: envia los primeros `n` bytes del arreglo.
+    WriteBuf(usize),
 }
 
 impl UartOp {
@@ -128,7 +132,7 @@ impl UartOp {
 
     /// Operaciones de caracteres de 8 bits (las que no valen con `bits=9`).
     pub fn is_8bit_data(self) -> bool {
-        matches!(self, UartOp::Write | UartOp::Send | UartOp::Read | UartOp::Recv | UartOp::WriteText(_) | UartOp::WriteFmt)
+        matches!(self, UartOp::Write | UartOp::Send | UartOp::Read | UartOp::Recv | UartOp::WriteText(_) | UartOp::WriteFmt | UartOp::ReadLine(_) | UartOp::WriteBuf(_))
     }
 
     /// Operaciones que devuelven un valor sin efectos laterales: sin destino no se emiten.

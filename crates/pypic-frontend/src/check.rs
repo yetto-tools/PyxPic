@@ -1375,6 +1375,9 @@ impl<'a> Checker<'a> {
         if method == "write_text" {
             return self.uart_write_text(e, args);
         }
+        if method == "read_line" || method == "write_buf" {
+            return self.uart_buffer_op(e, method, args);
+        }
         let (want, op, ret): (usize, UartOp, Type) = match method {
             "start" => {
                 if !args.is_empty() {
@@ -1429,7 +1432,7 @@ impl<'a> Checker<'a> {
             "read9" => (0, UartOp::Read9, U16),
             "recv9" => (0, UartOp::Recv9, U16),
             other => {
-                self.d.error("PYP2183", e.span, format!("UART no tiene el metodo '{other}' (disponibles: start, write, read, send, recv, write_text, write9, read9, send9, recv9, tx_ready, rx_ready, sending, overrun, framing_error, clear_overrun)"));
+                self.d.error("PYP2183", e.span, format!("UART no tiene el metodo '{other}' (disponibles: start, write, read, send, recv, write_text, write_buf, read_line, write9, read9, send9, recv9, tx_ready, rx_ready, sending, overrun, framing_error, clear_overrun)"));
                 for a in args {
                     self.expr(a);
                 }
@@ -1605,6 +1608,43 @@ impl<'a> Checker<'a> {
         self.uart_calls.insert(e.id, UartCall { op: UartOp::WriteFmt });
         self.uart_fmt.insert(e.id, out);
         self.set(e, Type::Void, None)
+    }
+
+    /// `UART.read_line(buf)` -> uint8 y `UART.write_buf(buf, n)`: el arreglo `uint8[N]` se nombra directamente (no es un valor).
+    fn uart_buffer_op(&mut self, e: &Expr, method: &str, args: &[Expr]) -> Type {
+        let (want, ret) = if method == "read_line" { (1, U8) } else { (2, Type::Void) };
+        if args.len() != want {
+            for a in args {
+                self.expr_unless_array(a);
+            }
+            let usage = if method == "read_line" { "UART.read_line(buf)" } else { "UART.write_buf(buf, n)" };
+            self.d.error("PYP2055", e.span, format!("'UART.{method}' se escribe {usage}"));
+            return self.set(e, Type::Error, None);
+        }
+        let arr = match &args[0].kind {
+            ExprKind::Name(n) if self.array_idx.contains_key(n) => Some(self.array_idx[n]),
+            _ => {
+                self.expr_unless_array(&args[0]);
+                self.d.error("PYP2188", args[0].span, format!("UART.{method} recibe el nombre de un arreglo uint8[N] (buf: uint8[16]): el texto vive en un arreglo de RAM declarado explicitamente"));
+                None
+            }
+        };
+        if want == 2 {
+            self.expect(&args[1], U8, Some("n, la cantidad de bytes, es un uint8"));
+        }
+        let Some(arr) = arr else { return self.set(e, Type::Error, None) };
+        self.uart_uses8.get_or_insert(e.span);
+        self.uart_needs.get_or_insert(e.span);
+        let op = if method == "read_line" { UartOp::ReadLine(arr) } else { UartOp::WriteBuf(arr) };
+        self.uart_calls.insert(e.id, UartCall { op });
+        self.set(e, ret, None)
+    }
+
+    /// Como `expr` pero sin quejarse por el nombre de un arreglo (el error propio ya lo explica).
+    fn expr_unless_array(&mut self, a: &Expr) {
+        if !matches!(&a.kind, ExprKind::Name(n) if self.array_idx.contains_key(n)) && !matches!(a.kind, ExprKind::Str(_) | ExprKind::FStr(_)) {
+            self.expr(a);
+        }
     }
 
     /// La tabla anonima de un literal de texto: dos literales iguales comparten los mismos bytes en flash.
