@@ -6,6 +6,7 @@ use pypic_frontend::{analyze, TargetProfile};
 use pypic_pic14::{disassemble, Image};
 
 mod project;
+mod workflow;
 
 const USAGE: &str = "uso:
   pypic check [archivo.py] [opciones]
@@ -14,6 +15,8 @@ const USAGE: &str = "uso:
   pypic asm <archivo.s> [-mcpu=16F887] [-Wl,-pNOMBRE=dir,...] [-o salida.hex] [--listing]
   pypic disasm <archivo.hex> [--pic-as] [-mcpu=16F887] [--devices-dir <dir>]
   pypic device validate <directorio-del-pack>
+  pypic init [carpeta] [--name N] [--device PIC16F887] [--clock DECLARACION]   crea pypic.toml y un main.py de partida
+  pypic project check [--project pypic.toml] [--target perfil] [--format text|json]   revisa el proyecto sin modificar nada
 
 opciones:
   --project <pypic.toml>  archivo de proyecto (por defecto se busca el mas cercano al programa; sin archivo, usa su 'main')
@@ -31,51 +34,18 @@ fn usage() -> ExitCode {
 }
 
 fn load_pack(dir: &str) -> Result<DevicePack, ExitCode> {
-    let pack = DevicePack::load(Path::new(dir)).map_err(|e| {
-        eprintln!("{e}");
-        ExitCode::from(2)
-    })?;
-    let errs = pack.validate();
-    if !errs.is_empty() {
-        eprintln!("{dir}: el Device Pack no es valido:");
-        for e in &errs {
-            eprintln!("  - {e}");
-        }
-        return Err(ExitCode::from(1));
-    }
-    Ok(pack)
+    workflow::load_pack_text(dir).map_err(|(m, c)| {
+        eprintln!("{m}");
+        ExitCode::from(c)
+    })
 }
 
 /// Busca el Device Pack de `name` (`PIC16F887` -> `<raiz>/pic16f887`) en `--devices-dir`, `$PYPIC_DEVICES` y `./devices`.
 fn find_pack(name: &str, extra: Option<&str>) -> Result<DevicePack, ExitCode> {
-    let mut roots: Vec<String> = Vec::new();
-    roots.extend(extra.map(String::from));
-    roots.extend(std::env::var("PYPIC_DEVICES").ok());
-    roots.push("devices".into());
-    for root in &roots {
-        let dir = Path::new(root).join(name.to_lowercase());
-        if dir.join("device.json").is_file() {
-            return load_pack(&dir.to_string_lossy());
-        }
-    }
-    let mut avail: Vec<String> = Vec::new();
-    for root in &roots {
-        if let Ok(rd) = std::fs::read_dir(root) {
-            for e in rd.flatten() {
-                if e.path().join("device.json").is_file() {
-                    avail.push(e.file_name().to_string_lossy().to_uppercase());
-                }
-            }
-        }
-    }
-    avail.sort();
-    avail.dedup();
-    eprintln!(
-        "dispositivo '{name}' desconocido: no hay Device Pack en {} (disponibles: {})",
-        roots.join(", "),
-        if avail.is_empty() { "ninguno".to_string() } else { avail.join(", ") }
-    );
-    Err(ExitCode::from(1))
+    workflow::locate_pack(name, extra).map_err(|(m, c)| {
+        eprintln!("{m}");
+        ExitCode::from(c)
+    })
 }
 
 /// `ANn` -> (puerto, bit) de los pines del encapsulado del pack.
@@ -170,6 +140,8 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("device") => device(&args[1..]),
+        Some("init") => workflow::init(&args[1..]),
+        Some("project") => workflow::project_cmd(&args[1..]),
         Some("disasm") => disasm(&args[1..]),
         Some("asm") => asm_cmd(&args[1..]),
         Some(c @ ("check" | "ir" | "build")) => compile(c, &args[1..]),

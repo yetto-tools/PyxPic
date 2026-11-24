@@ -554,3 +554,136 @@ fn the_shipped_project_example_builds_both_targets_and_creates_the_output_folder
     assert!(o.status.success() && text(&o).contains("Crystal 20 MHz (FOSC = HS)") && dir.join("build/parpadeo_cristal.hex").is_file(), "{}", text(&o));
     let _ = std::fs::remove_dir_all(dir.join("build"));
 }
+
+// ---- pypic init y pypic project check ---------------------------------------------------------------------------------------
+
+fn fresh(name: &str) -> PathBuf {
+    let d = std::env::temp_dir().join(format!("pypic-cli-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    d
+}
+
+#[test]
+fn init_creates_a_valid_project_that_checks_and_builds_with_no_further_edits() {
+    let dir = fresh("init-ok");
+    let o = pypic(&root(), &["init", dir.to_str().unwrap(), "--name", "termometro", "--devices-dir", &devices()]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(text(&o).contains("Proyecto creado") && text(&o).contains("PIC16F887") && text(&o).contains("Internal[4 * MHz]"), "{}", text(&o));
+    let toml = std::fs::read_to_string(dir.join("pypic.toml")).unwrap();
+    assert!(toml.contains("name = \"termometro\"") && toml.contains("[target.pic16f887]") && toml.contains("clock = \"Internal[4 * MHz]\"") && toml.contains("output = \"build/termometro.hex\""), "{toml}");
+    assert!(std::fs::read_to_string(dir.join("main.py")).unwrap().contains("termometro"));
+    // el proyecto recien creado se revisa y se compila sin tocar nada
+    let o = pypic(&dir, &["project", "check"]);
+    assert!(o.status.success() && text(&o).contains("perfil pic16f887: ok") && text(&o).contains("Internal 4 MHz"), "{}", text(&o));
+    let o = pypic(&dir, &["build"]);
+    assert!(o.status.success() && dir.join("build/termometro.hex").is_file(), "{}", text(&o));
+}
+
+#[test]
+fn init_takes_a_device_alias_and_a_clock_and_validates_both_before_writing() {
+    let dir = fresh("init-opts");
+    let o = pypic(&root(), &["init", dir.to_str().unwrap(), "--device", "16f887", "--clock", "Crystal[20 * MHz]", "--devices-dir", &devices()]);
+    assert!(o.status.success(), "{}", text(&o));
+    let toml = std::fs::read_to_string(dir.join("pypic.toml")).unwrap();
+    assert!(toml.contains("device = \"PIC16F887\"") && toml.contains("clock = \"Crystal[20 * MHz]\""), "{toml}");
+    let o = pypic(&dir, &["project", "check"]);
+    assert!(o.status.success() && text(&o).contains("Crystal 20 MHz (FOSC = HS)"), "{}", text(&o));
+    // un dispositivo desconocido o un reloj imposible no crean nada
+    for (extra, frag) in [(&["--device", "PIC99X999"][..], "desconocido"), (&["--clock", "Internal[20 * MHz]"][..], "PYP2194")] {
+        let d = fresh("init-bad");
+        let mut args = vec!["init", d.to_str().unwrap(), "--devices-dir"];
+        let dev = devices();
+        args.push(&dev);
+        args.extend_from_slice(extra);
+        let o = pypic(&root(), &args);
+        assert!(!o.status.success() && text(&o).contains(frag), "{}", text(&o));
+        assert!(!d.join("pypic.toml").exists() && !d.join("main.py").exists(), "no se crea nada si algo no es valido");
+    }
+}
+
+#[test]
+fn init_never_overwrites_an_existing_file() {
+    let dir = tmp("init-exists");
+    std::fs::write(dir.join("main.py"), "mi programa\n").unwrap();
+    let o = pypic(&root(), &["init", dir.to_str().unwrap(), "--devices-dir", &devices()]);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    assert!(text(&o).contains("ya existe") && text(&o).contains("main.py") && text(&o).contains("no se sobrescribe nada"), "{}", text(&o));
+    assert_eq!(std::fs::read_to_string(dir.join("main.py")).unwrap(), "mi programa\n");
+    assert!(!dir.join("pypic.toml").exists(), "ni siquiera se crea el otro archivo");
+}
+
+#[test]
+fn project_check_reports_every_problem_per_target_and_modifies_nothing() {
+    let toml = "[project]\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n\n[target.bien]\ndevice = \"PIC16F887\"\nclock = \"Crystal[20 * MHz]\"\nconfig = { WDTE = \"ON\" }\n\n[target.mal]\ndevice = \"PIC16F886\"\nclock = \"Internal[20 * MHz]\"\nconfig = { WDTE = \"QUIZAS\", NOEXISTE = 1 }\n";
+    let dir = project_dir("check-problems", toml, &format!("from pypic.device import PIC16F887\n{BARE_MAIN}"));
+    let before = (std::fs::read_to_string(dir.join("pypic.toml")).unwrap(), std::fs::read_to_string(dir.join("main.py")).unwrap());
+    let o = pypic(&dir, &["project", "check"]);
+    let t = text(&o);
+    assert_eq!(o.status.code(), Some(1), "{t}");
+    assert!(t.contains("perfil bien: ok") && t.contains("perfil mal: CON ERRORES"), "{t}");
+    assert!(t.contains("el perfil 'mal' pide PIC16F886") && t.contains("PYP2194") && t.contains("WDTE") && t.contains("NOEXISTE"), "{t}");
+    // un solo perfil
+    let o = pypic(&dir, &["project", "check", "--target", "bien"]);
+    assert!(o.status.success() && !text(&o).contains("perfil mal"), "{}", text(&o));
+    // no se escribio nada: ni el proyecto, ni el programa, ni un .hex
+    assert_eq!((std::fs::read_to_string(dir.join("pypic.toml")).unwrap(), std::fs::read_to_string(dir.join("main.py")).unwrap()), before);
+    assert!(!dir.join("main.hex").exists() && !dir.join("build").exists());
+}
+
+#[test]
+fn project_check_sees_missing_files_source_errors_and_warnings() {
+    let toml = "[project]\nmain = \"nada.py\"\ndevices_dir = \"@DEVICES@\"\n[target.a]\ndevice = \"PIC16F887\"\n";
+    let dir = project_dir("check-nofile", toml, "def main() -> None:\n    pass\n");
+    let o = pypic(&dir, &["project", "check"]);
+    assert!(!o.status.success() && text(&o).contains("no se pudo leer el programa") && text(&o).contains("nada.py"), "{}", text(&o));
+    // un error del propio programa sale con archivo, linea y codigo
+    let toml = "[project]\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n[target.a]\ndevice = \"PIC16F887\"\n";
+    let dir = project_dir("check-src", toml, "def main() -> None:\n    x: uint8 = 300\n");
+    let o = pypic(&dir, &["project", "check"]);
+    assert!(!o.status.success() && text(&o).contains("main.py:2:") && text(&o).contains("PYP2"), "{}", text(&o));
+    // sin dispositivo en ningun lado
+    let dir = project_dir("check-nodev", "[project]\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n[target.a]\nclock = \"Internal[4 * MHz]\"\n", "def main() -> None:\n    pass\n");
+    let o = pypic(&dir, &["project", "check"]);
+    assert!(!o.status.success() && text(&o).contains("falta el dispositivo"), "{}", text(&o));
+}
+
+#[test]
+fn project_check_json_is_versioned_and_machine_readable() {
+    let toml = "[project]\nname = \"p\"\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n[target.ok]\ndevice = \"PIC16F887\"\nclock = \"Crystal[8 * MHz]\"\nconfig = { WDTE = \"ON\" }\n[target.mal]\ndevice = \"PIC16F887\"\nclock = \"Crystal[24 * MHz]\"\n";
+    let dir = project_dir("check-json", toml, BARE_MAIN);
+    let o = pypic(&dir, &["project", "check", "--format", "json"]);
+    assert_eq!(o.status.code(), Some(1));
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap_or_else(|e| panic!("{e}: {}", text(&o)));
+    assert_eq!(v["version"], 1);
+    assert_eq!(v["name"], "p");
+    assert_eq!(v["ok"], false);
+    let targets = v["targets"].as_array().unwrap();
+    assert_eq!(targets.len(), 2);
+    let ok = targets.iter().find(|t| t["name"] == "ok").unwrap();
+    assert_eq!((ok["status"].as_str(), ok["device"].as_str(), ok["clock"]["declaration"].as_str(), ok["config"]["WDTE"].as_str()), (Some("ok"), Some("PIC16F887"), Some("Crystal[8 * MHz]"), Some("ON")));
+    assert!(ok["clock"]["description"].as_str().unwrap().contains("FOSC = HS") && ok["errors"].as_array().unwrap().is_empty());
+    let mal = targets.iter().find(|t| t["name"] == "mal").unwrap();
+    assert_eq!(mal["status"], "error");
+    assert!(mal["errors"][0].as_str().unwrap().contains("PYP2194"), "{mal}");
+    // todo ok -> salida 0 y ok = true
+    let toml = "[project]\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n[target.a]\ndevice = \"PIC16F887\"\n";
+    let dir = project_dir("check-json-ok", toml, BARE_MAIN);
+    let o = pypic(&dir, &["project", "check", "--format", "json"]);
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert!(o.status.success() && v["ok"] == true && v["targets"][0]["clock"].is_null(), "{}", text(&o));
+}
+
+#[test]
+fn project_command_errors_are_clear() {
+    let o = pypic(&root(), &["project", "borrar"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(text(&o).contains("no existe todavia") && text(&o).contains("check"), "{}", text(&o));
+    let dir = fresh("check-none");
+    std::fs::create_dir_all(&dir).unwrap();
+    let o = pypic(&dir, &["project", "check"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(text(&o).contains("no hay un pypic.toml") && text(&o).contains("pypic init"), "{}", text(&o));
+    let o = pypic(&root(), &["project", "check", "--format", "yaml"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(text(&o).contains("'text' o 'json'"), "{}", text(&o));
+}

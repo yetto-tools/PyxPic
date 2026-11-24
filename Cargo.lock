@@ -53,6 +53,7 @@ dependencies = [
  "pypic-frontend",
  "pypic-ir",
  "pypic-pic14",
+ "serde_json",
  "toml",
 ]
 

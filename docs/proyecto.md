@@ -30,6 +30,32 @@ pypic check | pypic ir            # también leen el proyecto
 
 Se busca el `pypic.toml` **más cercano** al programa (en su carpeta o en las de arriba) o a la carpeta actual si no se da programa. Las rutas del archivo son relativas **a él**. Un ejemplo completo está en `examples/proyecto/`.
 
+## Crear y revisar: `pypic init` y `pypic project check`
+
+```
+pypic init [carpeta] [--name NOMBRE] [--device PIC16F887] [--clock "Crystal[20 * MHz]"] [--devices-dir DIR]
+pypic project check [--project pypic.toml] [--target perfil] [--format text|json]
+```
+
+**`pypic init`** crea `pypic.toml` y un `main.py` de partida (parpadeo de RB0) en la carpeta (por defecto la actual). El dispositivo por defecto es `PIC16F887` (acepta `16f887` y `PIC16F887`) y el reloj, el que el dispositivo tiene tras el reset (`Internal[4 * MHz]`); con `--devices-dir` el proyecto recuerda dónde están los Device Packs (`devices_dir`). **Antes de escribir nada** comprueba que el dispositivo existe, que el reloj es válido y que el programa de partida es válido para ese destino: si algo falla, **no se crea nada**. **Nunca sobrescribe**: si ya existe `pypic.toml` o `main.py`, termina con error diciendo cuáles y no toca ni el otro archivo.
+
+**`pypic project check`** revisa el proyecto **sin modificar ningún archivo** (ni siquiera crea la carpeta de salida). Para cada perfil (o solo `--target`) comprueba: el dispositivo y su Device Pack (y que no contradiga al del programa), el reloj con las reglas de `docs/sdk-reloj.md`, cada palabra de configuración por nombre y valor, que el programa exista y su análisis completo para ese destino (errores y avisos con archivo, línea y código). Sale con **0** si todos los perfiles están bien, **1** si alguno tiene errores y **2** si no encuentra o no puede leer el proyecto.
+
+El formato `--format json` es **versionado** (`"version": 1`) para herramientas como la extensión de VS Code:
+
+```json
+{ "version": 1, "file": "...pypic.toml", "name": "p", "main": "...main.py", "devices_dir": "...", "default_target": null,
+  "ok": false,
+  "targets": [
+    { "name": "ok", "status": "ok", "device": "PIC16F887", "config": { "WDTE": "ON" }, "output": null,
+      "clock": { "declaration": "Crystal[8 * MHz]", "description": "Crystal 8 MHz (FOSC = HS)" },
+      "errors": [], "warnings": [] },
+    { "name": "mal", "status": "error", "device": "PIC16F887", "clock": { "declaration": "Crystal[24 * MHz]", "description": null },
+      "config": {}, "output": null, "errors": ["[target.mal] clock = \"Crystal[24 * MHz]\": ... PYP2194 ..."], "warnings": [] } ] }
+```
+
+Los Device Packs se buscan en `devices_dir` del proyecto, en `$PYPIC_DEVICES` y en `./devices`: un proyecto creado **fuera** de la carpeta del compilador necesita `--devices-dir` (o la variable de entorno) para encontrarlos.
+
 ## Quién manda
 
 1. **La línea de comandos** manda sobre el perfil: `--config WDTE=OFF` gana al `config = { WDTE = "ON" }` del perfil (sin "se indica dos veces"), y `-o` gana a `output`.
@@ -58,7 +84,7 @@ Los errores de lectura salen con código de salida 2; los de contenido (disposit
 
 ## Lo que no está (todavía)
 
-- **`pypic init`, `pypic project check/set/migrate`** y el asistente de la extensión (ver `docs/spec/04_IDE_WIZARD.md`): el archivo ya es lo que esas órdenes escribirán.
+- **`pypic project set`** (reconfigurar un perfil: reloj, dispositivo, configuración), **`pypic project migrate --dry-run`** y las pantallas del asistente de la extensión (ver `docs/spec/04_IDE_WIZARD.md`): `init` y `project check` ya son la base sobre la que se apoyarán.
 - **`targets/*.toml` separados, lockfile, varios programas por proyecto, perfiles `Debug`/`Release`** y una opción global por usuario.
 - **`pypic migrate --dry-run`** para comparar el programa contra otro MCU.
 - **Compilar contra todos los perfiles** de una vez (`--target all`).
@@ -66,4 +92,4 @@ Los errores de lectura salen con código de salida 2; los de contenido (disposit
 
 ## Verificación
 
-`crates/pypic-cli/src/project.rs` (pruebas unitarias del análisis: un proyecto completo con rutas relativas, los errores con sus claves válidas y la elección de perfil) y `crates/pypic-cli/tests/cli.rs`: un proyecto que compila **sin argumentos** con dispositivo, reloj (`FOSC = HS`, 100 ms = 500 000 ciclos a 20 MHz), configuración (`WDTE`) y salida tomados del perfil y sin `from pypic.device import ...` en el fuente; el conflicto de dispositivo y el aviso de reloj; `--target`, `default_target` y `--config` sobre el perfil; los errores del archivo; y el ejemplo `examples/proyecto/` con sus dos destinos. **No probado en hardware.**
+`crates/pypic-cli/tests/cli.rs` prueba también `init` y `project check`: un proyecto recién creado que se revisa y compila sin editar nada, el alias del dispositivo y el reloj, que no se crea nada si algo no es válido ni se sobrescribe un archivo existente, todos los problemas por perfil (dispositivo contrario, reloj imposible, configuración inexistente o con valor inválido, programa ausente o con errores) sin modificar archivos, y el JSON versionado. `crates/pypic-cli/src/project.rs` (pruebas unitarias del análisis: un proyecto completo con rutas relativas, los errores con sus claves válidas y la elección de perfil) y `crates/pypic-cli/tests/cli.rs`: un proyecto que compila **sin argumentos** con dispositivo, reloj (`FOSC = HS`, 100 ms = 500 000 ciclos a 20 MHz), configuración (`WDTE`) y salida tomados del perfil y sin `from pypic.device import ...` en el fuente; el conflicto de dispositivo y el aviso de reloj; `--target`, `default_target` y `--config` sobre el perfil; los errores del archivo; y el ejemplo `examples/proyecto/` con sus dos destinos. **No probado en hardware.**
