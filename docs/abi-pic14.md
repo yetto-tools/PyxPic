@@ -86,5 +86,6 @@ Multiplicación, división, módulo y desplazamientos por variable son rutinas n
 | Sin recursión (`PYP2013`) | ✅ frontend |
 | Ninguna función compartida entre `main` e ISR (`PYP2060`) | ✅ frontend |
 | Profundidad de pila de retorno (`PYP2061`) | ✅ frontend (solo llamadas del usuario) |
+| Codificación/decodificación de las 35 instrucciones (`crates/pypic-pic14`) | ✅ verificada contra la tabla 15-2 (p.227), exhaustiva sobre las 16 384 palabras |
 | Asignación de memoria y overlay, convención de llamada, banco 0, PCLATH, prólogo/epílogo de ISR, arranque, rutinas de runtime | ⏳ backend (#14, #15, #16 y los issues de seguimiento) |
 | Re-comprobación de pila con rutinas de runtime | ⏳ backend |

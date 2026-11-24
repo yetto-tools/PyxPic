@@ -35,6 +35,7 @@ crates/
   pypic-frontend/   lexer, parser, tipos y constantes (src/, tests/)
   pypic-ir/         IR tipada, lowering, verificador, intérprete de referencia (src/, tests/)
   pypic-device/     Device Packs: esquema, cargador y validador (src/, tests/)
+  pypic-pic14/      backend PIC14: instrucciones, codificador/decodificador, desensamblador (src/, tests/)
   pypic-cli/        binario `pypic` (check, ir, device validate)
 devices/
   pic16f887/        Device Pack verificado contra DS40001291H

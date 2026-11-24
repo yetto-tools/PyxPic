@@ -1,1 +1,6 @@
 /target
+
+# skills de agente instalados localmente (no se versionan)
+.claude/skills/
+.agents/
+skills-lock.json
