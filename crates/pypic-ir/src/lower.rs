@@ -7,6 +7,7 @@ use pypic_frontend::Program;
 
 use crate::ir::{Block, BlockId, Inst, Operand, Place, Terminator, UnaryOp};
 use crate::ir::{AsmBlock, Function, Global, Local, Module, Pin, RegOp, TimerOp, Type};
+use pypic_frontend::BitsOp;
 
 pub fn lower(prog: &Program) -> Module {
     let mut m = Module::default();
@@ -189,6 +190,19 @@ impl<'a> FnLower<'a> {
                 self.cur = join;
             }
             ExprKind::Call { func, args, .. } => {
+                if self.prog.bits_calls.contains_key(&e.id) {
+                    let op = self.prog.bits_calls[&e.id];
+                    // una lectura sin destino no tiene efecto, salvo las rotaciones, que mueven el acarreo
+                    if op.returns_value() && dst.is_none() && !matches!(op, BitsOp::RolC | BitsOp::RorC) {
+                        return;
+                    }
+                    let src = match op {
+                        BitsOp::ClearCarry | BitsOp::SetCarry | BitsOp::Carry => None,
+                        _ => Some(self.value(&args[0])),
+                    };
+                    self.emit(Inst::Bits { op, dst: if op.returns_value() { dst } else { None }, src });
+                    return;
+                }
                 if let (Some(unit), false) = (pypic_frontend::time_unit(func), self.fidx.contains_key(func)) {
                     let amount = self.value(&args[0]);
                     self.emit(Inst::Delay { unit, amount });

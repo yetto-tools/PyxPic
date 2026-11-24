@@ -79,6 +79,11 @@ pub fn print(m: &Module) -> String {
                         let d = dst.map(|d| format!("{} = ", place(m, f, d))).unwrap_or_default();
                         format!("{d}timer {} {:?}{a}", call.timer.name(), call.op)
                     }
+                    Inst::Bits { op, dst, src } => {
+                        let a = src.as_ref().map(|s| format!(" {}", operand(m, f, s))).unwrap_or_default();
+                        let d = dst.map(|d| format!("{} = ", place(m, f, d))).unwrap_or_default();
+                        format!("{d}bits {op:?}{a}")
+                    }
                     Inst::Reg { call, dst, arg } => {
                         let a = arg.as_ref().map(|a| format!(" {}", operand(m, f, a))).unwrap_or_default();
                         let d = dst.map(|d| format!("{} = ", place(m, f, d))).unwrap_or_default();

@@ -33,6 +33,8 @@ pub struct Machine<'m> {
     pub delays: Vec<(DelayUnit, i128)>,
     /// Registros tocados por el programa, por direccion de 9 bits (0 al empezar; el interprete no modela efectos de hardware).
     pub regs: std::collections::BTreeMap<u16, u8>,
+    /// La bandera C que modelan los intrinsecos de `pypic.bits`.
+    pub carry: bool,
 }
 
 struct Frame {
@@ -54,6 +56,7 @@ impl<'m> Machine<'m> {
             pin_events: Vec::new(),
             delays: Vec::new(),
             regs: Default::default(),
+            carry: false,
         }
     }
 
@@ -208,6 +211,31 @@ impl<'m> Machine<'m> {
             Inst::Cast { dst, src } => {
                 let v = self.read(fr, src);
                 self.write(f, fr, *dst, v);
+            }
+            Inst::Bits { op, dst, src } => {
+                let v = src.as_ref().map(|s| self.read(fr, s));
+                match op {
+                    BitsOp::Swap => self.write(f, fr, dst.unwrap(), ((v.unwrap() as u8).rotate_left(4)) as i128),
+                    BitsOp::RolC | BitsOp::RorC => {
+                        let b = v.unwrap() as u8;
+                        let (new, out) = if *op == BitsOp::RolC { ((b << 1) | self.carry as u8, b >> 7 & 1) } else { ((b >> 1) | (self.carry as u8) << 7, b & 1) };
+                        self.carry = out == 1;
+                        if let Some(d) = dst {
+                            self.write(f, fr, *d, new as i128);
+                        } else if let Some(Operand::Place(p)) = src {
+                            self.write(f, fr, *p, new as i128);
+                        }
+                    }
+                    BitsOp::ClearCarry => self.carry = false,
+                    BitsOp::SetCarry => self.carry = true,
+                    BitsOp::Carry => self.write(f, fr, dst.unwrap(), self.carry as i128),
+                    BitsOp::BitSet(n) | BitsOp::BitClear(n) => {
+                        let Some(Operand::Place(p)) = src else { unreachable!() };
+                        let cur = v.unwrap();
+                        self.write(f, fr, *p, if matches!(op, BitsOp::BitSet(_)) { cur | (1i128 << n) } else { cur & !(1i128 << n) });
+                    }
+                    BitsOp::BitTest(n) => self.write(f, fr, dst.unwrap(), (v.unwrap() >> n & 1) as i128),
+                }
             }
             Inst::Reg { call, dst, arg } => {
                 let cur = self.regs.get(&call.addr).copied().unwrap_or(0);

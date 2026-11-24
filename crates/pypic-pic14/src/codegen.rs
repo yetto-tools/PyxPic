@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
-use pypic_ir::ir::{BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, RegCall, RegOp, Terminator, TimerCall, TimerId, TimerOp, TimerStart, Type, UnaryOp};
+use pypic_ir::ir::{BitsOp, BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, RegCall, RegOp, Terminator, TimerCall, TimerId, TimerOp, TimerStart, Type, UnaryOp};
 use pypic_frontend::timer::{GateSource, TimerSource};
 
 use crate::asm::{assemble_fragment, AsmError, FragItem};
@@ -841,6 +841,7 @@ impl<'a> Gen<'a> {
             I::Delay { unit, amount } => self.delay(*unit, amount),
             I::Timer { call, dst, arg } => self.timer(call, *dst, arg.as_ref()),
             I::Reg { call, dst, arg } => self.reg(call, *dst, arg.as_ref()),
+            I::Bits { op, dst, src } => self.bits(*op, *dst, src.as_ref()),
             I::PinCfg { pin, output } => self.pin_cfg(*pin, *output),
             I::PinSet { pin, value } => self.pin_set(*pin, value),
             I::PinToggle { pin } => {
@@ -1213,6 +1214,61 @@ impl<'a> Gen<'a> {
     fn bit_op(&mut self, name: &str, set: bool) -> Result<(), CodegenError> {
         let (addr, b) = self.bit_loc(name)?;
         self.banked(addr, |g, f| g.asm.i(if set { Bsf(f, b) } else { Bcf(f, b) }));
+        Ok(())
+    }
+
+    /// Intrinsecos de `pypic.bits`: cada uno es una instruccion (mas guardar el resultado).
+    fn bits(&mut self, op: BitsOp, dst: Option<Place>, src: Option<&Operand>) -> Result<(), CodegenError> {
+        match op {
+            BitsOp::ClearCarry => self.asm.i(Bcf(STATUS, BIT_C)),
+            BitsOp::SetCarry => self.asm.i(Bsf(STATUS, BIT_C)),
+            BitsOp::Carry => {
+                let d = self.regs(dst.expect("Carry lleva destino"))?[0];
+                self.asm.i(Clrf(d));
+                self.asm.i(Btfsc(STATUS, BIT_C));
+                self.asm.i(Incf(d, F));
+            }
+            BitsOp::Swap => {
+                let d = self.regs(dst.expect("Swap lleva destino"))?[0];
+                match self.bytes(src.expect("Swap lleva valor"))?[0] {
+                    B::Imm(k) => self.asm.i(Movlw(k.rotate_left(4))),
+                    B::Reg(r) if r == d => {
+                        self.asm.i(Swapf(r, F));
+                        return Ok(());
+                    }
+                    B::Reg(r) => self.asm.i(Swapf(r, W)),
+                }
+                self.st(d);
+            }
+            BitsOp::RolC | BitsOp::RorC => {
+                let B::Reg(r) = self.bytes(src.expect("la rotacion lleva una variable"))?[0] else { unreachable!("el verificador exige una variable") };
+                let rot = |dest| if op == BitsOp::RolC { Rlf(r, dest) } else { Rrf(r, dest) };
+                match dst.map(|d| self.regs(d)).transpose()? {
+                    // `x = rol_c(x)` o `rol_c(x)` suelto: se rota en su sitio, una sola instruccion
+                    None => self.asm.i(rot(F)),
+                    Some(d) if d[0] == r => self.asm.i(rot(F)),
+                    Some(d) => {
+                        self.asm.i(rot(W));
+                        self.st(d[0]);
+                    }
+                }
+            }
+            BitsOp::BitSet(n) | BitsOp::BitClear(n) | BitsOp::BitTest(n) => {
+                let regs = self.bytes(src.expect("el bit lleva una variable"))?;
+                let B::Reg(r) = regs[(n / 8) as usize] else { unreachable!("el verificador exige una variable") };
+                let bit = n % 8;
+                match op {
+                    BitsOp::BitSet(_) => self.asm.i(Bsf(r, bit)),
+                    BitsOp::BitClear(_) => self.asm.i(Bcf(r, bit)),
+                    _ => {
+                        let d = self.regs(dst.expect("BitTest lleva destino"))?[0];
+                        self.asm.i(Clrf(d));
+                        self.asm.i(Btfsc(r, bit));
+                        self.asm.i(Incf(d, F));
+                    }
+                }
+            }
+        }
         Ok(())
     }
 

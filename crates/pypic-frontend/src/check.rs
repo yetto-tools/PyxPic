@@ -9,6 +9,7 @@
 //!  * Las condiciones deben ser bool (sin "truthiness").
 //!  * Sin recursion: la memoria es estatica y la pila de hardware es limitada.
 
+use crate::bits::{self, BitsOp};
 use crate::regs::{RegCall, RegOp, BANK_BITS, WRITE_PROTECTED};
 use crate::target::RegInfo;
 use crate::timer::{self, Gate, GateSource, TimerCall, TimerId, TimerOp, TimerSource, TimerStart};
@@ -133,6 +134,8 @@ pub struct Program {
     pub timer_calls: BTreeMap<u32, TimerCall>,
     /// Llamadas a metodos de `pypic.regs`, por id de expresion.
     pub reg_calls: BTreeMap<u32, RegCall>,
+    /// Llamadas a `pypic.bits`, por id de expresion.
+    pub bits_calls: BTreeMap<u32, BitsOp>,
 }
 
 pub struct Checked {
@@ -145,6 +148,7 @@ pub struct Checked {
     pub clock_defaulted: bool,
     pub timer_calls: BTreeMap<u32, TimerCall>,
     pub reg_calls: BTreeMap<u32, RegCall>,
+    pub bits_calls: BTreeMap<u32, BitsOp>,
 }
 
 pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Checked {
@@ -178,9 +182,15 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         timer_pins: Vec::new(),
         reg_names: HashMap::new(),
         reg_calls: BTreeMap::new(),
+        bits_fns: HashSet::new(),
+        bits_calls: BTreeMap::new(),
+        carry_ok: false,
+        carry_prev: false,
+        carry_fn: None,
+        stmt_top: None,
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -245,6 +255,15 @@ struct Checker<'a> {
     /// Registros importados de `pypic.regs`.
     reg_names: HashMap<String, RegInfo>,
     reg_calls: BTreeMap<u32, RegCall>,
+    /// Funciones importadas de `pypic.bits` y sus llamadas por id de expresion.
+    bits_fns: HashSet<String>,
+    bits_calls: BTreeMap<u32, BitsOp>,
+    /// El acarreo lo dejo definido la sentencia que acaba de terminar / la anterior a la que se comprueba.
+    carry_ok: bool,
+    carry_prev: bool,
+    carry_fn: Option<usize>,
+    /// Expresion completa de la sentencia en curso (asignacion, declaracion o expresion).
+    stmt_top: Option<u32>,
 }
 
 struct TimerEvery {
@@ -362,6 +381,16 @@ impl<'a> Checker<'a> {
                     );
                 } else {
                     self.d.error("PYP1002", n.span, format!("'pypic.system.time' no exporta '{}' (exporta: delay_cycles, delay_us, pause, wait; reservadas: nap, sleep)", n.name));
+                }
+            }
+            return;
+        }
+        if module == "pypic.bits" {
+            for n in names {
+                if bits::FUNCTIONS.contains(&n.name.as_str()) {
+                    self.bits_fns.insert(n.name.clone());
+                } else {
+                    self.d.error("PYP2140", n.span, format!("'pypic.bits' no exporta '{}' (exporta: {})", n.name, bits::FUNCTIONS.join(", ")));
                 }
             }
             return;
@@ -1192,7 +1221,7 @@ impl<'a> Checker<'a> {
             self.d.error("PYP2002", f.name.span, format!("funcion '{}' ya definida", f.name.name));
             return;
         }
-        if self.pin_names.contains_key(&f.name.name) || self.time_fns.contains_key(&f.name.name) || self.timer_names.contains_key(&f.name.name) || self.reg_names.contains_key(&f.name.name) || self.timer_consts.contains(&f.name.name) {
+        if self.pin_names.contains_key(&f.name.name) || self.time_fns.contains_key(&f.name.name) || self.bits_fns.contains(&f.name.name) || self.timer_names.contains_key(&f.name.name) || self.reg_names.contains_key(&f.name.name) || self.timer_consts.contains(&f.name.name) {
             self.d.error("PYP2009", f.name.span, format!("'{}' ya esta declarado (es un pin o una funcion del SDK importados)", f.name.name));
             return;
         }
@@ -1283,7 +1312,7 @@ impl<'a> Checker<'a> {
         let exists = if is_global { self.globals.contains_key(name) } else { self.locals.contains_key(name) };
         if !is_global && self.globals.contains_key(name) {
             self.d.error("PYP2008", v.name.span, format!("'{name}' oculta una variable global del mismo nombre"));
-        } else if exists || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.time_fns.contains_key(name) || self.timer_names.contains_key(name) || self.reg_names.contains_key(name) || self.timer_consts.contains(name) {
+        } else if exists || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.time_fns.contains_key(name) || self.bits_fns.contains(name) || self.timer_names.contains_key(name) || self.reg_names.contains_key(name) || self.timer_consts.contains(name) {
             self.d.error("PYP2009", v.name.span, format!("'{name}' ya esta declarado"));
         }
         let mut konst = None;
@@ -1481,7 +1510,26 @@ impl<'a> Checker<'a> {
         self.locals.get(name).or_else(|| self.globals.get(name)).cloned()
     }
 
+    /// Cada sentencia reinicia el estado del acarreo: solo lo deja definido la que acaba de ejecutar
+    /// `rol_c`, `ror_c`, `clear_carry` o `set_carry` como expresion completa (ver `docs/sdk-bits.md`).
     fn stmt(&mut self, s: &Stmt) {
+        let same_fn = self.carry_fn == self.cur;
+        self.carry_fn = self.cur;
+        self.carry_prev = std::mem::replace(&mut self.carry_ok, false) && same_fn;
+        self.stmt_top = match &s.kind {
+            StmtKind::Assign { value, .. } => Some(value.id),
+            StmtKind::Decl(v) => v.value.as_ref().map(|e| e.id),
+            StmtKind::Expr(e) => Some(e.id),
+            _ => None,
+        };
+        let top = self.stmt_top;
+        self.stmt_inner(s);
+        if top.and_then(|id| self.bits_calls.get(&id)).is_some_and(|c| c.defines_carry()) {
+            self.carry_ok = true;
+        }
+    }
+
+    fn stmt_inner(&mut self, s: &Stmt) {
         match &s.kind {
             StmtKind::Pass => {}
             StmtKind::Decl(v) => self.declare_variable(v, false),
@@ -1898,7 +1946,117 @@ impl<'a> Checker<'a> {
         self.set(e, Type::Bool, None)
     }
 
+    /// `pypic.bits`: `swap`, `rol_c`, `ror_c`, `clear_carry`, `set_carry`, `carry`, `bit_set`, `bit_clear`, `bit_test`.
+    fn bits_call(&mut self, e: &Expr, func: &str, args: &[Expr]) -> Type {
+        let want = match func {
+            "swap" | "rol_c" | "ror_c" => 1,
+            "bit_set" | "bit_clear" | "bit_test" => 2,
+            _ => 0,
+        };
+        if args.len() != want {
+            self.d.error("PYP2141", e.span, format!("'{func}' recibe {want} argumento(s), recibio {}", args.len()));
+            for a in args {
+                self.expr(a);
+            }
+            return self.set(e, Type::Error, None);
+        }
+        // un argumento que debe ser una variable (no una expresion): el resultado se lee o se modifica en su sitio
+        let var = |this: &mut Self, a: &Expr, modifies: bool| -> Option<Type> {
+            let ExprKind::Name(n) = &a.kind else {
+                this.expr(a);
+                this.d.error("PYP2143", a.span, format!("el argumento de '{func}' debe ser una variable, no una expresion: se lee o se modifica en su sitio"));
+                return None;
+            };
+            let Some(sym) = this.lookup(n) else {
+                this.expr(a);
+                return None;
+            };
+            if sym.is_final || sym.konst.is_some() {
+                this.d.error("PYP2143", a.span, format!("'{n}' es una constante: '{func}' necesita una variable"));
+                return None;
+            }
+            if modifies && sym.kind == SymKind::Global && !this.global_decls.contains(n) {
+                this.d.error("PYP2023", a.span, format!("para modificar la global '{n}' declara 'global {n}' en la funcion"));
+            }
+            this.set(a, sym.ty, None);
+            Some(sym.ty)
+        };
+        let top = self.stmt_top == Some(e.id);
+        let op = match func {
+            "swap" => {
+                self.expect(&args[0], U8, Some("swap recibe un u8"));
+                self.bits_calls.insert(e.id, BitsOp::Swap);
+                return self.set(e, U8, None);
+            }
+            "rol_c" | "ror_c" => {
+                let ty = var(self, &args[0], false);
+                if ty.is_some_and(|t| t != U8) {
+                    self.d.error("PYP2141", args[0].span, format!("{func} rota un u8 ({}): para mas ancho, encadena una rotacion por byte", ty.unwrap()));
+                }
+                if !top {
+                    self.d.error("PYP2142", e.span, format!("{func} debe ser la expresion completa de la sentencia ('y = {func}(x)'): el acarreo se pierde con cualquier otra operacion"));
+                }
+                if !self.carry_prev {
+                    self.d.error("PYP2142", e.span, format!("{func} usa el acarreo de entrada y la sentencia anterior no lo deja definido: ponlo con clear_carry()/set_carry() o encadena otra rotacion justo antes"));
+                }
+                if func == "rol_c" { BitsOp::RolC } else { BitsOp::RorC }
+            }
+            "clear_carry" | "set_carry" => {
+                if !top {
+                    self.d.error("PYP2142", e.span, format!("{func}() se escribe como sentencia propia"));
+                }
+                if func == "clear_carry" { BitsOp::ClearCarry } else { BitsOp::SetCarry }
+            }
+            "carry" => {
+                if !top {
+                    self.d.error("PYP2142", e.span, "carry() debe ser la expresion completa de la sentencia ('c = carry()')");
+                }
+                if !self.carry_prev {
+                    self.d.error("PYP2142", e.span, "carry() lee la bandera C justo despues de rol_c, ror_c, clear_carry o set_carry: la sentencia anterior no la deja definida");
+                }
+                self.bits_calls.insert(e.id, BitsOp::Carry);
+                return self.set(e, Type::Bool, None);
+            }
+            _ => {
+                let modifies = func != "bit_test";
+                let ty = var(self, &args[0], modifies);
+                let bit = self.expr(&args[1]);
+                let k = self.konst(&args[1]);
+                let bits = ty.filter(|t| t.is_int()).map(|t| t.bits());
+                if ty.is_some() && bits.is_none() {
+                    self.d.error("PYP2141", args[0].span, format!("{func} trabaja sobre un entero, no sobre {}", ty.unwrap()));
+                } else if bits.is_some_and(|b| b > 16) {
+                    self.d.error("PYP2141", args[0].span, format!("{func} trabaja sobre enteros de hasta 16 bits"));
+                }
+                let op_of = |n: u8| match func {
+                    "bit_set" => BitsOp::BitSet(n),
+                    "bit_clear" => BitsOp::BitClear(n),
+                    _ => BitsOp::BitTest(n),
+                };
+                match (bit, k) {
+                    (Type::Error, _) => {}
+                    (_, Some(n)) if bits.is_some_and(|b| (0..b as i128).contains(&n)) => {
+                        self.set(&args[1], U8, k);
+                        self.bits_calls.insert(e.id, op_of(n as u8));
+                    }
+                    (_, Some(n)) if bits.is_some() => self.d.error("PYP2144", args[1].span, format!("el bit {n} no existe en un entero de {} bits (0..={})", bits.unwrap(), bits.unwrap() - 1)),
+                    (_, None) => self.d.error("PYP2144", args[1].span, format!("el numero de bit de {func} debe ser una constante: se codifica en la instruccion")),
+                    _ => {}
+                }
+                return if func == "bit_test" { self.set(e, Type::Bool, None) } else { self.set(e, Type::Void, None) };
+            }
+        };
+        self.bits_calls.insert(e.id, op);
+        match op {
+            BitsOp::RolC | BitsOp::RorC => self.set(e, U8, None),
+            _ => self.set(e, Type::Void, None),
+        }
+    }
+
     fn call(&mut self, e: &Expr, func: &str, args: &[Expr]) -> Type {
+        if self.bits_fns.contains(func) {
+            return self.bits_call(e, func, args);
+        }
         if let Some(&unit) = self.time_fns.get(func) {
             return self.time_call(e, func, unit, args);
         }
@@ -1993,7 +2151,7 @@ const PERIPH_MODULES: &[&str] = &["gpio", "adc", "timer", "pwm", "ccp", "eccp", 
 const SYSTEM_MODULES: &[&str] = &["time", "irq", "wdt", "clock", "power", "flash"];
 /// `pypic.soft.*`: implementaciones por software sobre cualquier GPIO (cuestan ciclos de CPU).
 const SOFT_MODULES: &[&str] = &["spi", "i2c", "uart", "onewire"];
-const IMPLEMENTED_MODULES: &[&str] = &["pypic.periph.gpio", "pypic.periph.timer", "pypic.regs", "pypic.system.time"];
+const IMPLEMENTED_MODULES: &[&str] = &["pypic.periph.gpio", "pypic.periph.timer", "pypic.regs", "pypic.bits", "pypic.system.time"];
 
 /// Problema con la ruta de un modulo `pypic.*` (renombrado, categoria sin modulo, inexistente o aun no implementado).
 /// `None` si es un modulo implementado o no es del arbol de categorias.

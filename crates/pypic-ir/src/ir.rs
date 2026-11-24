@@ -5,7 +5,7 @@
 //! registros virtuales que el backend asigna.
 
 pub use pypic_frontend::ast::{BinOp, CmpOp};
-pub use pypic_frontend::{DelayUnit, RegCall, RegOp, TimerCall, TimerId, TimerOp, TimerStart, Type};
+pub use pypic_frontend::{BitsOp, DelayUnit, RegCall, RegOp, TimerCall, TimerId, TimerOp, TimerStart, Type};
 
 pub type BlockId = usize;
 
@@ -57,6 +57,9 @@ pub enum Inst {
     /// Acceso a un registro (`STATUS.read()`, `OPTION_REG.write(v)`, `STATUS.Z.set()`...). `dst` recibe el resultado de
     /// `Read` y `Value` (u8); `arg` es el valor de `Write`.
     Reg { call: RegCall, dst: Option<Place>, arg: Option<Operand> },
+    /// Intrinseco de `pypic.bits`. `src` es la variable (o el valor de `Swap`); `dst` recibe el resultado de `Swap`, `RolC`,
+    /// `RorC` (u8), `Carry` y `BitTest` (bool). `BitSet`/`BitClear` modifican `src` en su sitio.
+    Bits { op: BitsOp, dst: Option<Place>, src: Option<Operand> },
 }
 
 #[derive(Clone, Debug, PartialEq)]

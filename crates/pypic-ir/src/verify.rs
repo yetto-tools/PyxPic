@@ -97,6 +97,23 @@ fn verify_fn(m: &Module, f: &Function, errs: &mut Vec<String>) {
                         _ => {}
                     }
                 }
+                Inst::Bits { op, dst, src } => {
+                    let u8_ty = Type::Int { bits: 8, signed: false };
+                    let dst_ok = |t: Type| dst.is_some_and(|d| valid(d) && m.place_ty(f, d) == t);
+                    let src_ty = src.as_ref().map(|s| ty(s));
+                    let bad = match op {
+                        BitsOp::Swap => !(dst_ok(u8_ty) && src_ty == Some(u8_ty)),
+                        BitsOp::RolC | BitsOp::RorC => src_ty != Some(u8_ty) || !matches!(src, Some(Operand::Place(_))) || dst.is_some_and(|d| !valid(d) || m.place_ty(f, d) != u8_ty),
+                        BitsOp::ClearCarry | BitsOp::SetCarry => dst.is_some() || src.is_some(),
+                        BitsOp::Carry => !dst_ok(Type::Bool) || src.is_some(),
+                        BitsOp::BitSet(n) | BitsOp::BitClear(n) | BitsOp::BitTest(n) => {
+                            !matches!(src, Some(Operand::Place(_))) || src_ty.is_none_or(|t| !t.is_int() || t.bits() > 16 || *n as u32 >= t.bits()) || (matches!(op, BitsOp::BitTest(_)) && !dst_ok(Type::Bool))
+                        }
+                    };
+                    if bad {
+                        e(format!("{}: Bits {op:?} mal formado", at(i)));
+                    }
+                }
                 Inst::Reg { call, dst, arg } => {
                     let u8_ty = Type::Int { bits: 8, signed: false };
                     match call.op {
