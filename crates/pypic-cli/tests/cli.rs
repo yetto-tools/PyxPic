@@ -442,3 +442,115 @@ fn clock_declaration_sets_fosc_and_rejects_a_conflicting_config() {
     let o = pypic(&root(), &["build", src.to_str().unwrap(), "-o", out.to_str().unwrap(), "--config", "FOSC=XT"]);
     assert!(!o.status.success() && text(&o).contains("fija FOSC = HS"), "{}", text(&o));
 }
+
+// ---- pypic.toml (#37) ----------------------------------------------------------------------------------------------
+
+fn devices() -> String {
+    root().join("devices").to_string_lossy().replace('\\', "/")
+}
+
+fn project_dir(name: &str, toml: &str, main: &str) -> PathBuf {
+    let dir = tmp(name);
+    std::fs::write(dir.join("pypic.toml"), toml.replace("@DEVICES@", &devices())).unwrap();
+    std::fs::write(dir.join("main.py"), main).unwrap();
+    dir
+}
+
+const BARE_MAIN: &str = "from pypic.periph.gpio import RD0\nfrom pypic.system.time import pause\n\n\ndef main() -> None:\n    RD0.output()\n    while True:\n        RD0.toggle()\n        pause(100)\n";
+
+#[test]
+fn a_project_builds_with_no_arguments_taking_device_clock_config_and_output_from_the_profile() {
+    let dir = project_dir(
+        "proj-basic",
+        "[project]\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n\n[target.placa]\ndevice = \"PIC16F887\"\nclock = \"Crystal[20 * MHz]\"\nconfig = { WDTE = \"ON\" }\noutput = \"out/placa.hex\"\n",
+        BARE_MAIN,
+    );
+    std::fs::create_dir_all(dir.join("out")).unwrap();
+    let o = pypic(&dir, &["build"]); // sin archivo: el 'main' del proyecto; sin 'from pypic.device import ...' en el fuente
+    assert!(o.status.success(), "{}", text(&o));
+    let t = text(&o);
+    assert!(t.contains("PIC16F887") && t.contains("Perfil:") && t.contains("placa") && t.contains("Crystal 20 MHz (FOSC = HS)"), "{t}");
+    let img = Image::from_intel_hex(&std::fs::read_to_string(dir.join("out/placa.hex")).unwrap()).unwrap();
+    let c1 = img.get(0x2007).unwrap();
+    assert_eq!(c1 & 7, 2, "FOSC = HS"); // 010
+    assert_ne!(c1 & 0x08, 0, "WDTE = ON desde el perfil");
+    // el tiempo se calcula con los 20 MHz del perfil: 100 ms son 500 000 ciclos
+    let o = pypic(&dir, &["build", "--timing"]);
+    assert!(text(&o).contains("500000 ciclos"), "{}", text(&o));
+}
+
+#[test]
+fn the_program_wins_over_the_profile_and_a_device_mismatch_is_a_clear_error() {
+    let toml = "[project]\ndevices_dir = \"@DEVICES@\"\n\n[target.otra]\ndevice = \"PIC16F886\"\n\n[target.ok]\ndevice = \"PIC16F887\"\nclock = \"Crystal[20 * MHz]\"\n";
+    let dir = project_dir("proj-mismatch", toml, &format!("from pypic.device import PIC16F887\n{BARE_MAIN}"));
+    let file = dir.join("main.py");
+    let o = pypic(&dir, &["build", file.to_str().unwrap(), "--target", "otra"]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("declara 'from pypic.device import PIC16F887'") && t.contains("perfil 'otra'") && t.contains("pide PIC16F886"), "{t}");
+    // mismo dispositivo: bien
+    let o = pypic(&dir, &["build", file.to_str().unwrap(), "--target", "ok"]);
+    assert!(o.status.success(), "{}", text(&o));
+    // el programa que declara su reloj manda sobre el del perfil, y se avisa
+    std::fs::write(&file, format!("from pypic.device import PIC16F887\nCLOCK: Internal[8 * MHz]\n{}", BARE_MAIN)).unwrap();
+    let o = pypic(&dir, &["build", file.to_str().unwrap(), "--target", "ok"]);
+    let t = text(&o);
+    assert!(o.status.success() && t.contains("aviso") && t.contains("manda el programa") && t.contains("Internal 8 MHz"), "{t}");
+    // si el reloj es el mismo, no hay aviso
+    std::fs::write(&file, format!("from pypic.device import PIC16F887\nCLOCK: Crystal[20 * MHz]\n{}", BARE_MAIN)).unwrap();
+    let o = pypic(&dir, &["build", file.to_str().unwrap(), "--target", "ok"]);
+    assert!(o.status.success() && !text(&o).contains("aviso"), "{}", text(&o));
+}
+
+#[test]
+fn the_target_is_chosen_with_target_or_default_target_and_the_command_line_wins_over_the_profile() {
+    let toml = "[project]\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n\n[target.a]\ndevice = \"PIC16F887\"\nconfig = { WDTE = \"ON\" }\n\n[target.b]\ndevice = \"PIC16F887\"\nclock = \"Internal[8 * MHz]\"\n";
+    let dir = project_dir("proj-targets", toml, BARE_MAIN);
+    let o = pypic(&dir, &["build"]);
+    assert!(!o.status.success() && text(&o).contains("hay varios perfiles (a, b)") && text(&o).contains("--target"), "{}", text(&o));
+    let o = pypic(&dir, &["build", "--target", "zzz"]);
+    assert!(!o.status.success() && text(&o).contains("no hay un perfil 'zzz'"), "{}", text(&o));
+    let o = pypic(&dir, &["build", "--target", "b"]);
+    assert!(o.status.success() && text(&o).contains("Internal 8 MHz"), "{}", text(&o));
+    // --config manda sobre el perfil (WDTE = ON en el perfil, OFF en la linea de comandos) y no es un "se indica dos veces"
+    let on = pypic(&dir, &["build", "--target", "a", "-o", dir.join("on.hex").to_str().unwrap()]);
+    let off = pypic(&dir, &["build", "--target", "a", "--config", "WDTE=OFF", "-o", dir.join("off.hex").to_str().unwrap()]);
+    assert!(on.status.success() && off.status.success(), "{}{}", text(&on), text(&off));
+    let word = |f: &str| Image::from_intel_hex(&std::fs::read_to_string(dir.join(f)).unwrap()).unwrap().get(0x2007).unwrap();
+    assert_ne!(word("on.hex") & 0x08, 0);
+    assert_eq!(word("off.hex") & 0x08, 0);
+    // un default_target elige solo
+    std::fs::write(dir.join("pypic.toml"), format!("[project]\nmain = \"main.py\"\ndevices_dir = \"{}\"\ndefault_target = \"b\"\n\n[target.a]\ndevice = \"PIC16F887\"\n[target.b]\ndevice = \"PIC16F887\"\nclock = \"Internal[8 * MHz]\"\n", devices())).unwrap();
+    let o = pypic(&dir, &["build"]);
+    assert!(o.status.success() && text(&o).contains("Internal 8 MHz"), "{}", text(&o));
+}
+
+#[test]
+fn project_file_errors_are_located_and_explain_the_valid_keys() {
+    let dir = project_dir("proj-errors", "[target.a]\ndevce = \"PIC16F887\"\n", BARE_MAIN);
+    let o = pypic(&dir, &["check", dir.join("main.py").to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+    assert!(text(&o).contains("[target.a] la clave 'devce' no existe (admite: device, clock, config, output)"), "{}", text(&o));
+    let o = pypic(&root(), &["check", "examples/blink.py", "--target", "x"]);
+    assert!(!o.status.success() && text(&o).contains("--target necesita un pypic.toml"), "{}", text(&o));
+    // un reloj invalido en el perfil se explica con las reglas del reloj
+    let dir = project_dir("proj-badclock", "[project]\ndevices_dir = \"@DEVICES@\"\n[target.a]\ndevice = \"PIC16F887\"\nclock = \"Internal[20 * MHz]\"\n", BARE_MAIN);
+    let o = pypic(&dir, &["build", dir.join("main.py").to_str().unwrap()]);
+    let t = text(&o);
+    assert!(!o.status.success() && t.contains("PYP2194") && t.contains("[target.a] clock = \"Internal[20 * MHz]\" no es valido"), "{t}");
+    // sin dispositivo en ningun lado: se dice donde ponerlo
+    let dir = project_dir("proj-nodevice", "[project]\ndevices_dir = \"@DEVICES@\"\n", "def main() -> None:\n    pass\n");
+    let o = pypic(&dir, &["build", dir.join("main.py").to_str().unwrap()]);
+    assert!(!o.status.success() && text(&o).contains("falta el dispositivo") && text(&o).contains("[target.NOMBRE] device"), "{}", text(&o));
+}
+
+#[test]
+fn the_shipped_project_example_builds_both_targets_and_creates_the_output_folder() {
+    let dir = root().join("examples/proyecto");
+    let _ = std::fs::remove_dir_all(dir.join("build"));
+    let o = pypic(&dir, &["build"]);
+    assert!(o.status.success(), "{}", text(&o));
+    assert!(text(&o).contains("Internal 4 MHz") && dir.join("build/parpadeo_interna.hex").is_file(), "{}", text(&o));
+    let o = pypic(&dir, &["build", "--target", "cristal"]);
+    assert!(o.status.success() && text(&o).contains("Crystal 20 MHz (FOSC = HS)") && dir.join("build/parpadeo_cristal.hex").is_file(), "{}", text(&o));
+    let _ = std::fs::remove_dir_all(dir.join("build"));
+}

@@ -66,11 +66,13 @@ pub struct TargetProfile {
     pub registers: Option<BTreeMap<String, RegInfo>>,
     /// Bits que reclaman pines (`SPEN`, `C1OE`...), de `peripherals.json`. `None` = sin validar.
     pub pin_claims: Option<BTreeMap<String, Vec<PinClaim>>>,
+    /// El reloj que pide el perfil de proyecto (`pypic.toml`): solo vale si el programa no declara el suyo (el fuente manda).
+    pub project_clock: Option<crate::clock::ClockSource>,
 }
 
 impl TargetProfile {
     pub fn new(name: impl Into<String>, native_bits: u32, max_int_bits: u32) -> Self {
-        TargetProfile { name: name.into(), native_bits, max_int_bits, stack_levels: None, pins: None, device: None, max_clock_hz: None, clocks_per_cycle: None, default_clock_hz: None, peripherals: None, registers: None, pin_claims: None }
+        TargetProfile { name: name.into(), native_bits, max_int_bits, stack_levels: None, pins: None, device: None, max_clock_hz: None, clocks_per_cycle: None, default_clock_hz: None, peripherals: None, registers: None, pin_claims: None, project_clock: None }
     }
 
     pub fn with_pin_claims(mut self, c: BTreeMap<String, Vec<PinClaim>>) -> Self {

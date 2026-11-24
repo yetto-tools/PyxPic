@@ -414,6 +414,12 @@ impl<'a> Checker<'a> {
                 Item::Import { .. } | Item::Func(_) => {}
             }
         }
+        // el reloj del perfil de proyecto: solo si el programa no declaro el suyo
+        if self.clock_source.is_none() && self.clock_hz.is_none() {
+            if let Some(src) = self.target.project_clock.clone() {
+                self.apply_clock_source(src, Span::new(0, 0));
+            }
+        }
         for it in &m.items {
             if let Item::Func(f) = it {
                 self.check_function(f);
@@ -2262,10 +2268,15 @@ impl<'a> Checker<'a> {
                 self.d.error("PYP2094", e.span, format!("{hz} Hz excede el reloj maximo de '{}' ({max} Hz)", self.target.name));
             }
         }
+        self.apply_clock_source(src, v.span);
+    }
+
+    /// Fija la frecuencia y la fuente del reloj y reserva los pines del oscilador externo.
+    fn apply_clock_source(&mut self, src: ClockSource, span: Span) {
         for (pin, function) in src.pins {
-            self.claims.push(Claim { pin: pin.to_string(), function: function.to_string(), peripheral: format!("oscilador externo ({kind})"), span: v.span, via_timer: false });
+            self.claims.push(Claim { pin: pin.to_string(), function: function.to_string(), peripheral: format!("oscilador externo ({})", src.kind.name()), span, via_timer: false });
         }
-        self.clock_hz = Some(hz as u32);
+        self.clock_hz = Some(src.hz);
         self.clock_source = Some(src);
     }
 

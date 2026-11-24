@@ -12,3 +12,4 @@ pypic-frontend = { path = "../pypic-frontend" }
 pypic-ir = { path = "../pypic-ir" }
 pypic-device = { path = "../pypic-device" }
 pypic-pic14 = { path = "../pypic-pic14" }
+toml = "1"

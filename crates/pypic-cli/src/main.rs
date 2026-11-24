@@ -1,19 +1,23 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use pypic_device::DevicePack;
 use pypic_frontend::{analyze, TargetProfile};
 use pypic_pic14::{disassemble, Image};
 
+mod project;
+
 const USAGE: &str = "uso:
-  pypic check <archivo.py> [opciones]
-  pypic ir <archivo.py> [opciones]
-  pypic build <archivo.py> [-o salida.hex] [--listing] [--timing] [opciones]
+  pypic check [archivo.py] [opciones]
+  pypic ir [archivo.py] [opciones]
+  pypic build [archivo.py] [-o salida.hex] [--listing] [--timing] [opciones]
   pypic asm <archivo.s> [-mcpu=16F887] [-Wl,-pNOMBRE=dir,...] [-o salida.hex] [--listing]
   pypic disasm <archivo.hex> [--pic-as] [-mcpu=16F887] [--devices-dir <dir>]
   pypic device validate <directorio-del-pack>
 
 opciones:
+  --project <pypic.toml>  archivo de proyecto (por defecto se busca el mas cercano al programa; sin archivo, usa su 'main')
+  --target <perfil>       perfil de destino del proyecto ([target.perfil]); por defecto default_target o el unico
   --device <directorio>   usa este Device Pack (por defecto se busca el que declara el programa)
   --devices-dir <dir>     donde buscar los Device Packs (tambien $PYPIC_DEVICES y ./devices)
   --config AJUSTE=VALOR   palabra de configuracion por nombre, p. ej. --config WDTE=ON,FOSC=XT (repetible)
@@ -383,10 +387,14 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     let mut listing = false;
     let mut timing = false;
     let mut settings: Vec<(String, String)> = Vec::new();
+    let mut project_arg: Option<String> = None;
+    let mut target_arg: Option<String> = None;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "-o" => out_path = it.next().cloned(),
+            "--project" => project_arg = it.next().cloned(),
+            "--target" => target_arg = it.next().cloned(),
             "--listing" => listing = true,
             "--timing" => timing = true,
             "--device" => device_dir = it.next().cloned(),
@@ -412,7 +420,45 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
             _ => return usage(),
         }
     }
-    let Some(file) = file else { return usage() };
+    // pypic.toml: el proyecto (el mas cercano al programa o a la carpeta actual) y su perfil de destino (docs/proyecto.md)
+    let loaded = match &project_arg {
+        Some(f) => Some(PathBuf::from(f)),
+        None => project::find(&file.as_deref().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."))),
+    };
+    let project = match loaded.map(|f| project::load(&f)) {
+        Some(Ok(p)) => Some(p),
+        Some(Err(e)) => {
+            eprintln!("{e}");
+            return ExitCode::from(2);
+        }
+        None => None,
+    };
+    if target_arg.is_some() && project.is_none() {
+        eprintln!("--target necesita un pypic.toml (se busca desde la carpeta del programa hacia arriba; o indica --project <archivo>)");
+        return ExitCode::from(2);
+    }
+    let profile = match project.as_ref().map(|p| p.target(target_arg.as_deref())) {
+        Some(Ok(t)) => t,
+        Some(Err(e)) => {
+            eprintln!("{e}");
+            return ExitCode::from(2);
+        }
+        None => None,
+    };
+    let Some(file) = file.or_else(|| project.as_ref().and_then(|p| p.main.as_ref()).map(|m| m.to_string_lossy().into_owned())) else { return usage() };
+    if devices_dir.is_none() {
+        devices_dir = project.as_ref().and_then(|p| p.devices_dir.as_ref()).map(|d| d.to_string_lossy().into_owned());
+    }
+    if let Some((_, t)) = &profile {
+        // la linea de comandos manda sobre el perfil
+        let asked: std::collections::BTreeSet<String> = settings.iter().map(|(n, _)| n.clone()).collect();
+        let mut merged: Vec<(String, String)> = t.config.iter().filter(|(n, _)| !asked.contains(n)).cloned().collect();
+        merged.extend(std::mem::take(&mut settings));
+        settings = merged;
+        if out_path.is_none() {
+            out_path = t.output.as_ref().map(|o| o.to_string_lossy().into_owned());
+        }
+    }
     let src = match std::fs::read_to_string(&file) {
         Ok(s) => s,
         Err(e) => {
@@ -424,7 +470,16 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     // El dispositivo lo declara el propio programa (`from pypic.device import PIC16F887`);
     // `--device` solo fuerza un pack concreto y el analisis comprueba que coincida con la declaracion.
     let declared = pypic_frontend::declared_device(&src);
-    let pack = match (&device_dir, &declared) {
+    // el fuente manda: si declara un dispositivo y el perfil pide otro, es un error; si no declara ninguno, vale el del perfil
+    let profile_device = profile.as_ref().and_then(|(_, t)| t.device.clone());
+    if let (Some(d), Some(pd), Some((tn, _)), Some(pj)) = (&declared, &profile_device, &profile, &project) {
+        if !d.eq_ignore_ascii_case(pd) {
+            eprintln!("{file}: error: el programa declara 'from pypic.device import {d}' y el perfil '{tn}' de {} pide {pd}: quita una de las dos declaraciones o elige otro perfil con --target", pj.file.display());
+            return ExitCode::from(1);
+        }
+    }
+    let device_name = declared.clone().or(profile_device);
+    let pack = match (&device_dir, &device_name) {
         (Some(dir), _) => match load_pack(dir) {
             Ok(p) => Some(p),
             Err(code) => return code,
@@ -445,16 +500,39 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     if let Some(s) = stack {
         target.stack_levels = Some(s);
     }
+    // el reloj del perfil: se valida con las mismas reglas que en el fuente y solo vale si el programa no declara el suyo
+    let mut profile_clock = None;
+    if let (Some((tn, t)), Some(pj)) = (&profile, &project) {
+        if let Some(text) = &t.clock {
+            match pypic_frontend::parse_clock(text, &target) {
+                Ok(c) => profile_clock = Some(c),
+                Err(e) => {
+                    eprint!("{e}");
+                    eprintln!("{}: error: [target.{tn}] clock = \"{text}\" no es valido", pj.file.display());
+                    return ExitCode::from(1);
+                }
+            }
+        }
+    }
+    let source_clock = pypic_frontend::declares_clock(&src);
+    if let (Some(c), false) = (&profile_clock, source_clock) {
+        target.project_clock = Some(c.clone());
+    }
 
     let res = analyze(&src, &target);
     print!("{}", res.diagnostics.render(&src, &file));
     let Some(program) = res.program else { return ExitCode::from(1) };
+    if let (Some(c), true, Some((tn, _))) = (&profile_clock, source_clock, &profile) {
+        if program.clock_source.as_ref() != Some(c) {
+            eprintln!("{file}: aviso: el perfil '{tn}' pide el reloj {} pero el programa declara el suyo: manda el programa", c.describe());
+        }
+    }
     if cmd == "check" {
         println!("{file}: ok");
         return ExitCode::SUCCESS;
     }
-    if cmd == "build" && (declared.is_none() || pack.is_none()) {
-        eprintln!("{file}: error: falta la declaracion del dispositivo: la primera linea del programa debe ser, por ejemplo, 'from pypic.device import PIC16F887'");
+    if cmd == "build" && (device_name.is_none() || pack.is_none()) {
+        eprintln!("{file}: error: falta el dispositivo: declaralo en la primera linea del programa ('from pypic.device import PIC16F887') o en el perfil de un pypic.toml ([target.NOMBRE] device = \"PIC16F887\")");
         return ExitCode::from(1);
     }
     let module = pypic_ir::lower(&program);
@@ -496,6 +574,10 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
         return ExitCode::from(70);
     }
     let out_path = out_path.unwrap_or_else(|| Path::new(&file).with_extension("hex").to_string_lossy().into_owned());
+    // la carpeta de salida de un perfil (output = "build/x.hex") se crea si falta
+    if let Some(dir) = Path::new(&out_path).parent().filter(|d| !d.as_os_str().is_empty()) {
+        let _ = std::fs::create_dir_all(dir);
+    }
     if let Err(e) = std::fs::write(&out_path, compiled.image.to_intel_hex(16)) {
         eprintln!("no se pudo escribir '{out_path}': {e}");
         return ExitCode::from(2);
@@ -529,6 +611,9 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     println!("Compilacion completada:");
     println!("  Archivo:       {out_path}");
     println!("  Dispositivo:   {}", pack.device.name);
+    if let (Some((tn, _)), Some(pj)) = (&profile, &project) {
+        println!("  Perfil:        {tn} ({})", pj.file.display());
+    }
     println!("  Programa:      {} palabras", compiled.flash_words);
     println!("  RAM:           {} bytes (banco 0)", compiled.ram_bytes);
     if let Some(hz) = module.clock_hz {

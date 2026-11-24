@@ -4,3 +4,6 @@
 .claude/skills/
 .agents/
 skills-lock.json
+
+# proyecto de ejemplo: los .hex salen de pypic build
+examples/proyecto/build/

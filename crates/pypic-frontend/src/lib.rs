@@ -48,6 +48,29 @@ pub fn declared_device(source: &str) -> Option<String> {
     })
 }
 
+/// `true` si el programa declara su reloj (`CLOCK: ...[...]` o `CLOCK_HZ`): en ese caso el perfil de proyecto no lo cambia.
+pub fn declares_clock(source: &str) -> bool {
+    let mut d = Diagnostics::default();
+    let module = parser::parse(source, &mut d);
+    module.items.iter().any(|it| matches!(it, ast::Item::Var(v) if v.name.name == "CLOCK" || v.name.name == "CLOCK_HZ"))
+}
+
+/// Valida la declaracion de reloj de un perfil de proyecto (`Crystal[20 * MHz]`) con las mismas reglas que el fuente. El error trae
+/// los diagnosticos ya formateados.
+pub fn parse_clock(text: &str, target: &TargetProfile) -> Result<ClockSource, String> {
+    let line = format!("CLOCK: {text}\n");
+    let mut t = target.clone();
+    t.project_clock = None;
+    let res = analyze(&line, &t);
+    match res.program.and_then(|p| p.clock_source) {
+        Some(c) => Ok(c),
+        None => {
+            let shown = res.diagnostics.render(&line, "pypic.toml (clock)");
+            Err(if shown.trim().is_empty() { format!("'{text}' no es una declaracion de reloj: Internal[4 * MHz], Crystal[20 * MHz] o ExternalClock[20 * MHz]") } else { shown })
+        }
+    }
+}
+
 pub fn analyze(source: &str, target: &TargetProfile) -> Analysis {
     let mut d = Diagnostics::default();
     let mut module = parser::parse(source, &mut d);
