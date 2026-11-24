@@ -1,4 +1,4 @@
-//! Tablas constantes en la memoria de programa (#44): `T: Final[Table[u8]] = [..]`, `T[i]`, `len(T)`.
+//! Tablas constantes en la memoria de programa (#44): `T: Rom[u8] = [..]`, `T[i]`, `len(T)`.
 
 use std::path::PathBuf;
 
@@ -60,29 +60,29 @@ fn first_entry(c: &Compiled, name: &str) -> u32 {
 
 #[test]
 fn a_table_is_read_with_a_runtime_index() {
-    let src = format!("{HEAD}T: Final[Table[u8]] = [10, 20, 30, 40, 50]\nsum: u16 = 0\nx: u8 = 0\ndef main() -> None:\n    global sum, x\n    for i in range(5):\n        sum += u16(T[i])\n        x = x ^ T[i]\n");
+    let src = format!("{HEAD}T: Rom[u8] = [10, 20, 30, 40, 50]\nsum: u16 = 0\nx: u8 = 0\ndef main() -> None:\n    global sum, x\n    for i in range(5):\n        sum += u16(T[i])\n        x = x ^ T[i]\n");
     let (g, ..) = differential(&src);
     assert_eq!((g["sum"], g["x"]), (150, 10 ^ 20 ^ 30 ^ 40 ^ 50));
 }
 
 #[test]
 fn the_table_data_takes_no_ram() {
-    let small = format!("{HEAD}T: Final[Table[u8]] = [1]\nv: u8 = 0\nk: u8 = 0\ndef main() -> None:\n    global v\n    v = T[k]\n");
+    let small = format!("{HEAD}T: Rom[u8] = [1]\nv: u8 = 0\nk: u8 = 0\ndef main() -> None:\n    global v\n    v = T[k]\n");
     let big_vals = (0..200).map(|i| i.to_string()).collect::<Vec<_>>().join(", ");
-    let big = format!("{HEAD}T: Final[Table[u8]] = [{big_vals}]\nv: u8 = 0\nk: u8 = 0\ndef main() -> None:\n    global v\n    v = T[k]\n");
+    let big = format!("{HEAD}T: Rom[u8] = [{big_vals}]\nv: u8 = 0\nk: u8 = 0\ndef main() -> None:\n    global v\n    v = T[k]\n");
     assert_eq!(build(&small).1.ram_bytes, build(&big).1.ram_bytes);
 }
 
 #[test]
 fn an_index_past_the_end_returns_the_last_entry() {
-    let src = format!("{HEAD}T: Final[Table[u8]] = [1, 2, 3]\na: u8 = 0\nb: u8 = 0\nc: u8 = 0\nidx: u8 = 200\ndef main() -> None:\n    global a, b, c, idx\n    a = T[idx]\n    idx = 3\n    b = T[idx]\n    idx = 2\n    c = T[idx]\n");
+    let src = format!("{HEAD}T: Rom[u8] = [1, 2, 3]\na: u8 = 0\nb: u8 = 0\nc: u8 = 0\nidx: u8 = 200\ndef main() -> None:\n    global a, b, c, idx\n    a = T[idx]\n    idx = 3\n    b = T[idx]\n    idx = 2\n    c = T[idx]\n");
     let (g, ..) = differential(&src);
     assert_eq!((g["a"], g["b"], g["c"]), (3, 3, 3));
 }
 
 #[test]
 fn a_constant_index_is_resolved_at_compile_time() {
-    let src = format!("{HEAD}T: Final[Table[u8]] = [7, 8, 9]\nv: u8 = 0\ndef main() -> None:\n    global v\n    v = T[1]\n");
+    let src = format!("{HEAD}T: Rom[u8] = [7, 8, 9]\nv: u8 = 0\ndef main() -> None:\n    global v\n    v = T[1]\n");
     let (g, c, _) = differential(&src);
     assert_eq!(g["v"], 8);
     assert!(!c.listing.contains("table."), "un indice constante no necesita la rutina\n{}", c.listing);
@@ -90,7 +90,7 @@ fn a_constant_index_is_resolved_at_compile_time() {
 
 #[test]
 fn len_is_a_constant() {
-    let src = format!("{HEAD}T: Final[Table[u8]] = [1, 2, 3, 4]\nn: u8 = 0\ndef main() -> None:\n    global n\n    n = len(T)\n    k: u8 = len(T) + 1\n    n += k\n");
+    let src = format!("{HEAD}T: Rom[u8] = [1, 2, 3, 4]\nn: u8 = 0\ndef main() -> None:\n    global n\n    n = len(T)\n    k: u8 = len(T) + 1\n    n += k\n");
     let (g, ..) = differential(&src);
     assert_eq!(g["n"], 9);
 }
@@ -98,7 +98,7 @@ fn len_is_a_constant() {
 #[test]
 fn a_table_of_256_entries_needs_no_clamp_and_is_aligned() {
     let vals: Vec<String> = (0..256).map(|i| ((i * 7 + 3) % 256).to_string()).collect();
-    let src = format!("{HEAD}T: Final[Table[u8]] = [{}]\nsum: u16 = 0\ndef main() -> None:\n    global sum\n    i: u8 = 0\n    while True:\n        sum += u16(T[i])\n        if i == 255:\n            break\n        i += 1\n", vals.join(", "));
+    let src = format!("{HEAD}T: Rom[u8] = [{}]\nsum: u16 = 0\ndef main() -> None:\n    global sum\n    i: u8 = 0\n    while True:\n        sum += u16(T[i])\n        if i == 255:\n            break\n        i += 1\n", vals.join(", "));
     let (g, c, _) = differential(&src);
     let want: i128 = (0..256).map(|i| ((i * 7 + 3) % 256) as i128).sum();
     assert_eq!(g["sum"], want);
@@ -107,7 +107,7 @@ fn a_table_of_256_entries_needs_no_clamp_and_is_aligned() {
 
 #[test]
 fn several_tables_and_a_lookup_inside_a_function_with_parameters() {
-    let src = format!("{HEAD}A: Final[Table[u8]] = [1, 2, 3]\nB: Final[Table[u8]] = [100, 101, 102, 103]\nr: u16 = 0\ndef f(i: u8, j: u8) -> u8:\n    return A[i] + B[j]\n\n\ndef main() -> None:\n    global r\n    r = u16(f(2, 3))\n    r += u16(f(9, 9))\n");
+    let src = format!("{HEAD}A: Rom[u8] = [1, 2, 3]\nB: Rom[u8] = [100, 101, 102, 103]\nr: u16 = 0\ndef f(i: u8, j: u8) -> u8:\n    return A[i] + B[j]\n\n\ndef main() -> None:\n    global r\n    r = u16(f(2, 3))\n    r += u16(f(9, 9))\n");
     let (g, ..) = differential(&src);
     assert_eq!(g["r"], (3 + 103) + (3 + 103));
 }
@@ -116,7 +116,7 @@ fn several_tables_and_a_lookup_inside_a_function_with_parameters() {
 fn the_lookup_costs_the_same_with_every_index() {
     // el intervalo entre BSF y BCF de RD0 es la consulta + 1 (el BCF)
     let measure = |idx: u8| -> u64 {
-        let src = format!("{HEAD}from pypic.periph.gpio import RD0\nT: Final[Table[u8]] = [1, 2, 3, 4, 5, 6, 7, 8, 9]\nv: u8 = 0\nk: u8 = {idx}\ndef main() -> None:\n    global v\n    RD0.output()\n    RD0.on()\n    v = T[k]\n    RD0.off()\n");
+        let src = format!("{HEAD}from pypic.periph.gpio import RD0\nT: Rom[u8] = [1, 2, 3, 4, 5, 6, 7, 8, 9]\nv: u8 = 0\nk: u8 = {idx}\ndef main() -> None:\n    global v\n    RD0.output()\n    RD0.on()\n    v = T[k]\n    RD0.off()\n");
         let (_, c) = build(&src);
         let mut s = Sim::new(&c.image);
         let (mut up, mut down, mut last) = (None, None, None);
@@ -148,7 +148,7 @@ fn a_table_that_would_cross_a_256_word_boundary_is_moved_and_still_correct() {
     for filler in 0..90 {
         let body: String = (0..filler).map(|_| "    pad += 1\n").collect();
         let src = format!(
-            "{HEAD}T: Final[Table[u8]] = [{}]\npad: u8 = 0\nsum: u16 = 0\ndef main() -> None:\n    global pad, sum\n{body}    for i in range(40):\n        sum += u16(T[i])\n",
+            "{HEAD}T: Rom[u8] = [{}]\npad: u8 = 0\nsum: u16 = 0\ndef main() -> None:\n    global pad, sum\n{body}    for i in range(40):\n        sum += u16(T[i])\n",
             (1..=40).map(|v| v.to_string()).collect::<Vec<_>>().join(", ")
         );
         let (g, c, _) = differential(&src);
@@ -168,28 +168,31 @@ fn a_table_that_would_cross_a_256_word_boundary_is_moved_and_still_correct() {
 
 #[test]
 fn a_table_declaration_is_checked() {
+    // Rom ya es de solo lectura: no hace falta Final, y la forma antigua Table no existe
+    assert!(analyze(&format!("{HEAD}T: Rom[u8] = [1]\ndef main() -> None:\n    pass\n"), &pack_target()).program.is_some());
+    assert!(analyze(&format!("{HEAD}T: Final[Rom[u8]] = [1]\ndef main() -> None:\n    pass\n"), &pack_target()).program.is_some());
     let e = errors(&format!("{HEAD}T: Table[u8] = [1]\ndef main() -> None:\n    pass\n"));
-    assert!(e[0].starts_with("PYP2160") && e[0].contains("Final"), "{e:?}");
-    let e = errors(&format!("{HEAD}T: Final[Table[u8]] = [1, 300]\ndef main() -> None:\n    pass\n"));
+    assert!(!e.is_empty(), "la forma antigua Table[u8] ya no existe: {e:?}");
+    let e = errors(&format!("{HEAD}T: Rom[u8] = [1, 300]\ndef main() -> None:\n    pass\n"));
     assert!(e[0].starts_with("PYP2160") && e[0].contains("300"), "{e:?}");
-    let e = errors(&format!("{HEAD}T: Final[Table[u8]] = []\ndef main() -> None:\n    pass\n"));
+    let e = errors(&format!("{HEAD}T: Rom[u8] = []\ndef main() -> None:\n    pass\n"));
     assert!(e[0].starts_with("PYP2160"), "{e:?}");
     let many = (0..257).map(|i| (i % 256).to_string()).collect::<Vec<_>>().join(",");
-    let e = errors(&format!("{HEAD}T: Final[Table[u8]] = [{many}]\ndef main() -> None:\n    pass\n"));
+    let e = errors(&format!("{HEAD}T: Rom[u8] = [{many}]\ndef main() -> None:\n    pass\n"));
     assert!(e[0].starts_with("PYP2160") && e[0].contains("257"), "{e:?}");
-    let e = errors(&format!("{HEAD}T: Final[Table[u16]] = [1]\ndef main() -> None:\n    pass\n"));
+    let e = errors(&format!("{HEAD}T: Rom[u16] = [1]\ndef main() -> None:\n    pass\n"));
     assert!(e[0].starts_with("PYP2160") && e[0].contains("u8"), "{e:?}");
-    let e = errors(&format!("{HEAD}x: u8 = 3\nT: Final[Table[u8]] = [x]\ndef main() -> None:\n    pass\n"));
+    let e = errors(&format!("{HEAD}x: u8 = 3\nT: Rom[u8] = [x]\ndef main() -> None:\n    pass\n"));
     assert!(e[0].starts_with("PYP2160") && e[0].contains("constantes"), "{e:?}");
-    let e = errors(&format!("{HEAD}def main() -> None:\n    T: Final[Table[u8]] = [1]\n"));
+    let e = errors(&format!("{HEAD}def main() -> None:\n    T: Rom[u8] = [1]\n"));
     assert!(e[0].starts_with("PYP2160") && e[0].contains("modulo"), "{e:?}");
-    let e = errors(&format!("{HEAD}T: Final[Table[u8]] = 5\ndef main() -> None:\n    pass\n"));
+    let e = errors(&format!("{HEAD}T: Rom[u8] = 5\ndef main() -> None:\n    pass\n"));
     assert!(e.iter().any(|m| m.starts_with("PYP2160") && m.contains("lista")), "{e:?}");
 }
 
 #[test]
 fn indexing_rules() {
-    let t = "T: Final[Table[u8]] = [1, 2, 3]\n";
+    let t = "T: Rom[u8] = [1, 2, 3]\n";
     let e = errors(&format!("{HEAD}{t}x: u8 = T[3]\ndef main() -> None:\n    pass\n"));
     assert!(e.iter().any(|m| m.starts_with("PYP2161") && m.contains("0..=2")), "{e:?}");
     let e = errors(&format!("{HEAD}{t}k: u16 = 1\ndef main() -> None:\n    x: u8 = T[k]\n"));
@@ -210,7 +213,7 @@ fn indexing_rules() {
 fn a_table_lookup_counts_one_stack_level() {
     // main (1 de arranque) + f1..f6 = 7 niveles; la consulta del ultimo es el octavo
     let chain = |with_table: bool| {
-        let mut s = format!("{HEAD}T: Final[Table[u8]] = [1, 2]\nr: u8 = 0\nk: u8 = 0\n");
+        let mut s = format!("{HEAD}T: Rom[u8] = [1, 2]\nr: u8 = 0\nk: u8 = 0\n");
         s.push_str(&format!("def f6() -> None:\n    global r\n    {}\n\n\n", if with_table { "r = T[k]" } else { "r = 1" }));
         for i in (1..6).rev() {
             s.push_str(&format!("def f{i}() -> None:\n    f{}()\n\n\n", i + 1));

@@ -4,7 +4,7 @@
 y el manejo correcto de `PCLATH` y de los límites de 256 palabras.
 
 ```python
-SINE: Final[Table[u8]] = [128, 176, 218, 245, 255, 245, 218, 176]    # 8 RETLW en flash
+SINE: Rom[u8] = [128, 176, 218, 245, 255, 245, 218, 176]    # 8 RETLW en flash
 
 level: u8 = SINE[step]        # step: u8 en ejecución
 first: u8 = SINE[0]           # índice constante: se resuelve al compilar, sin consulta
@@ -13,7 +13,8 @@ n: u8 = len(SINE)             # 8, constante
 
 ## Reglas
 
-- Se declara **a nivel de módulo** como `NOMBRE: Final[Table[u8]] = [...]` (una tabla es de solo lectura; sin `Final` o dentro de una función es el error `PYP2160`).
+- Se declara **a nivel de módulo** como `NOMBRE: Rom[u8] = [...]`. `Rom` es memoria de solo lectura (la de programa, no RAM), así que **no lleva `Final`** (se acepta `Final[Rom[u8]]`); dentro de una función es el error `PYP2160`.
+- El nombre es `Rom` y solo ese: no hay sinónimos (`Table`, `Flash`...).
 - De **1 a 256** entradas, cada una una constante `u8`. El índice es un `u8`.
 - `T[i]` con índice constante se sustituye por el valor; un índice constante fuera de la tabla es error de compilación (`PYP2161`).
 - `len(T)` es una constante (un literal que se adapta al tipo que lo recibe).

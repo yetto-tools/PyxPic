@@ -29,7 +29,7 @@ Quien hoy escribe en ensamblador debe poder escribir lo mismo aquí, con menos e
 | Ensamblador textual de las 35 instrucciones (`pypic asm`), con la sintaxis oficial de **pic-as** (XC8) | ✅ `docs/asm-pic14.md` |
 | **Ensamblador en línea (`@asm_function`)**: la salida de emergencia | ✅ `docs/asm-inline.md` (pendiente en #42: llamadas a otras funciones y desde la interrupción) |
 | **Análisis estático de ciclos por función y contratos de tiempo máximo** (p. ej. «esta interrupción dura ≤ N ciclos») | ⏳ #43 |
-| Tablas constantes en flash (`RETLW`, `GOTO` calculado) | ✅ `Final[Table[u8]]`, `docs/sdk-tablas.md` (#44) |
+| Tablas constantes en flash (`RETLW`, `GOTO` calculado) | ✅ `Rom[u8]`, `docs/sdk-tablas.md` (#44) |
 | Arreglos y direccionamiento indirecto (`FSR`/`INDF`) | ⏳ #8 |
 | Multiplicar/dividir (rutinas nativas) | ⏳ #27 |
 | Varios bancos de datos y solapamiento de locales | ⏳ #26 |

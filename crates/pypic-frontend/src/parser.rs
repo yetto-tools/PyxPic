@@ -316,9 +316,9 @@ impl<'a> Parser<'a> {
                 let end = self.expect(Tok::RBracket, "']'")?;
                 Ok(TypeExpr { span: sp.to(end), kind: TypeExprKind::Final(Box::new(inner)) })
             }
-            Tok::Ident(s) if s == "Table" => {
+            Tok::Ident(s) if s == "Rom" => {
                 self.bump();
-                self.expect(Tok::LBracket, "'[' (Table[tipo])")?;
+                self.expect(Tok::LBracket, "'[' (Rom[tipo])")?;
                 let inner = self.type_expr(false)?;
                 let end = self.expect(Tok::RBracket, "']'")?;
                 Ok(TypeExpr { span: sp.to(end), kind: TypeExprKind::Table(Box::new(inner)) })

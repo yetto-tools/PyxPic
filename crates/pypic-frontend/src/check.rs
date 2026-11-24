@@ -1536,16 +1536,17 @@ impl<'a> Checker<'a> {
 
     /// Profundidad maxima de CALL anidados desde `f` (hoja = 0). Sin recursion es finita;
     /// el guardia de ciclos solo evita bucles si ya se reporto `PYP2013`.
-    /// `NOMBRE: Final[Table[u8]] = [..]`: datos constantes en la memoria de programa (`docs/sdk-tablas.md`).
+    /// `NOMBRE: Rom[u8] = [..]`: datos constantes en la memoria de programa (`docs/sdk-tablas.md`).
     fn declare_table(&mut self, v: &VarDecl, inner: &TypeExpr, is_global: bool, is_final: bool) {
         let name = &v.name.name;
-        if !is_global || !is_final {
-            let why = if !is_global { "una tabla se declara a nivel de modulo, no dentro de una funcion" } else { "una tabla es de solo lectura: se declara 'Final[Table[u8]]'" };
-            self.d.error("PYP2160", v.span, format!("'{name}': {why}"));
+        // Rom ya es de solo lectura: `Final` no hace falta (se acepta `Final[Rom[u8]]`)
+        let _ = is_final;
+        if !is_global {
+            self.d.error("PYP2160", v.span, format!("'{name}': una tabla Rom se declara a nivel de modulo, no dentro de una funcion"));
         }
         match &inner.kind {
             TypeExprKind::Name(n) if n == "u8" => {}
-            _ => self.d.error("PYP2160", inner.span, "Table solo admite u8 por ahora: cada entrada es un RETLW"),
+            _ => self.d.error("PYP2160", inner.span, "Rom solo admite u8 por ahora: cada entrada es un RETLW"),
         }
         if self.globals.contains_key(name) || self.table_idx.contains_key(name) || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.reg_names.contains_key(name) || self.timer_names.contains_key(name) || self.bits_fns.contains(name) {
             self.d.error("PYP2009", v.name.span, format!("'{name}' ya esta declarado"));
@@ -1580,7 +1581,7 @@ impl<'a> Checker<'a> {
     fn index_expr(&mut self, e: &Expr, obj: &str, obj_span: Span, index: &Expr) -> Type {
         let Some(&ti) = self.table_idx.get(obj) else {
             self.expr(index);
-            let msg = if self.lookup(obj).is_some() { format!("'{obj}' no es una tabla: solo se indexan las 'Final[Table[u8]]'") } else { format!("'{obj}' no esta declarada como tabla") };
+            let msg = if self.lookup(obj).is_some() { format!("'{obj}' no es una tabla: solo se indexan las 'Rom[u8]'") } else { format!("'{obj}' no esta declarada como tabla") };
             self.d.error("PYP2162", obj_span, msg);
             return self.set(e, Type::Error, None);
         };
@@ -1908,7 +1909,7 @@ impl<'a> Checker<'a> {
                 for it in items {
                     self.expr(it);
                 }
-                self.d.error("PYP1025", e.span, "una lista solo se admite como valor de una tabla: NOMBRE: Final[Table[u8]] = [1, 2, 3]");
+                self.d.error("PYP1025", e.span, "una lista solo se admite como valor de una tabla: NOMBRE: Rom[u8] = [1, 2, 3]");
                 self.set(e, Type::Error, None)
             }
             ExprKind::Bool_(_, vals) => {
