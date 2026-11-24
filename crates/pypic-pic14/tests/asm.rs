@@ -378,7 +378,7 @@ fn mpasm_directives_say_how_pic_as_writes_them() {
     assert!(msg("    RES 2\n").contains("DS n"));
     let m = msg(&abs("loop\n    goto loop"));
     assert!(m.contains("termina en ':'"), "{m}");
-    assert!(msg("MACRO\n").contains("todavia no esta implementada") || msg("m MACRO\n").contains("todavia"));
+    assert!(msg("m MACRO\n").contains("falta el ENDM"));
 }
 
 // ---- errores -------------------------------------------------------------------------------------------

@@ -193,7 +193,7 @@ const IGNORED_DIRECTIVES: &[&str] = &[
     "FNBREAK", "FNCONF", "FNINDIR", "FNSIZE", "FNADDR", "SIGNAT", "ERRORLEVEL", "RADIX_NOP",
 ];
 /// Directivas de pic-as que el ensamblador todavia no implementa.
-const UNSUPPORTED_DIRECTIVES: &[&str] = &["MACRO", "ENDM", "REPT", "IRP", "IRPC", "LOCAL", "DABS", "DLABS", "DDW", "DQW", "RADIX"];
+const UNSUPPORTED_DIRECTIVES: &[&str] = &["DABS", "DLABS", "DDW", "DQW"];
 /// Directivas de MPASM que PIC-AS no tiene: (nombre, como se escribe en PIC-AS).
 const MPASM_DIRECTIVES: &[(&str, &str)] = &[
     ("__CONFIG", "CONFIG nombre = valor (p. ej. CONFIG WDTE = OFF)"),
@@ -250,6 +250,18 @@ fn is_ident_char(c: char) -> bool {
 }
 
 fn lex(src: &str, line: usize) -> Result<Vec<T>, AsmError> {
+    lex_radix(src, line, 10)
+}
+
+/// Numero sin sufijo ni prefijo en la base de `RADIX` (hexadecimal u octal); con sufijo o prefijo manda el sufijo.
+fn parse_number_radix(text: &str, radix: u32) -> Result<i64, String> {
+    if radix != 10 && text.chars().all(|c| c.is_digit(radix)) {
+        return i64::from_str_radix(text, radix).map_err(|_| format!("numero invalido '{text}' en base {radix}"));
+    }
+    parse_number(text)
+}
+
+fn lex_radix(src: &str, line: usize, radix: u32) -> Result<Vec<T>, AsmError> {
     let chars: Vec<(usize, char)> = src.char_indices().collect();
     let mut out = Vec::new();
     let mut i = 0;
@@ -311,7 +323,7 @@ fn lex(src: &str, line: usize) -> Result<Vec<T>, AsmError> {
                     i += 1;
                 }
                 let text: String = chars[start..i].iter().map(|(_, c)| *c).collect();
-                match parse_number(&text) {
+                match parse_number_radix(&text, radix) {
                     Ok(v) => out.push((Tok::Num(v), col)),
                     Err(m) => return err(line, col, "ASM001", m),
                 }
@@ -494,7 +506,7 @@ fn split_operands(toks: &[T]) -> Vec<&[T]> {
 fn is_reserved(name: &str) -> bool {
     let u = name.to_ascii_uppercase();
     MNEMONICS.contains(&u.as_str())
-        || ["W", "F", "PSECT", "ORG", "DB", "DW", "DS", "EQU", "SET", "GLOBAL", "PUBLIC", "EXTRN", "END", "CONFIG", "BANKSEL", "BANKISEL", "PAGESEL", "ALIGN", "FCALL", "LJMP", "PROCESSOR", "INCLUDE", "IF", "ELSIF", "ELSE", "ENDIF", "NOT", "LOW", "HIGH", "HIGHWORD", "MOD", "AND", "SHL", "SHR", "EQ", "NE", "GT", "GE", "LT", "LE"]
+        || ["W", "F", "PSECT", "ORG", "DB", "DW", "DS", "EQU", "SET", "GLOBAL", "PUBLIC", "EXTRN", "END", "CONFIG", "BANKSEL", "BANKISEL", "PAGESEL", "ALIGN", "FCALL", "LJMP", "PROCESSOR", "INCLUDE", "MACRO", "ENDM", "REPT", "IRP", "IRPC", "LOCAL", "RADIX", "IF", "ELSIF", "ELSE", "ENDIF", "NOT", "LOW", "HIGH", "HIGHWORD", "MOD", "AND", "SHL", "SHR", "EQ", "NE", "GT", "GE", "LT", "LE"]
         .contains(&u.as_str())
 }
 
@@ -1201,8 +1213,10 @@ impl Asm1<'_> {
                 self.put(line, *hcol, special_words(&upper), Kind::Special(upper, ops));
             }
             m if MNEMONICS.contains(&m) => self.put(line, *hcol, 1, Kind::Inst(m.to_string(), ops)),
+            "LOCAL" => self.e(line, *hcol, "ASM008", "LOCAL solo se usa dentro de un MACRO (define simbolos unicos en cada expansion)"),
+            "EXITM" => self.e(line, *hcol, "ASM008", "EXITM no esta soportado: la expansion de macros es textual y no conoce las condiciones del ensamblado; usa IF/ELSE dentro de la macro"),
             m if IGNORED_DIRECTIVES.contains(&m) => {}
-            m if UNSUPPORTED_DIRECTIVES.contains(&m) => self.e(line, *hcol, "ASM008", format!("la directiva {m} de pic-as todavia no esta implementada (pendiente; ver docs/asm-pic14.md)")),
+            m if UNSUPPORTED_DIRECTIVES.contains(&m) => self.e(line, *hcol, "ASM008", format!("la directiva {m} de pic-as no esta implementada: la guia no fija como se reparten 32 o 64 bits en palabras de 14 bits ni como se rellena el espacio absoluto (ver docs/asm-pic14.md)")),
             "ERROR" => self.e(line, *hcol, "ASM012", format!("ERROR: {}", ops.iter().flatten().filter_map(|t| if let Tok::Str(s) = &t.0 { Some(s.as_str()) } else { None }).collect::<Vec<_>>().join(" "))),
             m if ENHANCED_ONLY.contains(&m) => self.e(
                 line,
@@ -1226,6 +1240,217 @@ impl Asm1<'_> {
                 }
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------- macros (MACRO, REPT, IRP, IRPC, LOCAL)
+
+struct MacroDef {
+    params: Vec<String>,
+    body: Vec<(usize, String)>,
+}
+
+/// Primera palabra de una linea y el resto, tras una etiqueta `nombre:` opcional (que se devuelve aparte).
+fn split_line(text: &str) -> (Option<String>, String, String) {
+    let t = text.trim();
+    let (label, rest) = match t.find(':') {
+        Some(i) if i > 0 && t[..i].chars().all(is_ident_char) && is_ident_start(t.chars().next().unwrap()) => (Some(t[..i].to_string()), t[i + 1..].trim()),
+        _ => (None, t),
+    };
+    let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+    (label, rest[..end].to_string(), rest[end..].trim().to_string())
+}
+
+/// Argumentos separados por comas; `<a,b>` agrupa una coma dentro de un argumento (se quitan los `<>`).
+fn split_macro_args(s: &str) -> Vec<String> {
+    if s.trim().is_empty() {
+        return Vec::new();
+    }
+    let (mut out, mut cur, mut depth) = (Vec::new(), String::new(), 0i32);
+    for c in s.chars() {
+        match c {
+            '<' => {
+                depth += 1;
+                if depth > 1 {
+                    cur.push(c);
+                }
+            }
+            '>' if depth > 0 => {
+                depth -= 1;
+                if depth > 0 {
+                    cur.push(c);
+                }
+            }
+            ',' if depth == 0 => out.push(std::mem::take(&mut cur).trim().to_string()),
+            _ => cur.push(c),
+        }
+    }
+    out.push(cur.trim().to_string());
+    out
+}
+
+/// Sustituye los parametros formales (palabras completas, tambien dentro de comillas) y aplica `&`: `PORT&p` con p=A es `PORTA`.
+fn substitute(text: &str, map: &BTreeMap<String, String>) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if is_ident_start(c) {
+            let s = i;
+            while i < chars.len() && is_ident_char(chars[i]) {
+                i += 1;
+            }
+            let w: String = chars[s..i].iter().collect();
+            out.push_str(map.get(&w).unwrap_or(&w));
+        } else if c.is_ascii_digit() {
+            while i < chars.len() && chars[i].is_ascii_alphanumeric() {
+                out.push(chars[i]);
+                i += 1;
+            }
+        } else {
+            out.push(c);
+            i += 1;
+        }
+    }
+    // `&&` es un AND de bits; un `&` suelto solo concatena y desaparece
+    out.replace("&&", "\u{1}").replace('&', "").replace('\u{1}', "&")
+}
+
+/// Cuerpo de una macro con los argumentos puestos y los `LOCAL` con nombres unicos (`??0001`).
+fn instantiate(body: &[(usize, String)], params: &BTreeMap<String, String>, counter: &mut u32) -> Vec<(usize, String)> {
+    let mut map = params.clone();
+    let mut out = Vec::new();
+    for (line, text) in body {
+        let (label, head, rest) = split_line(text);
+        if label.is_none() && head.eq_ignore_ascii_case("LOCAL") {
+            for name in rest.split(',').map(str::trim).filter(|n| !n.is_empty()) {
+                *counter += 1;
+                map.insert(name.to_string(), format!("??{:04}", *counter));
+            }
+            continue;
+        }
+        out.push((*line, substitute(text, &map)));
+    }
+    out
+}
+
+fn starts_block(text: &str) -> bool {
+    let (label, head, rest) = split_line(text);
+    let second = rest.split_whitespace().next().unwrap_or("");
+    let u = head.to_ascii_uppercase();
+    let _ = label;
+    matches!(u.as_str(), "REPT" | "IRP" | "IRPC") || second.eq_ignore_ascii_case("MACRO")
+}
+
+fn expand_macro_stage(lines: Vec<(usize, String)>, errors: &mut Vec<AsmError>) -> Vec<(usize, String)> {
+    let mut defs: BTreeMap<String, MacroDef> = BTreeMap::new();
+    let mut counter = 0u32;
+    let mut out = Vec::new();
+    expand_block(&lines, &mut defs, &mut counter, errors, 0, &mut out);
+    out
+}
+
+fn expand_block(lines: &[(usize, String)], defs: &mut BTreeMap<String, MacroDef>, counter: &mut u32, errors: &mut Vec<AsmError>, depth: u32, out: &mut Vec<(usize, String)>) {
+    let err = |errors: &mut Vec<AsmError>, line: usize, msg: String| errors.push(AsmError { line, col: 1, code: "ASM008", message: msg });
+    let mut i = 0;
+    while i < lines.len() {
+        let (line, text) = (lines[i].0, lines[i].1.clone());
+        let (label, head, rest) = split_line(&text);
+        let hu = head.to_ascii_uppercase();
+        let second = rest.split_whitespace().next().unwrap_or("").to_string();
+        let is_def = second.eq_ignore_ascii_case("MACRO") && label.is_none();
+        let is_loop = matches!(hu.as_str(), "REPT" | "IRP" | "IRPC");
+        if hu == "ENDM" {
+            err(errors, line, "ENDM sin un MACRO, REPT, IRP o IRPC abierto".into());
+            i += 1;
+            continue;
+        }
+        if is_def || is_loop {
+            // recoge el cuerpo hasta su ENDM, contando los bloques anidados
+            let mut nest = 1;
+            let mut j = i + 1;
+            while j < lines.len() {
+                if starts_block(&lines[j].1) {
+                    nest += 1;
+                } else if split_line(&lines[j].1).1.eq_ignore_ascii_case("ENDM") {
+                    nest -= 1;
+                    if nest == 0 {
+                        break;
+                    }
+                }
+                j += 1;
+            }
+            if j >= lines.len() {
+                err(errors, line, format!("falta el ENDM de este {}", if is_def { "MACRO" } else { hu.as_str() }));
+                return;
+            }
+            let body: Vec<(usize, String)> = lines[i + 1..j].to_vec();
+            if is_def {
+                let name = head.clone();
+                let args = rest[second.len()..].trim();
+                if is_reserved(&name) {
+                    err(errors, line, format!("'{name}' es una palabra reservada y no puede ser el nombre de una macro"));
+                } else if defs.contains_key(&name) {
+                    err(errors, line, format!("la macro '{name}' ya esta definida"));
+                } else {
+                    let params: Vec<String> = args.split(',').map(str::trim).filter(|p| !p.is_empty()).map(String::from).collect();
+                    defs.insert(name, MacroDef { params, body });
+                }
+            } else {
+                let args = split_macro_args(&rest);
+                let mut passes: Vec<BTreeMap<String, String>> = Vec::new();
+                match hu.as_str() {
+                    "REPT" => {
+                        let n = lex(&rest, line).ok().and_then(|t| if let [(Tok::Num(n), _)] = t.as_slice() { Some(*n) } else { None });
+                        match n {
+                            Some(n) if (0..=4096).contains(&n) => passes = vec![BTreeMap::new(); n as usize],
+                            Some(n) => err(errors, line, format!("REPT {n}: de 0 a 4096 repeticiones")),
+                            None => err(errors, line, "REPT necesita un numero constante de repeticiones (p. ej. REPT 3)".into()),
+                        }
+                    }
+                    "IRP" if args.len() >= 2 => {
+                        passes = args[1..].iter().map(|a| BTreeMap::from([(args[0].clone(), a.clone())])).collect();
+                    }
+                    "IRPC" if args.len() == 2 => {
+                        passes = args[1].chars().filter(|c| !c.is_whitespace()).map(|c| BTreeMap::from([(args[0].clone(), c.to_string())])).collect();
+                    }
+                    "IRP" => err(errors, line, "IRP necesita un nombre y al menos un valor: IRP nombre,v1,v2".into()),
+                    _ => err(errors, line, "IRPC necesita un nombre y una cadena: IRPC nombre,ABC".into()),
+                }
+                for p in passes {
+                    let expanded = instantiate(&body, &p, counter);
+                    expand_block(&expanded, defs, counter, errors, depth + 1, out);
+                }
+            }
+            i = j + 1;
+            continue;
+        }
+        // invocacion de una macro definida
+        if let Some(def) = defs.get(&head) {
+            if depth > 32 {
+                err(errors, line, format!("la macro '{head}' se llama a si misma sin fin (mas de 32 niveles)"));
+                return;
+            }
+            let args = split_macro_args(&rest);
+            if args.len() > def.params.len() {
+                err(errors, line, format!("la macro '{head}' recibe {} argumento(s) y se le pasaron {}", def.params.len(), args.len()));
+            } else {
+                let params: BTreeMap<String, String> = def.params.iter().enumerate().map(|(k, p)| (p.clone(), args.get(k).cloned().unwrap_or_default())).collect();
+                let body = def.body.clone();
+                let expanded = instantiate(&body, &params, counter);
+                if let Some(l) = label {
+                    out.push((line, format!("{l}:")));
+                }
+                // las lineas de la expansion llevan la linea de la invocacion
+                let expanded: Vec<(usize, String)> = expanded.into_iter().map(|(_, t)| (line, t)).collect();
+                expand_block(&expanded, defs, counter, errors, depth + 1, out);
+            }
+            i += 1;
+            continue;
+        }
+        out.push((line, text));
+        i += 1;
     }
 }
 
@@ -1348,6 +1573,9 @@ fn link(psects: &[Psect], env: &AsmEnv, errors: &mut Vec<AsmError>) -> Vec<u32> 
 pub fn assemble_with(src: &str, env: &AsmEnv) -> Result<Assembled, Vec<AsmError>> {
     let mut pre = Pre { env, macros: BTreeMap::new(), defined: BTreeSet::new(), xc_included: false, errors: Vec::new() };
     let lines = pre.run(src);
+    let mut macro_errors = Vec::new();
+    let lines = expand_macro_stage(lines, &mut macro_errors);
+    pre.errors.extend(macro_errors);
     let xc = pre.xc_included;
     let mut a = Asm1 {
         env,
@@ -1368,6 +1596,7 @@ pub fn assemble_with(src: &str, env: &AsmEnv) -> Result<Assembled, Vec<AsmError>
         a.consts.extend(xc_inc(&env.regs).0);
     }
     let mut ended = false;
+    let mut radix = 10u32;
     for (line, text) in &lines {
         if ended {
             break;
@@ -1383,7 +1612,17 @@ pub fn assemble_with(src: &str, env: &AsmEnv) -> Result<Assembled, Vec<AsmError>
             }
             continue;
         }
-        let toks = match lex(text, *line) {
+        // RADIX dec|hex|oct: la base de los numeros sin sufijo
+        if let Some(arg) = text.trim().get(..5).filter(|h| h.eq_ignore_ascii_case("radix")).and_then(|_| text.trim()[5..].strip_prefix(|c: char| c.is_whitespace())) {
+            match arg.trim().to_ascii_lowercase().as_str() {
+                "dec" => radix = 10,
+                "hex" => radix = 16,
+                "oct" => radix = 8,
+                other => a.e(*line, 1, "ASM003", format!("RADIX '{other}': las bases son dec, hex y oct")),
+            }
+            continue;
+        }
+        let toks = match lex_radix(text, *line, radix) {
             Ok(t) => t,
             Err(e) => {
                 a.errors.push(e);

@@ -64,9 +64,51 @@ main:                                   ; las etiquetas SIEMPRE llevan ':'
 | `BANKSEL`, `BANKISEL`, `PAGESEL`, `fcall`, `ljmp` | ✅ (expanden a `BCF`/`BSF` de `STATUS` y `PCLATH`; `fcall` son 5 palabras y `ljmp` 3, como en la guía) |
 | `IF`, `ELSIF`, `ELSE`, `ENDIF`; `#include <xc.inc>`, `#define NOMBRE valor`, `#undef`, `#ifdef`, `#ifndef`, `#if defined(X)`, `#else`, `#endif` | ✅ |
 | `LIST`, `TITLE`, `NOLIST`, `FNCALL`, `ASMOPT`..., directivas de listado y de grafo de llamadas | ✅ se aceptan sin efecto |
-| `MACRO`/`ENDM`, `REPT`, `IRP`, `LOCAL`, `RADIX`, `DABS`, `DDW`, `EXTRN` | ⏳ error `ASM008` explícito (#58) |
+| `MACRO`/`ENDM`, `LOCAL`, `REPT`, `IRP`, `IRPC`, `RADIX` | ✅ ver «Macros» |
+| `DABS`, `DLABS`, `DDW`, `DQW`, `EXTRN`, `EXITM`, el flag `bit` de `PSECT` | ⏳ error `ASM008` explícito (#60) |
 
 `DB`/`DW` en la memoria de programa escriben **una palabra por valor** (con `delta=2`, el byte alto en cero), como indica la guía.
+
+### Macros
+
+La expansión es **textual**, antes de ensamblar, y las líneas expandidas llevan el número de la línea de la invocación (un error dentro de una macro apunta a donde se la usa; el listado
+muestra las palabras generadas bajo esa línea).
+
+```asm
+loadPort MACRO port,value        ; nombre MACRO parametros (sin ':')
+    movlw value
+    movwf PORT&port              ; '&' concatena: loadPort B,0x55 -> movwf PORTB (por eso el AND de bits se escribe 'and')
+ENDM
+
+down MACRO count
+    LOCAL more                   ; un nombre unico (??0001, ??0002...) en cada expansion
+more:
+    decfsz count,f
+    goto more
+ENDM
+
+    loadPort B,0x55
+    down 0x20
+    down 0x21                    ; sin etiquetas repetidas
+    ld <0x20,w>                  ; <...> mete comas en un argumento: movf 0x20,w
+REPT 3                           ; repite el bloque 3 veces (constante, hasta 4096)
+    nop
+ENDM
+IRP number,1Ah,2Bh               ; una vez por valor
+    DW number
+ENDM
+IRPC char,ABC                    ; una vez por caracter: DB 'A', 'B', 'C'
+    DB 'char'
+ENDM
+RADIX hex                        ; dec, hex u oct: base de los numeros sin sufijo
+```
+
+- Una macro admite otras macros, `REPT`/`IRP`/`IRPC` anidados y `IF`/`ELSE`; una macro que se llama a sí misma sin fin se corta a los 32 niveles.
+- Faltar argumentos los deja vacíos; pasar de más es un error. El nombre de una macro no puede ser un mnemónico ni una directiva.
+- Un parámetro se sustituye también dentro de comillas (`'char'`), como en la guía.
+- `EXITM` no se admite: la expansión no conoce las condiciones del ensamblado; usa `IF`/`ELSE` en la macro.
+- `DDW`/`DQW`/`DABS` siguen sin implementar: la guía no fija cómo se reparten 32 o 64 bits en palabras de 14 bits ni el relleno del espacio absoluto, y no se inventan (#60).
+- Dentro de una `@asm_function` no hay macros: el cuerpo es una sola función con las reglas de [asm-inline.md](asm-inline.md).
 
 ### `PSECT` y el mini-enlazador
 
