@@ -357,6 +357,20 @@ fn config_accepts_digit_only_value_name_without_reinterpreting_hex_literals() {
 }
 
 #[test]
+fn id_locations_are_explicit_masked_and_unique() {
+    let a = ok("CONFIG IDLOC0 = 0x41, IDLOC1 = 0, IDLOC2 = 0x20, IDLOC3 = 0x7f\n");
+    assert_eq!(a.image.get(0x2000), Some(0x41));
+    assert_eq!(a.image.get(0x2001), Some(0));
+    assert_eq!(a.image.get(0x2002), Some(0x20));
+    assert_eq!(a.image.get(0x2003), Some(0x7f));
+    assert_eq!(ok("CONFIG IDLOC0 = 1\n").image.get(0x2001), None);
+    assert_eq!(a.image.get(0x2007), None);
+    assert_eq!(code("CONFIG IDLOC0 = 0x80\n"), "ASM004");
+    assert_eq!(code("CONFIG IDLOC0 = 1, IDLOC0 = 2\n"), "ASM013");
+    assert_eq!(code("CONFIG DEVID = 1\n"), "ASM013");
+}
+
+#[test]
 fn config_errors_list_the_valid_choices() {
     let m = msg("CONFIG WDTE = MAYBE\n");
     assert!(m.contains("ON") && m.contains("OFF"), "{m}");

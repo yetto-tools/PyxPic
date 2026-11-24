@@ -306,10 +306,18 @@ fn disasm(args: &[String]) -> ExitCode {
                     println!("CONFIG {} = {value:#06x}", config.name);
                 }
             }
+            for id in &pack.config.id_locations {
+                if let Some(value) = img.get(id.address.0) {
+                    if u32::from(value) & !id.mask.0 == 0 {
+                        println!("CONFIG {} = {value:#06x}", id.name);
+                    }
+                }
+            }
         }
         println!("PSECT pypic_disasm,class=CODE,delta=2,abs");
         for (addr, word) in img.iter() {
             if pack.as_ref().is_some_and(|p| p.config.words.iter().any(|c| c.address.0 == addr)) { continue; }
+            if pack.as_ref().is_some_and(|p| p.config.id_locations.iter().any(|id| id.address.0 == addr && u32::from(word) & !id.mask.0 == 0)) { continue; }
             println!("    ORG {addr:#06x}");
             if let Some(pack) = &pack {
                 if addr == pack.memory.program.reset_vector.0 { println!("pypic_reset:"); }

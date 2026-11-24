@@ -76,6 +76,7 @@ pub struct AsmEnv {
     pub device: Option<String>,
     pub regs: Vec<EnvReg>,
     pub config: Vec<EnvConfigWord>,
+    pub id_locations: Vec<pypic_device::IdLocation>,
     /// Palabras de programa (los psects de la clase `CODE` se colocan dentro de ellas).
     pub program_words: u32,
     /// Clases de memoria de datos (`BANK0`.., `COMMON`, `RAM`): rangos inclusivos.
@@ -88,7 +89,7 @@ pub struct AsmEnv {
 
 impl Default for AsmEnv {
     fn default() -> Self {
-        AsmEnv { device: None, regs: Vec::new(), config: Vec::new(), program_words: 0x2000, data_classes: BTreeMap::new(), placements: Vec::new(), fixup_ignore: false }
+        AsmEnv { device: None, regs: Vec::new(), config: Vec::new(), id_locations: Vec::new(), program_words: 0x2000, data_classes: BTreeMap::new(), placements: Vec::new(), fixup_ignore: false }
     }
 }
 
@@ -128,7 +129,7 @@ impl AsmEnv {
         all.push((m.common.start.0, m.common.end.0));
         all.sort();
         classes.insert("RAM".into(), all);
-        AsmEnv { device: Some(pack.device.name.clone()), regs, config, program_words: pack.memory.program.words, data_classes: classes, ..AsmEnv::default() }
+        AsmEnv { device: Some(pack.device.name.clone()), regs, config, id_locations: pack.config.id_locations.clone(), program_words: pack.memory.program.words, data_classes: classes, ..AsmEnv::default() }
     }
 
     /// Interpreta las opciones del enlazador (`-presetVec=0h`, `-pintentry=4h,init`...) y las anade a `placements`.
@@ -1820,11 +1821,25 @@ pub fn assemble_with(src: &str, env: &AsmEnv) -> Result<Assembled, Vec<AsmError>
 fn apply_config(sets: &[ConfigSet], env: &AsmEnv, syms: &BTreeMap<String, i64>, image: &mut Image, errors: &mut Vec<AsmError>, warnings: &mut Vec<AsmError>) {
     let mut words: BTreeMap<u32, (u16, BTreeSet<String>)> = BTreeMap::new();
     for c in sets {
-        if env.config.is_empty() {
+        if env.config.is_empty() && env.id_locations.is_empty() {
             errors.push(AsmError { line: c.line, col: c.col, code: "ASM013", message: "CONFIG necesita un dispositivo (-mcpu=16F887, --device o PROCESSOR) para conocer sus palabras de configuracion".into() });
             return;
         }
         let ctx = Ctx { syms, pc: None, line: c.line };
+        if let Some(id) = env.id_locations.iter().find(|id| id.name.eq_ignore_ascii_case(&c.name)) {
+            match eval(&c.value, &ctx, c.col) {
+                Ok(v) if v >= 0 && (v as u64 & !(id.mask.0 as u64)) == 0 => {
+                    if words.contains_key(&id.address.0) {
+                        errors.push(AsmError { line: c.line, col: c.col, code: "ASM013", message: format!("{} se configura dos veces", id.name) });
+                    } else {
+                        words.insert(id.address.0, (v as u16, BTreeSet::new()));
+                    }
+                }
+                Ok(v) => errors.push(AsmError { line: c.line, col: c.col, code: "ASM004", message: format!("{} = {v}: valor fuera de la mascara {:#x}", id.name, id.mask.0) }),
+                Err(e) => errors.push(e),
+            }
+            continue;
+        }
         // CONFIG CONFIG1 = 0x20D4: la palabra entera
         if let Some(w) = env.config.iter().find(|w| w.name.eq_ignore_ascii_case(&c.name)) {
             match eval(&c.value, &ctx, c.col) {

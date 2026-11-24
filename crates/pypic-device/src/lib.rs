@@ -189,7 +189,17 @@ pub struct Config {
     pub source: String,
     pub word_bits: u32,
     pub space: ConfigSpace,
+    #[serde(default)]
+    pub id_locations: Vec<IdLocation>,
     pub words: Vec<ConfigWord>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IdLocation {
+    pub name: String,
+    pub address: Num,
+    pub mask: Num,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -506,9 +516,12 @@ impl DevicePack {
             ("registers.json", self.registers.schema_version),
             ("peripherals.json", self.peripherals.schema_version),
         ] {
-            if v != SCHEMA_VERSION {
+            if v != SCHEMA_VERSION && !(file == "config.json" && v == 2) {
                 e.push(format!("{file}: schema_version {v} no soportada (se espera {SCHEMA_VERSION})"));
             }
+        }
+        if self.config.schema_version == 1 && !self.config.id_locations.is_empty() {
+            e.push("config.json: id_locations requiere schema_version 2".into());
         }
     }
 
@@ -891,6 +904,19 @@ impl DevicePack {
         let c = &self.config;
         let mask = (1u64 << c.word_bits) - 1;
         let mut addrs = BTreeSet::new();
+        let mut id_names = BTreeSet::new();
+        for id in &c.id_locations {
+            let ctx = format!("config.json[{}]", id.name);
+            if id.name.is_empty() || !id_names.insert(id.name.to_ascii_uppercase()) || c.words.iter().any(|w| w.name.eq_ignore_ascii_case(&id.name)) {
+                e.push(format!("{ctx}: nombre de identificacion vacio o repetido"));
+            }
+            if id.address.0 < c.space.start.0 || id.address.0 > c.space.end.0 || !addrs.insert(id.address) {
+                e.push(format!("{ctx}: direccion fuera del espacio o repetida"));
+            }
+            if id.mask.0 == 0 || id.mask.0 as u64 > mask {
+                e.push(format!("{ctx}: mascara invalida"));
+            }
+        }
         for w in &c.words {
             let ctx = format!("config.json[{}]", w.name);
             if w.address.0 < c.space.start.0 || w.address.0 > c.space.end.0 {

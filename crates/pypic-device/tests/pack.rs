@@ -21,6 +21,31 @@ fn shipped_pic16f887_pack_is_valid() {
     assert!(errs.is_empty(), "{errs:#?}");
 }
 
+#[test]
+fn id_locations_are_versioned_and_validated() {
+    let p = pack();
+    assert_eq!(p.config.schema_version, 2);
+    for (i, id) in p.config.id_locations.iter().enumerate() {
+        assert_eq!(id.name, format!("IDLOC{i}"));
+        assert_eq!(id.address, Num(0x2000 + i as u32));
+        assert_eq!(id.mask, Num(0x7f));
+    }
+    assert_eq!(p.config.id_locations.len(), 4);
+    let mut old = p.clone();
+    old.config.schema_version = 1;
+    old.config.id_locations.clear();
+    assert!(old.validate().is_empty());
+    let mut bad = p.clone();
+    bad.config.id_locations[0].address = Num(0x2007);
+    assert!(!bad.validate().is_empty());
+    let mut bad = p.clone();
+    bad.config.id_locations[0].mask = Num(0);
+    assert!(!bad.validate().is_empty());
+    let mut bad = p;
+    bad.config.schema_version = 1;
+    assert!(!bad.validate().is_empty());
+}
+
 /// Valores copiados del datasheet DS40001291H (p.1-2, p.22-26, p.206-207).
 #[test]
 fn pic16f887_matches_datasheet_numbers() {

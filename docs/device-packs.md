@@ -1,6 +1,6 @@
 # Device Packs (`pypic-device`)
 
-**Estado: implementado (primer corte, esquema v1).** Un Device Pack describe un MCU con datos verificados contra su
+**Estado: implementado.** Un Device Pack describe un MCU con datos verificados contra su
 datasheet oficial. Todo corre en el host; el MCU solo ejecuta el firmware nativo resultante.
 
 ```
@@ -17,7 +17,8 @@ Pendiente (issues abiertos): más encapsulados (#24) y PIC12F625 (#25).
 
 ## Reglas del esquema
 
-- Cada archivo lleva `schema_version` (hoy `1`). El cargador **rechaza campos desconocidos** y versiones que no conoce.
+- Cada archivo lleva `schema_version`: `1`, salvo `config.json`, que también admite la versión `2` con ubicaciones de identificación opcionales. Los packs v1 siguen siendo válidos. El cargador **rechaza campos desconocidos** y versiones que no conoce.
+- En `config.json` v2, `id_locations` describe nombre, dirección y máscara de bits útiles, separados de los campos de configuración. En el PIC16F887 son `IDLOC0`–`IDLOC3`, direcciones `2000h`–`2003h` y máscara `7Fh` (datasheet, sección 14.8).
 - Direcciones y valores numéricos pueden ser enteros o cadenas `"0x1FFF"`.
 - Cada dato lleva su fuente (`source`/`sources`) con página del datasheet.
 - `cpu.data_bits` es el ancho nativo del MCU (8/16/32) y `pypic.max_int_bits` el ancho máximo de entero que PyPIC admite
@@ -40,7 +41,7 @@ Comprueba la coherencia interna, no solo el formato:
 - **Periféricos:** los registros y bits (encendido, banderas y habilitaciones de interrupción) que cita cada uno existen en `registers.json`; cada función
   alterna de `pins.json` la posee **exactamente un** periferico y cada función de un periférico está en algún pin; los modos que usan los pines están declarados;
   `uses` apunta a periféricos que existen; y las cantidades coinciden con `device.json` (temporizadores, canales y bits del ADC, comparadores, CCP/ECCP/EUSART/MSSP).
-- **Configuración:** direcciones dentro del espacio de configuración y sin repetir; campos dentro de los 14 bits y sin
+- **Configuración:** direcciones de configuración e identificación dentro del espacio de configuración y sin repetir; máscaras de identificación válidas; campos dentro de los 14 bits y sin
   solaparse; cada campo define todos sus valores posibles; `default` cabe en la palabra.
 - **Dispositivo:** `data_bits` y `max_int_bits` válidos (8/16/32, `max_int_bits >= data_bits`), nivel de soporte
   conocido y al menos una fuente.

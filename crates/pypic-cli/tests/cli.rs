@@ -131,18 +131,25 @@ fn disasm_pic_as_uses_device_pack_configuration_and_vectors() {
     let source = dir.join("output.s");
     let output = dir.join("output.hex");
     let mut image = Image::new();
-    for (addr, word) in [(0, 0x3001), (4, 0x0008), (0x2007, 0x20d4), (0x2008, 0x3fff)] {
+    for (addr, word) in [(0, 0x3001), (4, 0x0008), (0x2000, 0x41), (0x2001, 0), (0x2002, 0x20), (0x2003, 0x7f), (0x2007, 0x20d4), (0x2008, 0x3fff)] {
         image.set(addr, word).unwrap();
     }
     std::fs::write(&input, image.to_intel_hex(16)).unwrap();
     let result = pypic(&root(), &["disasm", input.to_str().unwrap(), "--pic-as", "-mcpu=16F887"]);
     assert!(result.status.success(), "{}", text(&result));
     let asm = String::from_utf8(result.stdout).unwrap();
-    assert!(asm.contains("PROCESSOR 16F887") && asm.contains("CONFIG CONFIG1") && asm.contains("pypic_interrupt:"), "{asm}");
+    assert!(asm.contains("PROCESSOR 16F887") && asm.contains("CONFIG CONFIG1") && asm.contains("CONFIG IDLOC0 = 0x0041") && asm.contains("pypic_interrupt:"), "{asm}");
     std::fs::write(&source, asm).unwrap();
     let result = pypic(&root(), &["asm", source.to_str().unwrap(), "-o", output.to_str().unwrap()]);
     assert!(result.status.success(), "{}", text(&result));
     assert_eq!(Image::from_intel_hex(&std::fs::read_to_string(output).unwrap()).unwrap(), image);
+    if let (Ok(pic_as), Ok(dfp)) = (std::env::var("PYPIC_TEST_PIC_AS"), std::env::var("PYPIC_TEST_XC8_DFP")) {
+        let official = dir.join("official.hex");
+        let result = Command::new(pic_as).current_dir(root()).arg("-mcpu=16F887")
+            .arg(format!("-mdfp={dfp}")).arg(&source).arg("-o").arg(&official).output().unwrap();
+        assert!(result.status.success(), "{}", text(&result));
+        assert_eq!(Image::from_intel_hex(&std::fs::read_to_string(official).unwrap()).unwrap(), image);
+    }
 }
 
 #[test]

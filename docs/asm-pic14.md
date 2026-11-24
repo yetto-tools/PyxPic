@@ -2,6 +2,8 @@
 
 ## Desensamblado como fuente
 
+En PIC16F887, `CONFIG IDLOC0 = 0x41` hasta `IDLOC3` emiten identificadores opcionales en `0x2000..0x2003`. El datasheet DS40001291H §14.8 indica que solo se usan sus siete bits menos significativos. PyPIC rechaza valores fuera de `0x00..0x7F`, identificadores repetidos y nombres desconocidos; no emite IDLOC si no se solicitan. Son independientes de CONFIG1/CONFIG2 y no son registros de identificación del dispositivo.
+
 `pypic disasm firmware.hex --pic-as -mcpu=16F887` escribe en la salida estándar instrucciones en sintaxis PIC-AS, con `PROCESSOR`, `PSECT` absoluto y `ORG` para conservar direcciones. El Device Pack permite identificar los vectores y emitir las palabras de configuración conocidas como `CONFIG CONFIGn = valor`. Las palabras no reconocidas o con codificaciones alternativas se conservan como `DW`; otras direcciones fuera de la memoria de programa se muestran como datos de zona especial. `--devices-dir` permite localizar Device Packs. Sin `-mcpu`, no se presupone un dispositivo y las zonas especiales se representan con `DW`. El formato sin `--pic-as` conserva el listado anterior.
 
 El HEX no contiene nombres, tipos ni una separación fiable entre código y datos: la salida numérica no recupera el programa original. Se rotulan los vectores conocidos, pero los saltos y registros se mantienen numéricos porque la página y el banco dependen del estado en ejecución. `pypic asm` emite únicamente las palabras CONFIG mencionadas; compare las regiones relevantes al reensamblar con otros toolchains.
