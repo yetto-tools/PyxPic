@@ -87,7 +87,7 @@ fn pic_as_numeric_config_values_match_when_xc8_is_configured() {
         return;
     };
     let dir = tmp("xc8-config-numeric");
-    let cases = [("WRT", "-1", 0x2008), ("WRT", "0", 0x2008), ("WRT", "1", 0x2008), ("WRT", "2", 0x2008), ("WRT", "3", 0x2008), ("WRT", "4", 0x2008), ("WRT", "0x100", 0x2008), ("WDTE", "2", 0x2007), ("FOSC", "0x10", 0x2007)];
+    let cases = [("WRT", "-1", 0x2008), ("WRT", "0", 0x2008), ("WRT", "1", 0x2008), ("WRT", "2", 0x2008), ("WRT", "3", 0x2008), ("WRT", "4", 0x2008), ("WRT", "0x100", 0x2008), ("WDTE", "2", 0x2007), ("FOSC", "0x10", 0x2007), ("CONFIG1", "0", 0x2007), ("CONFIG1", "0x3fff", 0x2007), ("CONFIG1", "0x4000", 0x2007), ("CONFIG2", "-1", 0x2008), ("IDLOC0", "0x80", 0x2000)];
     for (index, (field, value, address)) in cases.iter().enumerate() {
         let source = dir.join(format!("wrt{index}.s"));
         let official = dir.join(format!("official{index}.hex"));

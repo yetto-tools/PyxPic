@@ -365,7 +365,11 @@ fn id_locations_are_explicit_masked_and_unique() {
     assert_eq!(a.image.get(0x2003), Some(0x7f));
     assert_eq!(ok("CONFIG IDLOC0 = 1\n").image.get(0x2001), None);
     assert_eq!(a.image.get(0x2007), None);
-    assert_eq!(code("CONFIG IDLOC0 = 0x80\n"), "ASM004");
+    let truncated = ok("CONFIG IDLOC0 = 0x80\nCONFIG CONFIG1 = 0x4000\n");
+    assert_eq!(truncated.image.get(0x2000), Some(0));
+    assert_eq!(truncated.image.get(0x2007), Some(0));
+    assert_eq!(truncated.warnings.len(), 2);
+    assert!(truncated.warnings.iter().all(|w| w.code == "ASMW001"));
     assert_eq!(code("CONFIG IDLOC0 = 1, IDLOC0 = 2\n"), "ASM013");
     assert_eq!(code("CONFIG DEVID = 1\n"), "ASM013");
 }

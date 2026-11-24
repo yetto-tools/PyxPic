@@ -1828,11 +1828,15 @@ fn apply_config(sets: &[ConfigSet], env: &AsmEnv, syms: &BTreeMap<String, i64>, 
         let ctx = Ctx { syms, pc: None, line: c.line };
         if let Some(id) = env.id_locations.iter().find(|id| id.name.eq_ignore_ascii_case(&c.name)) {
             match eval(&c.value, &ctx, c.col) {
-                Ok(v) if v >= 0 && (v as u64 & !(id.mask.0 as u64)) == 0 => {
+                Ok(v) if v >= 0 => {
+                    let truncated = v as u64 & id.mask.0 as u64;
+                    if truncated != v as u64 {
+                        warnings.push(AsmError { line: c.line, col: c.col, code: "ASMW001", message: format!("{} = {v} excede la mascara {:#x}: se usa {truncated}", id.name, id.mask.0) });
+                    }
                     if words.contains_key(&id.address.0) {
                         errors.push(AsmError { line: c.line, col: c.col, code: "ASM013", message: format!("{} se configura dos veces", id.name) });
                     } else {
-                        words.insert(id.address.0, (v as u16, BTreeSet::new()));
+                        words.insert(id.address.0, (truncated as u16, BTreeSet::new()));
                     }
                 }
                 Ok(v) => errors.push(AsmError { line: c.line, col: c.col, code: "ASM004", message: format!("{} = {v}: valor fuera de la mascara {:#x}", id.name, id.mask.0) }),
@@ -1843,12 +1847,16 @@ fn apply_config(sets: &[ConfigSet], env: &AsmEnv, syms: &BTreeMap<String, i64>, 
         // CONFIG CONFIG1 = 0x20D4: la palabra entera
         if let Some(w) = env.config.iter().find(|w| w.name.eq_ignore_ascii_case(&c.name)) {
             match eval(&c.value, &ctx, c.col) {
-                Ok(v) if (0..=0x3FFF).contains(&v) => {
+                Ok(v) if v >= 0 => {
+                    let truncated = (v as u64) & 0x3fff;
+                    if v as u64 != truncated {
+                        warnings.push(AsmError { line: c.line, col: c.col, code: "ASMW001", message: format!("{} = {v} excede 14 bits: se usa {truncated}", w.name) });
+                    }
                     let e = words.entry(w.address).or_insert((w.default, BTreeSet::new()));
                     if !e.1.insert(w.name.clone()) {
                         errors.push(AsmError { line: c.line, col: c.col, code: "ASM013", message: format!("{} se configura dos veces", w.name) });
                     }
-                    e.0 = v as u16;
+                    e.0 = truncated as u16;
                 }
                 Ok(v) => errors.push(AsmError { line: c.line, col: c.col, code: "ASM004", message: format!("{} = {v}: la palabra de configuracion tiene 14 bits (0..=0x3FFF)", w.name) }),
                 Err(e) => errors.push(e),
