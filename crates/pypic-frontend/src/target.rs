@@ -31,11 +31,21 @@ pub struct TargetProfile {
     pub stack_levels: Option<u32>,
     /// Pines de E/S por nombre (`RD0`...). `None` = sin validar (solo se comprueba la sintaxis del nombre).
     pub pins: Option<BTreeMap<String, PinInfo>>,
+    /// Nombre del dispositivo (`PIC16F887`) cuando el perfil viene de un Device Pack.
+    pub device: Option<String>,
+    /// Reloj maximo del dispositivo, en Hz.
+    pub max_clock_hz: Option<u32>,
 }
 
 impl TargetProfile {
     pub fn new(name: impl Into<String>, native_bits: u32, max_int_bits: u32) -> Self {
-        TargetProfile { name: name.into(), native_bits, max_int_bits, stack_levels: None, pins: None }
+        TargetProfile { name: name.into(), native_bits, max_int_bits, stack_levels: None, pins: None, device: None, max_clock_hz: None }
+    }
+
+    pub fn with_device(mut self, name: impl Into<String>, max_clock_hz: u32) -> Self {
+        self.device = Some(name.into());
+        self.max_clock_hz = Some(max_clock_hz);
+        self
     }
 
     pub fn with_pins(mut self, pins: BTreeMap<String, PinInfo>) -> Self {

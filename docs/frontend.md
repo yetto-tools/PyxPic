@@ -56,10 +56,39 @@ lambdas, `try`, `import` general, atributos, indexado, argumentos con nombre, co
 | Ensanchamiento | Sin conversion implicita ni siquiera sin perdida (`u8` + `u16` es `PYP2047`). |
 | Desplazamientos | Cantidad literal `0..bits-1` o entero sin signo; el operando izquierdo necesita tipo. |
 
+## Declaración del dispositivo, reloj y arranque
+
+Un programa dice **a qué PIC está orientado** en su primera línea, y de ahí salen todas las validaciones (pines, tipos, pila, reloj, RAM y ROM):
+
+```python
+from pypic.device import PIC16F887        # 1. declaración inicial: obligatoria para compilar (pypic build)
+from pypic.gpio import RB0, RD0
+
+CLOCK_HZ: Final[u32] = 4_000_000          # 2. frecuencia del reloj del sistema (opcional)
+
+
+@init_device                               # 3. se ejecuta una vez, antes de main
+def configurar() -> None:
+    RD0.output()
+    RB0.input()
+
+
+def main() -> None:
+    ...
+```
+
+- **`from pypic.device import <DISPOSITIVO>`**: debe ser la **primera línea** y única. `pypic` busca el Device Pack con ese nombre (`devices/pic16f887`) en
+  `--devices-dir`, `$PYPIC_DEVICES` y `./devices`; si no existe, el error lista los disponibles. `--device <dir>` fuerza un pack concreto y debe coincidir con la declaración.
+  `pypic check` y `pypic ir` funcionan sin declaración (análisis genérico, sin validar pines ni límites del dispositivo); `pypic build` la exige.
+- **`CLOCK_HZ: Final[u32] = <hercios>`**: constante con ese nombre y forma exactos; se valida contra el reloj máximo del dispositivo. No ocupa RAM y no da el aviso de tipo emulado.
+- **`@init_device`**: una sola función `() -> None` (el nombre es libre); el arranque la llama **después de inicializar las variables y antes de `main`**.
+  El código no puede llamarla. Cuenta en el análisis de pila y en la regla de no compartir funciones con la interrupción.
+- Las constantes `Final` se sustituyen por su valor al compilar: **no ocupan RAM** aunque sean de 32 bits.
+
 ## Diagnosticos
 
 Formato: `archivo:linea:col: error[PYPnnnn]: mensaje`. Rangos: `PYP0xxx` lexer, `PYP1xxx` sintaxis/subconjunto,
-`PYP2xxx` tipos y semantica, `PYP3xxx` advertencias (no impiden compilar). Si hay errores de sintaxis no se ejecuta el verificador de tipos.
+`PYP2xxx` tipos y semantica, `PYP3xxx` advertencias (no impiden compilar). Declaración/arranque: `PYP2090` dispositivo declarado distinto del compilado, `PYP2091` declarado dos veces, `PYP2092` no es la primera línea o hay más de un nombre, `PYP2093` `CLOCK_HZ` mal formado, `PYP2094` reloj mayor que el máximo del dispositivo, `PYP2096` nombre que no parece un PIC, `PYP2097`/`PYP2099`/`PYP2098` reglas de `@init_device`. Si hay errores de sintaxis no se ejecuta el verificador de tipos.
 
 ## Uso
 

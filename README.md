@@ -60,7 +60,7 @@ cargo test
 cargo run -p pypic-cli -- check examples/counter.py
 cargo run -p pypic-cli -- ir examples/counter.py
 cargo run -p pypic-cli -- build examples/counter.py -o counter.hex --listing
-cargo run -p pypic-cli -- build examples/button_led.py --device devices/pic16f887 -o button_led.hex   # con pines hace falta --device
+cargo run -p pypic-cli -- build examples/button_led.py -o button_led.hex   # el dispositivo lo declara el propio programa
 cargo run -p pypic-cli -- device validate devices/pic16f887
 cargo run -p pypic-cli -- disasm archivo.hex    # inspecciona un .hex (programa y palabras de configuracion)
 cargo run -p pypic-cli -- check examples/counter.py --device devices/pic16f887

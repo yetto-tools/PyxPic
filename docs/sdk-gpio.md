@@ -6,6 +6,7 @@
 ## Decisión de diseño: los pines son nombres predeclarados
 
 ```python
+from pypic.device import PIC16F887
 from pypic.gpio import RD0, RB0
 
 def main() -> None:
@@ -57,7 +58,8 @@ No analiza el orden de ejecución: llamar `RD0.on()` antes de `RD0.output()` com
 - **Arranque:** pone en 0 el latch de cada puerto usado, porque tras el reset es indefinido (DS40001291H p.27). Así las salidas empiezan en bajo.
 - **`output()` / `input()`:** si el pin tiene función analógica (`ANn`) limpia su bit de `ANSEL`/`ANSELH` (banco 3, `188h`/`189h`); sin esto los pines
   analógicos **leen 0 aunque haya señal**. Luego fija `TRISx` (banco 1) y **vuelve siempre al banco 0** (invariante de la ABI).
-- Compilar con pines exige `--device <pack>` (`pypic build prog.py --device devices/pic16f887`): sin el pack no se sabe qué pines son analógicos.
+- El dispositivo se declara al comienzo del programa (`from pypic.device import PIC16F887`, ver `docs/frontend.md`): de ahí sale el pack con los pines y sus canales analógicos.
+- Lo natural es configurar los pines en una función `@init_device`, que el arranque ejecuta antes de `main`.
 
 ## Límites actuales
 
@@ -76,7 +78,7 @@ del host no sustituye a Proteus ni al hardware.
 ## Ejemplo para Proteus: `examples/button_led.py`
 
 ```
-pypic build examples/button_led.py --device devices/pic16f887 -o examples/hex/button_led.hex
+pypic build examples/button_led.py -o examples/hex/button_led.hex
 ```
 
 Montaje: PIC16F887; LED + resistencia de 330 Ω entre **RD0 (pin 19)** y GND; un **pulsador en RB0 (pin 33)** hacia +5 V con una resistencia de **10 kΩ a GND**

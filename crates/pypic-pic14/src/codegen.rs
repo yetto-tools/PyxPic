@@ -30,9 +30,6 @@ const SCRATCH_MAIN: u8 = 0x74; // 74h-77h
 const SCRATCH_ISR: u8 = 0x78; // 78h-7Bh
 const RETV_MAIN: u8 = 0x7C;
 const RETV_ISR: u8 = 0x7D;
-/// RAM de propiedad del compilador en el banco 0.
-const RAM_START: u16 = 0x20;
-const RAM_END: u16 = 0x6F;
 const PAGE_WORDS: usize = 2048;
 /// PORTA..PORTE estan en 05h-09h (banco 0) y TRISA..TRISE en 85h-89h (banco 1): mismo desplazamiento de 7 bits.
 /// ANSEL=188h y ANSELH=189h (banco 3). DS40001291H p.27-29. TODO: sacarlos del Device Pack (registers.json, #22).
@@ -53,6 +50,8 @@ pub enum CodegenError {
     Unsupported(String),
     OutOfRam { needed: usize, available: usize },
     TooLarge { words: usize },
+    /// El dispositivo no es compatible con este backend o con el programa.
+    Device(String),
 }
 
 impl fmt::Display for CodegenError {
@@ -64,6 +63,7 @@ impl fmt::Display for CodegenError {
                 f,
                 "la RAM del banco 0 no alcanza ({needed} bytes necesarios, {available} disponibles); el uso de otros bancos y el solapamiento de locales aun no estan implementados"
             ),
+            CodegenError::Device(s) => f.write_str(s),
             CodegenError::TooLarge { words } => write!(f, "el programa ocupa {words} palabras; el limite actual es una pagina de {PAGE_WORDS} (PCLATH no se maneja todavia)"),
         }
     }
@@ -75,26 +75,46 @@ fn unsupported<T>(msg: impl Into<String>) -> Result<T, CodegenError> {
     Err(CodegenError::Unsupported(msg.into()))
 }
 
-/// Palabras de configuracion que se escriben en el HEX.
-#[derive(Clone, Copy, Debug)]
+/// Parametros del dispositivo y de la salida (se rellenan desde el Device Pack).
+#[derive(Clone, Debug)]
 pub struct Options {
-    pub config1: u16,
-    pub config2: u16,
+    /// Nombre del dispositivo (`PIC16F887`): el backend solo genera codigo para los que conoce.
+    pub device: String,
+    /// Palabras de la memoria de programa.
+    pub program_words: u32,
+    /// Rango de RAM del banco 0 que usa el compilador (sin la zona comun 70h-7Fh).
+    pub ram_start: u16,
+    pub ram_end: u16,
+    /// Direcciones de palabra de CONFIG1 y CONFIG2.
+    pub config_addr: (u32, u32),
+    pub config: (u16, u16),
 }
 
 impl Default for Options {
-    /// Oscilador interno INTOSCIO, WDT apagado, MCLR interno (los mismos que `blink_rd0`).
-    /// TODO: tomarlos del Device Pack / pypic.toml.
+    /// PIC16F887 con oscilador interno INTOSCIO, WDT apagado y MCLR interno (los valores de `blink_rd0`).
+    /// TODO: tomar las palabras de configuracion por nombre del Device Pack (#33).
     fn default() -> Self {
-        Options { config1: BLINK_CONFIG1, config2: BLINK_CONFIG2 }
+        Options {
+            device: "PIC16F887".into(),
+            program_words: 8192,
+            ram_start: 0x20,
+            ram_end: 0x6F,
+            config_addr: (CONFIG1, CONFIG2),
+            config: (BLINK_CONFIG1, BLINK_CONFIG2),
+        }
     }
 }
+
+/// Dispositivos para los que el backend conoce el mapa de registros (PORTx, TRISx, ANSEL...).
+const SUPPORTED_DEVICES: &[&str] = &["PIC16F887"];
 
 #[derive(Debug, Clone)]
 pub struct GlobalSym {
     pub name: String,
     pub addr: u8,
     pub ty: Type,
+    /// Constante `Final`: se sustituye por su valor al compilar y no ocupa RAM (`addr` no es valido).
+    pub is_const: bool,
 }
 
 #[derive(Debug)]
@@ -168,8 +188,8 @@ struct Alloc {
     used: usize,
 }
 
-fn allocate(m: &Module, live: &[usize]) -> Result<Alloc, CodegenError> {
-    let mut next = RAM_START as usize;
+fn allocate(m: &Module, live: &[usize], opts: &Options) -> Result<Alloc, CodegenError> {
+    let mut next = opts.ram_start as usize;
     let mut take = |n: usize| -> u8 {
         let a = next;
         next += n;
@@ -177,6 +197,10 @@ fn allocate(m: &Module, live: &[usize]) -> Result<Alloc, CodegenError> {
     };
     let mut globals = Vec::new();
     for g in &m.globals {
+        if g.is_const {
+            globals.push(0); // las constantes se sustituyen por su valor al compilar: no ocupan RAM
+            continue;
+        }
         let n = size(g.ty)?;
         globals.push(take(n));
     }
@@ -187,8 +211,8 @@ fn allocate(m: &Module, live: &[usize]) -> Result<Alloc, CodegenError> {
         locals.insert(fi, f.locals.iter().map(|l| size(l.ty).map(&mut take)).collect::<Result<Vec<_>, _>>()?);
         temps.insert(fi, f.temps.iter().map(|&t| size(t).map(&mut take)).collect::<Result<Vec<_>, _>>()?);
     }
-    let used = next - RAM_START as usize;
-    let available = (RAM_END - RAM_START + 1) as usize;
+    let used = next - opts.ram_start as usize;
+    let available = (opts.ram_end - opts.ram_start + 1) as usize;
     if used > available {
         return Err(CodegenError::OutOfRam { needed: used, available });
     }
@@ -736,16 +760,36 @@ impl<'a> Gen<'a> {
 
 /// Compila un modulo de IR a una imagen de memoria de programa lista para escribir como HEX.
 pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
+    if !SUPPORTED_DEVICES.iter().any(|d| d.eq_ignore_ascii_case(&opts.device)) {
+        return Err(CodegenError::Device(format!(
+            "el backend PIC14 aun no soporta '{}' (soportados: {}): falta su mapa de registros (#22)",
+            opts.device,
+            SUPPORTED_DEVICES.join(", ")
+        )));
+    }
+    if let Some(d) = &m.device {
+        if !d.eq_ignore_ascii_case(&opts.device) {
+            return Err(CodegenError::Device(format!("el programa declara '{d}' pero se compila para '{}'", opts.device)));
+        }
+    }
+    if opts.ram_start > opts.ram_end || opts.ram_end >= W_TEMP as u16 {
+        return Err(CodegenError::Device(format!(
+            "rango de RAM invalido {:#x}-{:#x}: debe terminar antes de la zona comun que usa la ABI ({:#x})",
+            opts.ram_start, opts.ram_end, W_TEMP
+        )));
+    }
     let main = m.functions.iter().position(|f| f.name == "main").ok_or(CodegenError::NoMain)?;
     let isrs: Vec<usize> = (0..m.functions.len()).filter(|&i| m.functions[i].is_interrupt).collect();
+    let inits: Vec<usize> = (0..m.functions.len()).filter(|&i| m.functions[i].is_init).collect();
     let mut roots = vec![main];
     roots.extend(&isrs);
+    roots.extend(&inits);
     let live_set = reach(m, &roots);
     let mut live: Vec<usize> = live_set.iter().copied().collect();
     live.sort_unstable();
     let isr_ctx = reach(m, &isrs);
 
-    let al = allocate(m, &live)?;
+    let al = allocate(m, &live, opts)?;
     let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main };
     for &fi in &live {
         let l = g.asm.label(m.functions[fi].name.clone());
@@ -770,6 +814,9 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
     g.asm.items.push(Item::Org(5));
     g.asm.place(startup);
     for (i, gl) in m.globals.iter().enumerate() {
+        if gl.is_const {
+            continue;
+        }
         let n = size(gl.ty)?;
         let addr = g.al.globals[i];
         let v = gl.init.rem_euclid(1i128 << (8 * n.max(1))) as u64;
@@ -792,6 +839,10 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
     }
     for reg in ports {
         g.asm.i(Clrf(reg)); // los latches de PORTx quedan indefinidos tras el reset
+    }
+    for &i in &inits {
+        let l = g.fn_labels[&i];
+        g.asm.call(l); // la funcion @init_device va antes de main
     }
     let main_label = g.fn_labels[&main];
     g.asm.call(main_label);
@@ -821,7 +872,7 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
     }
     let flash_words = placed.len();
     let top = placed.iter().map(|(a, _)| *a as usize + 1).max().unwrap_or(0);
-    if top > PAGE_WORDS {
+    if top > PAGE_WORDS.min(opts.program_words as usize) {
         return Err(CodegenError::TooLarge { words: top });
     }
     let mut image = Image::new();
@@ -834,8 +885,8 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
         };
         image.set(*a, inst.encode().expect("operandos validos")).expect("sin solapes");
     }
-    image.set(CONFIG1, opts.config1).expect("config");
-    image.set(CONFIG2, opts.config2).expect("config");
+    image.set(opts.config_addr.0, opts.config.0).expect("config");
+    image.set(opts.config_addr.1, opts.config.1).expect("config");
 
     // ---- listado ----
     let mut by_addr: BTreeMap<u32, Vec<&str>> = BTreeMap::new();
@@ -857,7 +908,7 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
         .globals
         .iter()
         .enumerate()
-        .map(|(i, gl)| GlobalSym { name: gl.name.clone(), addr: g.al.globals[i], ty: gl.ty })
+        .map(|(i, gl)| GlobalSym { name: gl.name.clone(), addr: g.al.globals[i], ty: gl.ty, is_const: gl.is_const })
         .collect();
     let functions = live.iter().map(|&fi| (m.functions[fi].name.clone(), addr_of[g.fn_labels[&fi]].unwrap())).collect();
     Ok(Compiled { image, globals, functions, listing, flash_words, ram_bytes: g.al.used })

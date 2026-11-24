@@ -14,11 +14,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::ast::*;
 use crate::diag::{Diagnostics, Span};
 use crate::target::{PinInfo, TargetProfile};
-use crate::types::{Type, INFERENCE_ORDER, U8};
+use crate::types::{Type, INFERENCE_ORDER, U32, U8};
 
 /// Nombres predeclarados (no requieren import; `from pypic import ...` es
 /// opcional para que el archivo siga siendo Python valido en otros editores).
-const PREDECLARED: &[&str] = &["u8", "i8", "u16", "i16", "u32", "i32", "bool", "Final", "interrupt"];
+const PREDECLARED: &[&str] = &["u8", "i8", "u16", "i16", "u32", "i32", "bool", "Final", "interrupt", "init_device"];
 
 #[derive(Clone, Copy, Debug)]
 pub struct ExprInfo {
@@ -49,6 +49,8 @@ pub struct FuncInfo {
     pub params: Vec<(String, Type)>,
     pub ret: Type,
     pub is_interrupt: bool,
+    /// Decorada con `@init_device`: la ejecuta el arranque antes de `main`.
+    pub is_init: bool,
     pub calls: BTreeSet<String>,
     pub span: Span,
 }
@@ -84,6 +86,10 @@ pub struct Program {
     pub globals: BTreeMap<String, Symbol>,
     pub functions: Vec<FuncInfo>,
     pub pins: Vec<PinDecl>,
+    /// Dispositivo declarado con `from pypic.device import PIC16F887`.
+    pub device: Option<String>,
+    /// Valor de `CLOCK_HZ: Final[u32]`, si se declaro.
+    pub clock_hz: Option<u32>,
 }
 
 pub struct Checked {
@@ -91,6 +97,8 @@ pub struct Checked {
     pub globals: BTreeMap<String, Symbol>,
     pub functions: Vec<FuncInfo>,
     pub pins: Vec<PinDecl>,
+    pub device: Option<String>,
+    pub clock_hz: Option<u32>,
 }
 
 pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Checked {
@@ -109,9 +117,12 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         pins: Vec::new(),
         pin_names: HashMap::new(),
         pin_uses: Vec::new(),
+        declared_device: None,
+        clock_hz: None,
+        in_const_decl: false,
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -152,13 +163,21 @@ struct Checker<'a> {
     pins: Vec<PinDecl>,
     pin_names: HashMap<String, usize>,
     pin_uses: Vec<PinUse>,
+    declared_device: Option<String>,
+    clock_hz: Option<u32>,
+    /// Verdadero mientras se resuelve el tipo de una constante `Final`: no cuesta nada en el dispositivo.
+    in_const_decl: bool,
 }
 
 impl<'a> Checker<'a> {
     fn run(&mut self, m: &Module) {
-        for it in &m.items {
+        for (i, it) in m.items.iter().enumerate() {
             if let Item::Import { span, module, names } = it {
-                self.check_import(*span, module, names);
+                if module == "pypic.device" {
+                    self.check_device_decl(i, *span, names);
+                } else {
+                    self.check_import(*span, module, names);
+                }
             }
         }
         for it in &m.items {
@@ -181,6 +200,53 @@ impl<'a> Checker<'a> {
         self.check_interrupt_sharing();
         self.check_stack_depth();
         self.check_pin_usage();
+    }
+
+    /// `from pypic.device import PIC16F887`: declara el dispositivo destino; debe ser la primera linea.
+    fn check_device_decl(&mut self, index: usize, span: Span, names: &[Ident]) {
+        if self.declared_device.is_some() {
+            self.d.error("PYP2091", span, "el dispositivo ya se declaro: un programa tiene un solo 'from pypic.device import ...'");
+            return;
+        }
+        let [name] = names else {
+            self.d.error("PYP2092", span, "se declara un solo dispositivo, p. ej. 'from pypic.device import PIC16F887'");
+            return;
+        };
+        if index != 0 {
+            self.d.error("PYP2092", span, "la declaracion del dispositivo debe ser la primera linea del programa (antes de cualquier otro import o declaracion)");
+        }
+        match &self.target.device {
+            Some(d) if !d.eq_ignore_ascii_case(&name.name) => {
+                self.d.error("PYP2090", name.span, format!("el programa declara '{}' pero se compila para '{d}'", name.name));
+            }
+            None if !looks_like_device(&name.name) => {
+                self.d.error("PYP2096", name.span, format!("'{}' no parece un dispositivo PIC (se espera algo como PIC16F887)", name.name));
+            }
+            _ => {}
+        }
+        self.declared_device = Some(name.name.clone());
+    }
+
+    /// `CLOCK_HZ: Final[u32] = 4_000_000`: frecuencia del reloj del sistema.
+    fn check_clock(&mut self, v: &VarDecl, ty: Type, is_final: bool, konst: Option<i128>) {
+        if ty == Type::Error {
+            return;
+        }
+        if !is_final || ty != U32 {
+            self.d.error("PYP2093", v.name.span, "CLOCK_HZ debe declararse como 'CLOCK_HZ: Final[u32] = 4_000_000' (frecuencia del reloj del sistema en hercios)");
+            return;
+        }
+        match konst {
+            Some(0) | None => self.d.error("PYP2093", v.name.span, "CLOCK_HZ debe ser una constante mayor que 0"),
+            Some(hz) => {
+                self.clock_hz = Some(hz as u32);
+                if let Some(max) = self.target.max_clock_hz {
+                    if hz > max as i128 {
+                        self.d.error("PYP2094", v.name.span, format!("CLOCK_HZ = {hz} Hz excede el reloj maximo de '{}' ({max} Hz)", self.target.name));
+                    }
+                }
+            }
+        }
     }
 
     fn check_import(&mut self, span: Span, module: &str, names: &[Ident]) {
@@ -348,6 +414,9 @@ impl<'a> Checker<'a> {
 
     /// Aviso de coste (una vez por tipo) si el destino emula `t` por software.
     fn note_emulated(&mut self, t: Type, span: Span) {
+        if self.in_const_decl {
+            return; // una constante en tiempo de compilacion no cuesta nada en el dispositivo
+        }
         if self.target.is_emulated(t) && self.warned.insert(t) {
             self.d.warning(
                 "PYP3001",
@@ -402,6 +471,7 @@ impl<'a> Checker<'a> {
             }
         };
         let mut is_interrupt = false;
+        let mut is_init = false;
         for dec in &f.decorators {
             if dec.name == "interrupt" {
                 if self.functions.iter().any(|x| x.is_interrupt) {
@@ -411,9 +481,20 @@ impl<'a> Checker<'a> {
                 if !params.is_empty() || !matches!(ret, Type::Void | Type::Error) {
                     self.d.error("PYP2006", f.name.span, "una funcion @interrupt no recibe parametros ni devuelve valor");
                 }
+            } else if dec.name == "init_device" {
+                if self.functions.iter().any(|x| x.is_init) {
+                    self.d.error("PYP2099", dec.span, "solo se permite una funcion @init_device");
+                }
+                is_init = true;
+                if !params.is_empty() || !matches!(ret, Type::Void | Type::Error) {
+                    self.d.error("PYP2097", f.name.span, "una funcion @init_device no recibe parametros ni devuelve valor: la ejecuta el arranque antes de main");
+                }
             } else {
-                self.d.error("PYP1004", dec.span, "decorador no soportado (solo @interrupt)");
+                self.d.error("PYP1004", dec.span, "decorador no soportado (solo @interrupt y @init_device)");
             }
+        }
+        if is_interrupt && is_init {
+            self.d.error("PYP2097", f.name.span, "una funcion no puede ser a la vez @interrupt y @init_device");
         }
         self.fidx.insert(f.name.name.clone(), self.functions.len());
         self.functions.push(FuncInfo {
@@ -421,6 +502,7 @@ impl<'a> Checker<'a> {
             params,
             ret,
             is_interrupt,
+            is_init,
             calls: BTreeSet::new(),
             span: f.name.span,
         });
@@ -432,7 +514,9 @@ impl<'a> Checker<'a> {
             TypeExprKind::Final(inner) => (&**inner, true),
             _ => (&v.ann, false),
         };
+        self.in_const_decl = is_final;
         let ty = self.resolve_type(inner, false);
+        self.in_const_decl = false;
         if v.value.is_none() {
             self.d.error("PYP2007", v.span, format!("'{name}' debe inicializarse en su declaracion (no hay variables sin inicializar)"));
         }
@@ -458,6 +542,9 @@ impl<'a> Checker<'a> {
             } else {
                 self.expr(val);
             }
+        }
+        if is_global && name == "CLOCK_HZ" {
+            self.check_clock(v, ty, is_final, konst);
         }
         let sym = Symbol {
             name: name.clone(),
@@ -546,7 +633,7 @@ impl<'a> Checker<'a> {
         // contexto principal: `main` si existe; si no, toda funcion sin llamadores (que no sea la ISR)
         let called: BTreeSet<&String> = self.functions.iter().flat_map(|f| f.calls.iter()).collect();
         let roots: Vec<String> = if self.fidx.contains_key("main") {
-            vec!["main".to_string()]
+            std::iter::once("main".to_string()).chain(self.functions.iter().filter(|f| f.is_init).map(|f| f.name.clone())).collect()
         } else {
             self.functions.iter().filter(|f| !f.is_interrupt && !called.contains(&f.name)).map(|f| f.name.clone()).collect()
         };
@@ -588,7 +675,7 @@ impl<'a> Checker<'a> {
         let (mut visiting, mut memo) = (HashSet::new(), HashMap::new());
         let called: BTreeSet<&String> = self.functions.iter().flat_map(|f| f.calls.iter()).collect();
         let roots: Vec<String> = if self.fidx.contains_key("main") {
-            vec!["main".to_string()]
+            std::iter::once("main".to_string()).chain(self.functions.iter().filter(|f| f.is_init).map(|f| f.name.clone())).collect()
         } else {
             self.functions.iter().filter(|f| !f.is_interrupt && !called.contains(&f.name)).map(|f| f.name.clone()).collect()
         };
@@ -1100,6 +1187,9 @@ impl<'a> Checker<'a> {
 
     fn call_user(&mut self, e: &Expr, fi: usize, args: &[Expr]) -> Type {
         let f = self.functions[fi].clone();
+        if f.is_init {
+            self.d.error("PYP2098", e.span, format!("'{}' es la funcion @init_device: la ejecuta el arranque antes de main y no se llama desde el codigo", f.name));
+        }
         if f.is_interrupt {
             self.d.error("PYP2054", e.span, format!("'{}' es una rutina de interrupcion y no puede llamarse desde el codigo", f.name));
         }
@@ -1122,6 +1212,12 @@ impl<'a> Checker<'a> {
         }
         self.set(e, f.ret, None)
     }
+}
+
+/// `PIC16F887`, `dsPIC33...`
+fn looks_like_device(s: &str) -> bool {
+    let rest = s.strip_prefix("dsPIC").or_else(|| s.strip_prefix("PIC"));
+    rest.is_some_and(|r| !r.is_empty() && r.chars().all(|c| c.is_ascii_alphanumeric()))
 }
 
 /// `RD0` -> ('D', 0)

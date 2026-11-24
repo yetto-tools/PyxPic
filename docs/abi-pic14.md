@@ -69,7 +69,7 @@ El cuerpo de la ISR debe borrar sus propios flags (responsabilidad del SDK). `FS
 ## 6. Arranque y pila
 
 - `0000h: GOTO startup` (tras el reset PCLATH = 0). `0001h–0003h` libres.
-- `startup`: pone banco 0, inicializa globales, `CALL main`, y si `main` vuelve, `SLEEP` + salto a sí mismo. **El `CALL main` consume 1 nivel de pila.**
+- `startup`: pone banco 0, inicializa globales, `CALL` a la función `@init_device` (si existe), `CALL main`, y si `main` vuelve, `SLEEP` + salto a sí mismo. **Cada `CALL` desde `startup` consume 1 nivel de pila** (son secuenciales: cuenta el mayor de los dos).
 - ✅ **Profundidad de pila (`PYP2061`, decisión: error):** peor caso = `1 + profundidad(main)` + `1 + profundidad(ISR)` ≤ niveles del pack (8 en la F887).
   La entrada a la interrupción empuja el PC (1 nivel). *Limitación:* el frontend solo cuenta llamadas del usuario; las llamadas a rutinas de runtime se
   re-comprobarán en el backend.

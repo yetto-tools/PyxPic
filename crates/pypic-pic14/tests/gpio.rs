@@ -29,7 +29,7 @@ fn ir_trace<'m>(m: &'m Module, inputs: &[(&str, bool)]) -> (Vec<(String, bool)>,
     for (p, l) in inputs {
         mach.set_input(p, *l);
     }
-    mach.call("main", &[]).unwrap();
+    mach.run_main().unwrap();
     let t = mach.pin_events.iter().map(|&(i, l)| (m.pins[i].name.clone(), l)).collect();
     (t, mach)
 }

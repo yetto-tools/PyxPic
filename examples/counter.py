@@ -1,3 +1,4 @@
+from pypic.device import PIC16F887
 from pypic import u8, u16, Final, interrupt
 
 LIMIT: Final[u8] = 200

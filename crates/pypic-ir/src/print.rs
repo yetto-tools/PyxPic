@@ -39,7 +39,7 @@ pub fn print(m: &Module) -> String {
     }
     for f in &m.functions {
         let params: Vec<String> = f.locals[..f.num_params].iter().map(|l| format!("{}: {}", l.name, l.ty)).collect();
-        let tag = if f.is_interrupt { "interrupt " } else { "" };
+        let tag = if f.is_interrupt { "interrupt " } else if f.is_init { "init " } else { "" };
         let _ = writeln!(out, "\n{tag}fn {}({}) -> {} {{", f.name, params.join(", "), f.ret);
         let locals: Vec<String> = f.locals[f.num_params..].iter().map(|l| format!("{}: {}", l.name, l.ty)).collect();
         if !locals.is_empty() {

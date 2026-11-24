@@ -23,6 +23,17 @@ pub struct Analysis {
     pub diagnostics: Diagnostics,
 }
 
+/// Dispositivo declarado con `from pypic.device import PIC16F887`, sin analizar el resto del programa.
+/// Sirve para elegir el Device Pack antes de la comprobacion completa.
+pub fn declared_device(source: &str) -> Option<String> {
+    let mut d = Diagnostics::default();
+    let module = parser::parse(source, &mut d);
+    module.items.iter().find_map(|it| match it {
+        ast::Item::Import { module, names, .. } if module == "pypic.device" => names.first().map(|n| n.name.clone()),
+        _ => None,
+    })
+}
+
 pub fn analyze(source: &str, target: &TargetProfile) -> Analysis {
     let mut d = Diagnostics::default();
     let module = parser::parse(source, &mut d);
@@ -31,6 +42,6 @@ pub fn analyze(source: &str, target: &TargetProfile) -> Analysis {
         return Analysis { program: None, diagnostics: d };
     }
     let c = check::check(&module, target, &mut d);
-    let program = (!d.has_errors()).then_some(Program { module, info: c.info, globals: c.globals, functions: c.functions, pins: c.pins });
+    let program = (!d.has_errors()).then_some(Program { module, info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.device, clock_hz: c.clock_hz });
     Analysis { program, diagnostics: d }
 }

@@ -263,6 +263,7 @@ impl DevicePack {
         TargetProfile::new(self.device.name.clone(), self.device.cpu.data_bits, self.device.pypic.max_int_bits)
             .with_stack_levels(self.memory.program.stack_levels)
             .with_pins(pins)
+            .with_device(self.device.name.clone(), self.device.cpu.max_clock_hz.min(u32::MAX as u64) as u32)
     }
 
     /// Comprobaciones de coherencia interna. Vacio = pack valido.

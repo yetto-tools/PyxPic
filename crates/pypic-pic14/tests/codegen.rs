@@ -36,13 +36,14 @@ fn read_global(s: &Sim, g: &GlobalSym) -> i128 {
 }
 
 fn pic_globals(c: &Compiled, s: &Sim) -> BTreeMap<String, i128> {
-    c.globals.iter().map(|g| (g.name.clone(), read_global(s, g))).collect()
+    // las constantes Final no existen en memoria: solo se comparan las variables
+    c.globals.iter().filter(|g| !g.is_const).map(|g| (g.name.clone(), read_global(s, g))).collect()
 }
 
 fn ir_globals(m: &Module) -> BTreeMap<String, i128> {
     let mut mach = Machine::new(m);
-    mach.call("main", &[]).unwrap();
-    m.globals.iter().map(|g| (g.name.clone(), mach.global(&g.name).unwrap())).collect()
+    mach.run_main().unwrap();
+    m.globals.iter().filter(|g| !g.is_const).map(|g| (g.name.clone(), mach.global(&g.name).unwrap())).collect()
 }
 
 /// Compila y exige que PIC14 e IR den los mismos globales. Devuelve los globales.
@@ -258,7 +259,8 @@ fn boolean_logic_with_short_circuit_side_effects() {
 #[test]
 fn startup_initializes_every_global() {
     let g = same("a: u8 = 7\nb: u16 = 0x1234\nc: i8 = -3\nd: bool = True\nK: Final[u8] = 9\ndef main() -> None:\n    pass\n");
-    assert_eq!((g["a"], g["b"], g["c"], g["d"], g["K"]), (7, 0x1234, -3, 1, 9));
+    assert_eq!((g["a"], g["b"], g["c"], g["d"]), (7, 0x1234, -3, 1));
+    assert!(!g.contains_key("K"), "las constantes no se almacenan");
 }
 
 // ---- interrupciones: contexto guardado y restaurado ----------------------------------------------
@@ -357,4 +359,82 @@ fn listing_and_config_words() {
     assert_eq!(c.image.get(0x2007), Some(0x20D4));
     assert_eq!(c.image.get(0x2008), Some(0x3FFF));
     assert!(c.image.check_bounds(8192, (0x2000, 0x3FFF)).is_ok());
+}
+
+// ---- declaracion de dispositivo, constantes y @init_device -------------------------------------------
+
+#[test]
+fn init_device_runs_before_main_on_both_the_oracle_and_the_pic() {
+    let g = same(
+        "x: u8 = 0\ny: u8 = 0\nz: u8 = 0\n\
+         @init_device\ndef configurar() -> None:\n    global x, z\n    x = 5\n    z = x + 1\n\
+         def main() -> None:\n    global y, z\n    y = x + 1\n    z = z + 10\n",
+    );
+    assert_eq!((g["x"], g["y"], g["z"]), (5, 6, 16)); // main ve lo que dejo init y ya no puede deshacerlo
+}
+
+#[test]
+fn init_device_can_call_helpers_and_use_pins() {
+    let g = same(
+        "from pypic.gpio import RD0\nready: u8 = 0\n\
+         def prepara() -> u8:\n    return 3\n\
+         @init_device\ndef configurar() -> None:\n    global ready\n    RD0.output()\n    ready = prepara()\n\
+         def main() -> None:\n    RD0.value(ready)\n",
+    );
+    assert_eq!(g["ready"], 3);
+}
+
+#[test]
+fn final_constants_take_no_ram_even_when_wide() {
+    let (_, c) = build("K: Final[u32] = 4_000_000\nL: Final[u16] = 1234\ndef main() -> None:\n    pass\n");
+    assert_eq!(c.ram_bytes, 0, "las constantes no ocupan RAM");
+    // y se usan por su valor
+    let g = same("K: Final[u32] = 4_000_000\nx: u8 = 0\ndef main() -> None:\n    global x\n    x = u8(K >> 18)\n");
+    assert_eq!(g["x"], 15);
+}
+
+#[test]
+fn declared_clock_reaches_the_ir() {
+    let r = analyze("from pypic.device import PIC16F887\nCLOCK_HZ: Final[u32] = 8_000_000\ndef main() -> None:\n    pass\n", &TargetProfile::generic());
+    let m = lower(&r.program.unwrap());
+    assert_eq!((m.device.as_deref(), m.clock_hz), (Some("PIC16F887"), Some(8_000_000)));
+}
+
+#[test]
+fn the_backend_refuses_devices_it_does_not_know_or_that_do_not_match() {
+    let r = analyze("from pypic.device import PIC12F625\ndef main() -> None:\n    pass\n", &TargetProfile::generic());
+    let m = lower(&r.program.unwrap());
+    // el programa declara un dispositivo y se compila para otro
+    let e = compile(&m, &Options::default()).unwrap_err();
+    assert!(matches!(&e, CodegenError::Device(s) if s.contains("PIC12F625") && s.contains("PIC16F887")), "{e}");
+    // un dispositivo para el que no hay mapa de registros: error, no codigo del PIC16F88x a ciegas
+    let opts = Options { device: "PIC12F625".into(), ..Options::default() };
+    let e = compile(&m, &opts).unwrap_err();
+    assert!(matches!(&e, CodegenError::Device(s) if s.contains("no soporta") && s.contains("PIC16F887")), "{e}");
+}
+
+#[test]
+fn ram_range_and_program_size_come_from_the_options() {
+    let src = "a: u8 = 1\nb: u8 = 2\ndef main() -> None:\n    global a, b\n    a = a + b\n";
+    let r = analyze(src, &TargetProfile::generic());
+    let m = lower(&r.program.unwrap());
+    // con 2 bytes de RAM de datos caben justo los dos globales; con 1 no
+    assert!(compile(&m, &Options { ram_end: 0x21, ..Options::default() }).is_ok());
+    let tight = Options { ram_end: 0x20, ..Options::default() };
+    assert!(matches!(compile(&m, &tight), Err(CodegenError::OutOfRam { available: 1, .. })));
+    // un programa mas grande que la memoria del dispositivo
+    let tiny = Options { program_words: 10, ..Options::default() };
+    assert!(matches!(compile(&m, &tiny), Err(CodegenError::TooLarge { .. })));
+    // una zona de datos que pisa la zona comun de la ABI (70h-7Fh)
+    let overlap = Options { ram_end: 0x7F, ..Options::default() };
+    assert!(matches!(compile(&m, &overlap), Err(CodegenError::Device(_))));
+}
+
+#[test]
+fn config_words_go_where_the_options_say() {
+    let r = analyze("def main() -> None:\n    pass\n", &TargetProfile::generic());
+    let m = lower(&r.program.unwrap());
+    let opts = Options { config_addr: (0x2007, 0x2008), config: (0x1234, 0x0ABC), ..Options::default() };
+    let c = compile(&m, &opts).unwrap();
+    assert_eq!((c.image.get(0x2007), c.image.get(0x2008)), (Some(0x1234), Some(0x0ABC)));
 }

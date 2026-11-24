@@ -13,7 +13,8 @@ const USAGE: &str = "uso:
   pypic device validate <directorio-del-pack>
 
 opciones:
-  --device <directorio>   usa el Device Pack (p. ej. devices/pic16f887)
+  --device <directorio>   usa este Device Pack (por defecto se busca el que declara el programa)
+  --devices-dir <dir>     donde buscar los Device Packs (tambien $PYPIC_DEVICES y ./devices)
   --native-bits N         ancho nativo del destino (sobrescribe al pack)
   --max-int-bits N        ancho maximo de entero (sobrescribe al pack)
   --stack-levels N        niveles de la pila de retorno (sobrescribe al pack)";
@@ -37,6 +38,57 @@ fn load_pack(dir: &str) -> Result<DevicePack, ExitCode> {
         return Err(ExitCode::from(1));
     }
     Ok(pack)
+}
+
+/// Busca el Device Pack de `name` (`PIC16F887` -> `<raiz>/pic16f887`) en `--devices-dir`, `$PYPIC_DEVICES` y `./devices`.
+fn find_pack(name: &str, extra: Option<&str>) -> Result<DevicePack, ExitCode> {
+    let mut roots: Vec<String> = Vec::new();
+    roots.extend(extra.map(String::from));
+    roots.extend(std::env::var("PYPIC_DEVICES").ok());
+    roots.push("devices".into());
+    for root in &roots {
+        let dir = Path::new(root).join(name.to_lowercase());
+        if dir.join("device.json").is_file() {
+            return load_pack(&dir.to_string_lossy());
+        }
+    }
+    let mut avail: Vec<String> = Vec::new();
+    for root in &roots {
+        if let Ok(rd) = std::fs::read_dir(root) {
+            for e in rd.flatten() {
+                if e.path().join("device.json").is_file() {
+                    avail.push(e.file_name().to_string_lossy().to_uppercase());
+                }
+            }
+        }
+    }
+    avail.sort();
+    avail.dedup();
+    eprintln!(
+        "dispositivo '{name}' desconocido: no hay Device Pack en {} (disponibles: {})",
+        roots.join(", "),
+        if avail.is_empty() { "ninguno".to_string() } else { avail.join(", ") }
+    );
+    Err(ExitCode::from(1))
+}
+
+/// Parametros del backend tomados del Device Pack: RAM util del banco 0, tamano de programa y direcciones de CONFIG.
+fn backend_options(pack: &DevicePack) -> Result<pypic_pic14::Options, String> {
+    let d = &pack.memory.data;
+    let first = d.gpr.first().ok_or("el pack no define RAM de propósito general")?;
+    let cfg = &pack.config.words;
+    if cfg.len() < 2 || d.common.start.0 == 0 {
+        return Err("el pack no define dos palabras de configuracion o la zona comun".into());
+    }
+    Ok(pypic_pic14::Options {
+        device: pack.device.name.clone(),
+        program_words: pack.memory.program.words,
+        ram_start: first.start.0 as u16,
+        ram_end: (d.common.start.0 - 1) as u16,
+        config_addr: (cfg[0].address.0, cfg[1].address.0),
+        // TODO: por nombre de campo desde el pack (#33)
+        config: (pypic_pic14::samples::BLINK_CONFIG1, pypic_pic14::samples::BLINK_CONFIG2),
+    })
 }
 
 fn main() -> ExitCode {
@@ -108,6 +160,7 @@ fn device(args: &[String]) -> ExitCode {
 fn compile(cmd: &str, args: &[String]) -> ExitCode {
     let mut file = None;
     let mut device_dir = None;
+    let mut devices_dir: Option<String> = None;
     let mut native = None;
     let mut max = None;
     let mut stack = None;
@@ -119,6 +172,7 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
             "-o" => out_path = it.next().cloned(),
             "--listing" => listing = true,
             "--device" => device_dir = it.next().cloned(),
+            "--devices-dir" => devices_dir = it.next().cloned(),
             "--native-bits" => native = it.next().and_then(|v| v.parse::<u32>().ok()),
             "--max-int-bits" => max = it.next().and_then(|v| v.parse::<u32>().ok()),
             "--stack-levels" => stack = it.next().and_then(|v| v.parse::<u32>().ok()),
@@ -128,14 +182,29 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
         }
     }
     let Some(file) = file else { return usage() };
+    let src = match std::fs::read_to_string(&file) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("no se pudo leer '{file}': {e}");
+            return ExitCode::from(2);
+        }
+    };
 
-    let mut target = match &device_dir {
-        Some(dir) => match load_pack(dir) {
-            Ok(p) => p.target_profile(),
+    // El dispositivo lo declara el propio programa (`from pypic.device import PIC16F887`);
+    // `--device` solo fuerza un pack concreto y el analisis comprueba que coincida con la declaracion.
+    let declared = pypic_frontend::declared_device(&src);
+    let pack = match (&device_dir, &declared) {
+        (Some(dir), _) => match load_pack(dir) {
+            Ok(p) => Some(p),
             Err(code) => return code,
         },
-        None => TargetProfile::generic(),
+        (None, Some(name)) => match find_pack(name, devices_dir.as_deref()) {
+            Ok(p) => Some(p),
+            Err(code) => return code,
+        },
+        (None, None) => None,
     };
+    let mut target = pack.as_ref().map(DevicePack::target_profile).unwrap_or_else(TargetProfile::generic);
     if let Some(n) = native {
         target.native_bits = n;
     }
@@ -146,13 +215,6 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
         target.stack_levels = Some(s);
     }
 
-    let src = match std::fs::read_to_string(&file) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("no se pudo leer '{file}': {e}");
-            return ExitCode::from(2);
-        }
-    };
     let res = analyze(&src, &target);
     print!("{}", res.diagnostics.render(&src, &file));
     let Some(program) = res.program else { return ExitCode::from(1) };
@@ -160,9 +222,8 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
         println!("{file}: ok");
         return ExitCode::SUCCESS;
     }
-    if cmd == "build" && !program.pins.is_empty() && device_dir.is_none() {
-        // sin el pack no se sabe que pines son analogicos: ANSEL/ANSELH no se limpiarian y la lectura seria siempre 0
-        eprintln!("{file}: error: el programa usa pines (pypic.gpio): indica el dispositivo con --device <directorio del pack>, p. ej. --device devices/pic16f887");
+    if cmd == "build" && (declared.is_none() || pack.is_none()) {
+        eprintln!("{file}: error: falta la declaracion del dispositivo: la primera linea del programa debe ser, por ejemplo, 'from pypic.device import PIC16F887'");
         return ExitCode::from(1);
     }
     let module = pypic_ir::lower(&program);
@@ -175,14 +236,23 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
         return ExitCode::SUCCESS;
     }
     // build: IR -> instrucciones PIC14 -> Intel HEX
-    let compiled = match pypic_pic14::compile(&module, &pypic_pic14::Options::default()) {
+    let pack = pack.expect("comprobado arriba");
+    let opts = match backend_options(&pack) {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("{file}: error: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    let compiled = match pypic_pic14::compile(&module, &opts) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{file}: error: {e}");
             return ExitCode::from(1);
         }
     };
-    if let Err(e) = compiled.image.check_bounds(8192, (0x2000, 0x3FFF)) {
+    let zone = (pack.config.space.start.0, pack.config.space.end.0);
+    if let Err(e) = compiled.image.check_bounds(pack.memory.program.words, zone) {
         eprintln!("{file}: error interno: {e}");
         return ExitCode::from(70);
     }
@@ -194,9 +264,10 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     if listing {
         print!("{}", compiled.listing);
     }
+    let clock = module.clock_hz.map(|hz| format!(", reloj declarado {hz} Hz")).unwrap_or_default();
     println!(
-        "{out_path}: {} palabras de programa, {} bytes de RAM (banco 0). Palabras de configuracion por defecto (INTOSCIO, WDT apagado, MCLR interno).",
-        compiled.flash_words, compiled.ram_bytes
+        "{out_path}: para {}: {} palabras de programa, {} bytes de RAM (banco 0){clock}. Palabras de configuracion por defecto (INTOSCIO, WDT apagado, MCLR interno).",
+        pack.device.name, compiled.flash_words, compiled.ram_bytes
     );
     ExitCode::SUCCESS
 }

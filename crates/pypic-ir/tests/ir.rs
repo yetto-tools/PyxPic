@@ -57,6 +57,7 @@ fn verifier_rejects_ill_typed_ir() {
     let f = Function {
         name: "bad".into(),
         is_interrupt: false,
+        is_init: false,
         num_params: 0,
         ret: Type::Void,
         locals: vec![Local { name: "x".into(), ty: pypic_frontend::types::U8, is_param: false }],
@@ -66,6 +67,6 @@ fn verifier_rejects_ill_typed_ir() {
             term: Terminator::Jump(9),
         }],
     };
-    let m = Module { globals: vec![], functions: vec![f], pins: vec![] };
+    let m = Module { globals: vec![], functions: vec![f], pins: vec![], device: None, clock_hz: None };
     assert_eq!(verify(&m).unwrap_err().len(), 2);
 }

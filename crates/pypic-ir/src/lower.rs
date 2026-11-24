@@ -10,6 +10,8 @@ use crate::ir::{Function, Global, Local, Module, Pin, Type};
 
 pub fn lower(prog: &Program) -> Module {
     let mut m = Module::default();
+    m.device = prog.device.clone();
+    m.clock_hz = prog.clock_hz;
     let mut gidx = HashMap::new();
     for it in &prog.module.items {
         if let Item::Var(v) = it {
@@ -44,7 +46,7 @@ pub fn lower(prog: &Program) -> Module {
                 fl.declare_local(name, *ty, true);
             }
             fl.block(&f.body);
-            m.functions.push(fl.finish(info.name.clone(), info.is_interrupt, info.params.len(), info.ret));
+            m.functions.push(fl.finish(info.name.clone(), info.is_interrupt, info.is_init, info.params.len(), info.ret));
         }
     }
     m
@@ -73,7 +75,7 @@ fn ann_type(te: &TypeExpr) -> Type {
 }
 
 impl<'a> FnLower<'a> {
-    fn finish(self, name: String, is_interrupt: bool, num_params: usize, ret: Type) -> Function {
+    fn finish(self, name: String, is_interrupt: bool, is_init: bool, num_params: usize, ret: Type) -> Function {
         let blocks = self
             .blocks
             .into_iter()
@@ -82,7 +84,7 @@ impl<'a> FnLower<'a> {
                 term: term.unwrap_or(if ret == Type::Void { Terminator::Return(None) } else { Terminator::Unreachable }),
             })
             .collect();
-        Function { name, is_interrupt, num_params, ret, locals: self.locals, temps: self.temps, blocks }
+        Function { name, is_interrupt, is_init, num_params, ret, locals: self.locals, temps: self.temps, blocks }
     }
 
     // ------------------------------------------------------------ utilidades

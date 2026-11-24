@@ -79,6 +79,15 @@ impl<'m> Machine<'m> {
         self.module.globals.iter().position(|g| g.name == name).map(|i| self.globals[i])
     }
 
+    /// Arranque completo: la funcion `@init_device` (si existe) y despues `main`, como el codigo de arranque del PIC.
+    pub fn run_main(&mut self) -> Result<Option<i128>, Trap> {
+        let inits: Vec<usize> = self.module.functions.iter().enumerate().filter(|(_, f)| f.is_init).map(|(i, _)| i).collect();
+        for i in inits {
+            self.run(i, &[])?;
+        }
+        self.call("main", &[])
+    }
+
     pub fn call(&mut self, name: &str, args: &[i128]) -> Result<Option<i128>, Trap> {
         let idx = self.module.functions.iter().position(|f| f.name == name).ok_or_else(|| Trap::NoSuchFunction(name.into()))?;
         self.run(idx, args)

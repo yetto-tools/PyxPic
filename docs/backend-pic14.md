@@ -24,12 +24,14 @@ pypic build programa.py -o salida.hex [--listing] [--device devices/pic16f887]
 | Zona común `70h–7Fh` | `70h W_TEMP`, `71h STATUS_TEMP`, `72h PCLATH_TEMP`; `74h–77h` temporales del contexto principal, `78h–7Bh` de la ISR; `7Ch`/`7Dh` byte alto del retorno de 16 bits (principal/ISR) |
 | Llamada | Argumentos a las posiciones del llamado, `CALL`, retorno en W (byte bajo) y `RETV` (byte alto) |
 | Comparaciones | `SUBWF`/`SUBLW` y bit C; con signo se invierte el bit 7 (`XORLW 0x80`); 16 bits: primero el byte alto, y el bajo solo si empatan |
-| Arranque | `0000h: GOTO startup`; `startup` inicializa **todos** los globales (la RAM no está definida tras el reset), `CALL main`, `SLEEP` |
+| Arranque | `0000h: GOTO startup`; `startup` inicializa las variables globales (la RAM no está definida tras el reset; las constantes `Final` no ocupan RAM), pone a 0 los latches de los puertos usados, llama a la función `@init_device` (si existe), luego a `main`, y duerme |
+| Parámetros del dispositivo | RAM útil del banco 0, tamaño de programa y direcciones de CONFIG vienen del Device Pack (`Options`); el backend comprueba además que el dispositivo declarado coincida |
 | Interrupción | `0004h: GOTO isr` (o `RETFIE` si no hay ISR); prólogo/epílogo del ejemplo 14-1 del datasheet (p.219) |
 | Configuración | `CONFIG1 = 20D4h`, `CONFIG2 = 3FFFh` (INTOSCIO, WDT apagado, MCLR interno). TODO: tomarlos del Device Pack |
 
 ## Límites actuales (el compilador los rechaza con un error claro)
 
+- Solo genera código para el **PIC16F887**: el mapa de registros (PORTx, TRISx, ANSEL) está fijo en el backend (#22). Con otro dispositivo, o si el programa declara uno distinto del compilado, da un error en vez de código equivocado.
 - `*`, `//`, `%` y desplazamientos por variable: necesitan rutinas de runtime (#27).
 - `u32` / `i32`.
 - Más de 80 bytes de datos: no hay otros bancos ni solapamiento de locales (#26).

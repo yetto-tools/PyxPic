@@ -76,6 +76,8 @@ pub struct Local {
 pub struct Function {
     pub name: String,
     pub is_interrupt: bool,
+    /// Funcion `@init_device`: el arranque la ejecuta antes de `main`.
+    pub is_init: bool,
     /// Los primeros `num_params` locales son los parametros, en orden.
     pub num_params: usize,
     pub ret: Type,
@@ -108,6 +110,10 @@ pub struct Module {
     pub globals: Vec<Global>,
     pub functions: Vec<Function>,
     pub pins: Vec<Pin>,
+    /// Dispositivo declarado en el programa (`from pypic.device import PIC16F887`).
+    pub device: Option<String>,
+    /// `CLOCK_HZ: Final[u32]`, si se declaro.
+    pub clock_hz: Option<u32>,
 }
 
 impl Module {
