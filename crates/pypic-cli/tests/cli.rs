@@ -101,7 +101,7 @@ fn declaring_one_device_and_forcing_another_pack_is_an_error() {
 fn clock_above_the_device_maximum_is_reported_with_the_source_location() {
     let dir = tmp("clock");
     let src = dir.join("p.py");
-    std::fs::write(&src, "from pypic.device import PIC16F887\nCLOCK_HZ: Final[u32] = 25_000_000\ndef main() -> None:\n    pass\n").unwrap();
+    std::fs::write(&src, "from pypic.device import PIC16F887\nCLOCK_HZ: Const[u32] = 25_000_000\ndef main() -> None:\n    pass\n").unwrap();
     let o = pypic(&root(), &["check", src.to_str().unwrap()]);
     assert_eq!(o.status.code(), Some(1));
     assert!(text(&o).contains(":2:1: error[PYP2094]") && text(&o).contains("20000000"), "{}", text(&o));
@@ -220,7 +220,7 @@ PSECT code,abs
 
 // ---- configuracion por nombre (#33) -----------------------------------------------------------------
 
-const BLINK: &str = "from pypic.device import PIC16F887\nfrom pypic.periph.gpio import RD0\nCLOCK_HZ: Final[u32] = 4_000_000\ndef main() -> None:\n    RD0.output()\n    RD0.on()\n    while True:\n        pass\n";
+const BLINK: &str = "from pypic.device import PIC16F887\nfrom pypic.periph.gpio import RD0\nCLOCK_HZ: Const[u32] = 4_000_000\ndef main() -> None:\n    RD0.output()\n    RD0.on()\n    while True:\n        pass\n";
 
 fn hex_word(hex: &str, addr: u32) -> Option<u16> {
     let img = pypic_pic14::Image::from_intel_hex(hex).unwrap();

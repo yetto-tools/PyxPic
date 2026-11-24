@@ -29,7 +29,7 @@ fn build(src: &str) -> (Module, Compiled) {
 fn program(clock: u32, imports: &str, globals: &str, body: &str) -> String {
     format!(
         "from pypic.device import PIC16F887\nfrom pypic.periph.gpio import RD0\nfrom pypic.system.time import {imports}\n\
-         CLOCK_HZ: Final[u32] = {clock}\n{globals}\n\
+         CLOCK_HZ: Const[u32] = {clock}\n{globals}\n\
          def main() -> None:\n    RD0.output()\n    RD0.on()\n    {body}\n    RD0.off()\n"
     )
 }
@@ -199,7 +199,7 @@ fn delay_counters_take_ram_only_when_the_program_waits() {
 
 #[test]
 fn waits_inside_helper_functions_work() {
-    let src = "from pypic.device import PIC16F887\nfrom pypic.periph.gpio import RD0\nfrom pypic.system.time import pause\nCLOCK_HZ: Final[u32] = 4_000_000\n\
+    let src = "from pypic.device import PIC16F887\nfrom pypic.periph.gpio import RD0\nfrom pypic.system.time import pause\nCLOCK_HZ: Const[u32] = 4_000_000\n\
                def blink_once() -> None:\n    RD0.on()\n    pause(2)\n    RD0.off()\n\
                def main() -> None:\n    RD0.output()\n    blink_once()\n    blink_once()\n";
     assert_eq!(measured(src), 2000); // la primera espera: 2 ms exactos dentro de la funcion

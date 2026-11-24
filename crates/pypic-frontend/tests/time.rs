@@ -15,7 +15,7 @@ fn codes(src: &str, t: &TargetProfile) -> Vec<&'static str> {
     analyze(src, t).diagnostics.codes()
 }
 
-const HEAD: &str = "from pypic.device import PIC16F887\nfrom pypic.system.time import pause, wait, delay_us, delay_cycles\nCLOCK_HZ: Final[u32] = 4_000_000\n";
+const HEAD: &str = "from pypic.device import PIC16F887\nfrom pypic.system.time import pause, wait, delay_us, delay_cycles\nCLOCK_HZ: Const[u32] = 4_000_000\n";
 
 fn body(stmt: &str) -> String {
     format!("{HEAD}def main() -> None:\n    {stmt}\n")
@@ -28,7 +28,7 @@ fn valid_calls() {
     }
     let var = format!("{HEAD}n: u16 = 5\ndef main() -> None:\n    pause(n)\n    wait(n)\n");
     assert!(analyze(&var, &pic()).program.is_some());
-    let konst = format!("{HEAD}K: Final[u16] = 100\ndef main() -> None:\n    delay_cycles(K)\n    delay_us(K)\n");
+    let konst = format!("{HEAD}K: Const[u16] = 100\ndef main() -> None:\n    delay_cycles(K)\n    delay_us(K)\n");
     assert!(analyze(&konst, &pic()).program.is_some());
 }
 
@@ -53,7 +53,7 @@ fn nap_and_sleep_are_reserved_and_distinct_not_aliases() {
 
 #[test]
 fn must_be_imported_with_a_hint() {
-    let src = "from pypic.device import PIC16F887\nCLOCK_HZ: Final[u32] = 4_000_000\ndef main() -> None:\n    pause(5)\n";
+    let src = "from pypic.device import PIC16F887\nCLOCK_HZ: Const[u32] = 4_000_000\ndef main() -> None:\n    pause(5)\n";
     assert_eq!(codes(src, &pic()), vec!["PYP2043"]);
     let out = analyze(src, &pic()).diagnostics.render(src, "t.py");
     assert!(out.contains("from pypic.system.time import pause"), "{out}");
@@ -117,7 +117,7 @@ fn a_declared_clock_has_no_default_warning_and_a_different_one_warns_about_the_o
     assert_eq!(r.diagnostics.codes(), vec!["PYP3005"]);
     assert!(r.program.is_some());
     // sin esperas, el reloj no importa para esta advertencia
-    let none = "from pypic.device import PIC16F887\nCLOCK_HZ: Final[u32] = 8_000_000\ndef main() -> None:\n    pass\n";
+    let none = "from pypic.device import PIC16F887\nCLOCK_HZ: Const[u32] = 8_000_000\ndef main() -> None:\n    pass\n";
     assert!(analyze(none, &pic()).diagnostics.items.is_empty());
 }
 

@@ -41,7 +41,7 @@ Se adoptó lo útil de otros lenguajes y se descartó lo incómodo:
 - El cuerpo es **una sola cadena** (normalmente de tres comillas). Es la única cadena que admite el lenguaje.
 - **Parámetros y retorno** de hasta 16 bits (`u8`, `i8`, `u16`, `i16`, `bool`). Cada parámetro es un símbolo con la dirección de su byte bajo; un `u16` ocupa `x` (bajo) y `x+1` (alto).
 - **Resultado**: el byte bajo en `W`; en un resultado de 16 bits, el alto se escribe antes en `RETV` (`0x7C`).
-- **Globales**: por su nombre (`hits`, `marker`...); las constantes `Final` valen su valor.
+- **Globales**: por su nombre (`hits`, `marker`...); las constantes `Const` valen su valor.
 - **Registros y bits predefinidos**: los mismos que da `#include <xc.inc>` en `pypic asm`, desde `registers.json` del Device Pack (73 registros del PIC16F887).
   Cada registro vale su **dirección completa** (`TRISD` = `0x88`), así que fuera del banco 0 se usa `BANKMASK(TRISD)` tras cambiar el banco a mano con
   `BSF STATUS,STATUS_RP0_POSN`; cada campo tiene `REGISTRO_CAMPO_POSN` (`STATUS_Z_POSN`, `ADCON0_GO_DONE_POSN`...) y los campos únicos de más de una letra son macros

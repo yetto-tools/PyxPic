@@ -16,9 +16,9 @@ fn assert_err(src: &str, code: &str) {
 
 const VALID: &str = r#"
 """docstring ignorada"""
-from pypic import u8, u16, Final, interrupt
+from pypic import u8, u16, Const, interrupt
 
-LIMIT: Final[u8] = 200
+LIMIT: Const[u8] = 200
 counter: u16 = 0
 state: bool = False
 
@@ -61,7 +61,7 @@ fn valid_program_passes() {
 
 #[test]
 fn constants_are_folded() {
-    let r = analyze("X: Final[u8] = 3 * 5 + 1\n", &TargetProfile::generic());
+    let r = analyze("X: Const[u8] = 3 * 5 + 1\n", &TargetProfile::generic());
     let p = r.program.unwrap();
     assert_eq!(p.globals["X"].konst, Some(16));
 }
@@ -85,6 +85,8 @@ fn return_and_arg_types() {
     assert_err("def f() -> u8:\n    return True\n", "PYP2041");
     assert_err("def f(a: u8) -> None:\n    pass\ndef g() -> None:\n    f(1, 2)\n", "PYP2055");
     assert_err("def f() -> u8:\n    pass\n", "PYP2012");
+    // la palabra de Python ya no existe: el mensaje dice cual es la de PyPIC
+    assert_err("K: Final[u8] = 1\ndef main() -> None:\n    pass\n", "PYP1030");
     assert_err("def f():\n    pass\n", "PYP2004");
 }
 
@@ -96,19 +98,19 @@ fn conditions_must_be_bool() {
 #[test]
 fn constant_overflow_is_an_error() {
     assert_err("x: u8 = 200 + 100\n", "PYP2040");
-    assert_err("X: Final[u8] = u8(200) + 100\n", "PYP2045");
+    assert_err("X: Const[u8] = u8(200) + 100\n", "PYP2045");
     assert_err("x: u8 = 1 // 0\n", "PYP2050");
 }
 
 #[test]
 fn explicit_cast_wraps() {
-    let r = analyze("X: Final[u8] = u8(u16(300))\n", &TargetProfile::generic());
+    let r = analyze("X: Const[u8] = u8(u16(300))\n", &TargetProfile::generic());
     assert_eq!(r.program.unwrap().globals["X"].konst, Some(44));
 }
 
 #[test]
 fn division_truncates_toward_zero() {
-    let r = analyze("X: Final[i8] = -7 // 2\nY: Final[i8] = -7 % 2\n", &TargetProfile::generic());
+    let r = analyze("X: Const[i8] = -7 // 2\nY: Const[i8] = -7 % 2\n", &TargetProfile::generic());
     let p = r.program.unwrap();
     assert_eq!(p.globals["X"].konst, Some(-3));
     assert_eq!(p.globals["Y"].konst, Some(-1));
@@ -119,7 +121,7 @@ fn scoping_rules() {
     assert_err("def f() -> None:\n    x = 1\n", "PYP2022");
     assert_err("g: u8 = 0\ndef f() -> None:\n    g = 1\n", "PYP2023");
     assert_err("g: u8 = 0\ndef f() -> None:\n    g: u8 = 1\n", "PYP2008");
-    assert_err("K: Final[u8] = 1\ndef f() -> None:\n    global K\n", "PYP2021");
+    assert_err("K: Const[u8] = 1\ndef f() -> None:\n    global K\n", "PYP2021");
     assert_err("def f() -> None:\n    x: u8\n", "PYP2007");
     assert_err("def f() -> None:\n    print(1)\n", "PYP2043");
 }

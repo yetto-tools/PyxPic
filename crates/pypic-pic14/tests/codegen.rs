@@ -36,7 +36,7 @@ fn read_global(s: &Sim, g: &GlobalSym) -> i128 {
 }
 
 fn pic_globals(c: &Compiled, s: &Sim) -> BTreeMap<String, i128> {
-    // las constantes Final no existen en memoria: solo se comparan las variables
+    // las constantes Const no existen en memoria: solo se comparan las variables
     c.globals.iter().filter(|g| !g.is_const).map(|g| (g.name.clone(), read_global(s, g))).collect()
 }
 
@@ -258,7 +258,7 @@ fn boolean_logic_with_short_circuit_side_effects() {
 
 #[test]
 fn startup_initializes_every_global() {
-    let g = same("a: u8 = 7\nb: u16 = 0x1234\nc: i8 = -3\nd: bool = True\nK: Final[u8] = 9\ndef main() -> None:\n    pass\n");
+    let g = same("a: u8 = 7\nb: u16 = 0x1234\nc: i8 = -3\nd: bool = True\nK: Const[u8] = 9\ndef main() -> None:\n    pass\n");
     assert_eq!((g["a"], g["b"], g["c"], g["d"]), (7, 0x1234, -3, 1));
     assert!(!g.contains_key("K"), "las constantes no se almacenan");
 }
@@ -386,16 +386,16 @@ fn init_device_can_call_helpers_and_use_pins() {
 
 #[test]
 fn final_constants_take_no_ram_even_when_wide() {
-    let (_, c) = build("K: Final[u32] = 4_000_000\nL: Final[u16] = 1234\ndef main() -> None:\n    pass\n");
+    let (_, c) = build("K: Const[u32] = 4_000_000\nL: Const[u16] = 1234\ndef main() -> None:\n    pass\n");
     assert_eq!(c.ram_bytes, 0, "las constantes no ocupan RAM");
     // y se usan por su valor
-    let g = same("K: Final[u32] = 4_000_000\nx: u8 = 0\ndef main() -> None:\n    global x\n    x = u8(K >> 18)\n");
+    let g = same("K: Const[u32] = 4_000_000\nx: u8 = 0\ndef main() -> None:\n    global x\n    x = u8(K >> 18)\n");
     assert_eq!(g["x"], 15);
 }
 
 #[test]
 fn declared_clock_reaches_the_ir() {
-    let r = analyze("from pypic.device import PIC16F887\nCLOCK_HZ: Final[u32] = 8_000_000\ndef main() -> None:\n    pass\n", &TargetProfile::generic());
+    let r = analyze("from pypic.device import PIC16F887\nCLOCK_HZ: Const[u32] = 8_000_000\ndef main() -> None:\n    pass\n", &TargetProfile::generic());
     let m = lower(&r.program.unwrap());
     assert_eq!((m.device.as_deref(), m.clock_hz), (Some("PIC16F887"), Some(8_000_000)));
 }

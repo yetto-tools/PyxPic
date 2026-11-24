@@ -9,7 +9,7 @@ fn target() -> TargetProfile {
     DevicePack::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../devices/pic16f887")).unwrap().target_profile()
 }
 
-const HEAD: &str = "from pypic.device import PIC16F887\nCLOCK_HZ: Final[u32] = 4_000_000\n";
+const HEAD: &str = "from pypic.device import PIC16F887\nCLOCK_HZ: Const[u32] = 4_000_000\n";
 
 /// (compila, diagnosticos con su codigo y mensaje)
 fn diag(body: &str) -> (bool, Vec<String>) {

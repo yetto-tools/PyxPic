@@ -8,7 +8,7 @@ from pypic.device import PIC16F887
 from pypic.periph.gpio import RD0
 from pypic.system.time import pause
 
-CLOCK_HZ: Final[u32] = 4_000_000
+CLOCK_HZ: Const[u32] = 4_000_000
 
 @init_device
 def configurar() -> None:
@@ -49,7 +49,7 @@ como dos funciones con el comportamiento de PICAXE tras leer la sección del wat
 
 ## Reloj
 
-- `CLOCK_HZ: Final[u32] = <hercios>` declara la frecuencia del reloj del sistema.
+- `CLOCK_HZ: Const[u32] = <hercios>` declara la frecuencia del reloj del sistema.
 - **Sin `CLOCK_HZ`** el compilador usa el reloj por defecto del dispositivo (PIC16F887: 4 MHz, `OSCCON<IRCF> = 110`, p.64) y lo **avisa** (`PYP3004`).
 - Si declaras un reloj distinto del que da la configuración por defecto, avisa (`PYP3005`): el compilador **todavía no programa el oscilador** (`OSCCON`, palabras de configuración, #33), así que los
   tiempos solo serán correctos si el reloj real es el declarado. En Proteus, la propiedad *Processor Clock Frequency* del PIC debe coincidir.

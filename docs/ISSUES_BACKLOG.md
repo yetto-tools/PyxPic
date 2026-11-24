@@ -24,7 +24,7 @@ Borrador para crear en GitHub (`yetto-tools/PyPic`). Labels existentes: `bug`, `
 8. **Arreglos estaticos** (`buf: u8[16]`) e indexado.
 9. **Resolucion de modulos del SDK** (`machine`, `gpio`, `time`...) con firmas por Device Pack.
 10. **Salida JSON de diagnosticos** (`pypic check --format json`) para LSP y VS Code.
-11. **Slots de `Final` locales**: no reservar memoria para constantes locales.
+11. **Slots de `Const` locales**: no reservar memoria para constantes locales.
 
 ## Backend PIC14 / Device Packs (`enhancement`, `backend`, `device-pack`)
 12. **Schema y validacion de Device Pack** (Fase 0) y construir `TargetProfile` desde el pack (no solo `max_int_bits`).
@@ -37,4 +37,4 @@ Borrador para crear en GitHub (`yetto-tools/PyPic`). Labels existentes: `bug`, `
 17. **CI en GitHub Actions:** `cargo test`, `cargo clippy`, `cargo fmt --check`.
 18. **Licencia y CONTRIBUTING** (Fase 0, `TASKS.md`).
 19. **Docs: sustituir "8 bits" / "PIC8" por "todos los PIC (PIC16/PIC18/PIC24/dsPIC/PIC32)"** en el `.docx`, README, AGENTS.md y los `0x_*.md`.
-20. **Archivo `pypic.pyi`** con los nombres predeclarados (`u8`, `Final`, `interrupt`...) para editores y linters Python.
+20. **Archivo `pypic.pyi`** con los nombres predeclarados (`u8`, `Const`, `interrupt`...) para editores y linters Python.

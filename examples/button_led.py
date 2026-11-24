@@ -1,9 +1,9 @@
 """Un pulsador en RB0 enciende el LED de RD0 (sin retardos: solo lee y escribe pines)."""
 from pypic.device import PIC16F887
-from pypic import Final, init_device, u32
+from pypic import Const, init_device, u32
 from pypic.periph.gpio import RB0, RD0
 
-CLOCK_HZ: Final[u32] = 4_000_000
+CLOCK_HZ: Const[u32] = 4_000_000
 
 
 @init_device

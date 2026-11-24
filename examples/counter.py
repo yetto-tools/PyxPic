@@ -1,7 +1,7 @@
 from pypic.device import PIC16F887
-from pypic import u8, u16, Final, interrupt
+from pypic import u8, u16, Const, interrupt
 
-LIMIT: Final[u8] = 200
+LIMIT: Const[u8] = 200
 ticks: u16 = 0
 
 

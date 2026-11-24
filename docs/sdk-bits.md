@@ -36,7 +36,7 @@ El compilador no promete qué deja en `C` una suma o una comparación, así que 
 | `PYP2140` | `pypic.bits` no exporta ese nombre |
 | `PYP2141` | Aridad o tipo (`rol_c` rota un `u8`; `bit_*` hasta 16 bits) |
 | `PYP2142` | El acarreo no está definido aquí / no es la expresión completa |
-| `PYP2143` | El argumento debe ser una variable (no una expresión ni una constante `Final`) |
+| `PYP2143` | El argumento debe ser una variable (no una expresión ni una constante `Const`) |
 | `PYP2144` | El número de bit debe ser constante y caber en el ancho de la variable |
 
 ## Lo que no está (y por qué)

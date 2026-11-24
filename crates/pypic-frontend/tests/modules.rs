@@ -14,7 +14,7 @@ fn codes(src: &str) -> Vec<&'static str> {
 #[test]
 fn implemented_modules_import_fine() {
     assert!(analyze("from pypic.periph.gpio import RD0\n", &TargetProfile::generic()).program.is_some());
-    let t = "from pypic.system.time import pause\nCLOCK_HZ: Final[u32] = 4_000_000\ndef main() -> None:\n    pause(1)\n";
+    let t = "from pypic.system.time import pause\nCLOCK_HZ: Const[u32] = 4_000_000\ndef main() -> None:\n    pause(1)\n";
     assert!(analyze(t, &TargetProfile::generic()).program.is_some());
 }
 

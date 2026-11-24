@@ -30,7 +30,7 @@ fn run(src: &str, max_cycles: u64) -> Sim {
 }
 
 fn header(imports: &str, clock: u32) -> String {
-    format!("from pypic.device import PIC16F887\nfrom pypic.periph.timer import {imports}\nCLOCK_HZ: Final[u32] = {clock}\n")
+    format!("from pypic.device import PIC16F887\nfrom pypic.periph.timer import {imports}\nCLOCK_HZ: Const[u32] = {clock}\n")
 }
 
 /// Espacios entre activaciones consecutivas de `flag`.

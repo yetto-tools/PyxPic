@@ -168,9 +168,9 @@ fn a_table_that_would_cross_a_256_word_boundary_is_moved_and_still_correct() {
 
 #[test]
 fn a_table_declaration_is_checked() {
-    // Rom ya es de solo lectura: no hace falta Final, y la forma antigua Table no existe
+    // Rom ya es de solo lectura: no hace falta Const, y la forma antigua Table no existe
     assert!(analyze(&format!("{HEAD}T: Rom[u8] = [1]\ndef main() -> None:\n    pass\n"), &pack_target()).program.is_some());
-    assert!(analyze(&format!("{HEAD}T: Final[Rom[u8]] = [1]\ndef main() -> None:\n    pass\n"), &pack_target()).program.is_some());
+    assert!(analyze(&format!("{HEAD}T: Const[Rom[u8]] = [1]\ndef main() -> None:\n    pass\n"), &pack_target()).program.is_some());
     let e = errors(&format!("{HEAD}T: Table[u8] = [1]\ndef main() -> None:\n    pass\n"));
     assert!(!e.is_empty(), "la forma antigua Table[u8] ya no existe: {e:?}");
     let e = errors(&format!("{HEAD}T: Rom[u8] = [1, 300]\ndef main() -> None:\n    pass\n"));

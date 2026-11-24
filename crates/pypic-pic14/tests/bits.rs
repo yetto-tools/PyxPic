@@ -151,7 +151,7 @@ fn rotations_and_bit_operations_need_variables_of_the_right_type() {
     assert!(e[0].starts_with("PYP2143"), "{e:?}");
     let e = errors("w: u16 = 1\ndef main() -> None:\n    global w\n    clear_carry()\n    w = rol_c(w)\n");
     assert!(e.iter().any(|x| x.starts_with("PYP2141") && x.contains("u8")), "{e:?}");
-    let e = errors("K: Final[u8] = 1\ndef main() -> None:\n    bit_set(K, 0)\n");
+    let e = errors("K: Const[u8] = 1\ndef main() -> None:\n    bit_set(K, 0)\n");
     assert!(e[0].starts_with("PYP2143"), "{e:?}");
     let e = errors("w: u16 = 1\ndef main() -> None:\n    x: u8 = swap(w)\n");
     assert!(!e.is_empty());

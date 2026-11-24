@@ -16,7 +16,7 @@ fn example_program_lowers_and_verifies() {
 
 #[test]
 fn constants_become_immediates() {
-    let out = ir("K: Final[u8] = 2 * 3\ndef f() -> u8:\n    return K + 1\n");
+    let out = ir("K: Const[u8] = 2 * 3\ndef f() -> u8:\n    return K + 1\n");
     assert!(out.contains("return 7:u8"), "{out}");
 }
 

@@ -76,7 +76,7 @@ struct FnLower<'a> {
 fn ann_type(te: &TypeExpr) -> Type {
     match &te.kind {
         TypeExprKind::Name(n) => Type::from_name(n).unwrap_or(Type::Error),
-        TypeExprKind::Final(inner) => ann_type(inner),
+        TypeExprKind::Const(inner) => ann_type(inner),
         TypeExprKind::None => Type::Void,
         TypeExprKind::Table(_) => Type::Error,
     }

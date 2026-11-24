@@ -132,7 +132,7 @@ pub struct GlobalSym {
     pub name: String,
     pub addr: u8,
     pub ty: Type,
-    /// Constante `Final`: se sustituye por su valor al compilar y no ocupa RAM (`addr` no es valido).
+    /// Constante `Const`: se sustituye por su valor al compilar y no ocupa RAM (`addr` no es valido).
     pub is_const: bool,
 }
 

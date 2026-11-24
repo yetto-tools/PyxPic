@@ -309,12 +309,14 @@ impl<'a> Parser<'a> {
                 self.bump();
                 Ok(TypeExpr { span: sp, kind: TypeExprKind::None })
             }
-            Tok::Ident(s) if s == "Final" => {
+            // una sola forma: la palabra de Python no dice nada en un PIC
+            Tok::Ident(s) if s == "Final" => self.err("PYP1030", sp, "'Final' no existe en PyPIC: una constante se declara Const[u32] (el valor se fija al compilar y no ocupa RAM)"),
+            Tok::Ident(s) if s == "Const" => {
                 self.bump();
-                self.expect(Tok::LBracket, "'[' (Final[tipo])")?;
+                self.expect(Tok::LBracket, "'[' (Const[tipo])")?;
                 let inner = self.type_expr(false)?;
                 let end = self.expect(Tok::RBracket, "']'")?;
-                Ok(TypeExpr { span: sp.to(end), kind: TypeExprKind::Final(Box::new(inner)) })
+                Ok(TypeExpr { span: sp.to(end), kind: TypeExprKind::Const(Box::new(inner)) })
             }
             Tok::Ident(s) if s == "Rom" => {
                 self.bump();

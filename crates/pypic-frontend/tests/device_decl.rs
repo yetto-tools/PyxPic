@@ -67,7 +67,7 @@ fn something_that_is_not_a_pic_name_is_rejected_without_a_pack() {
 
 #[test]
 fn clock_hz_is_a_final_u32_checked_against_the_device_maximum() {
-    let ok = format!("from pypic.device import PIC16F887\nCLOCK_HZ: Final[u32] = 20_000_000\n{MAIN}");
+    let ok = format!("from pypic.device import PIC16F887\nCLOCK_HZ: Const[u32] = 20_000_000\n{MAIN}");
     let p = analyze(&ok, &pic16f887()).program.unwrap();
     assert_eq!(p.clock_hz, Some(20_000_000));
     let too_fast = ok.replace("20_000_000", "20_000_001");
@@ -79,9 +79,9 @@ fn clock_hz_is_a_final_u32_checked_against_the_device_maximum() {
 #[test]
 fn clock_hz_has_a_fixed_shape() {
     for bad in [
-        "CLOCK_HZ: u32 = 4_000_000\n",            // no es Final
-        "CLOCK_HZ: Final[u16] = 4000\n",           // no es u32
-        "CLOCK_HZ: Final[u32] = 0\n",              // 0 Hz
+        "CLOCK_HZ: u32 = 4_000_000\n",            // no es Const
+        "CLOCK_HZ: Const[u16] = 4000\n",           // no es u32
+        "CLOCK_HZ: Const[u32] = 0\n",              // 0 Hz
     ] {
         assert_eq!(codes(&format!("{bad}{MAIN}"), &generic()), vec!["PYP2093"], "{bad}");
     }
@@ -90,7 +90,7 @@ fn clock_hz_has_a_fixed_shape() {
 #[test]
 fn final_constants_do_not_trigger_the_emulated_type_warning() {
     // u32 en un destino de 8 bits: una constante no cuesta nada en el MCU, una variable si
-    let konst = format!("K: Final[u32] = 4_000_000\n{MAIN}");
+    let konst = format!("K: Const[u32] = 4_000_000\n{MAIN}");
     assert!(analyze(&konst, &pic16f887()).diagnostics.items.is_empty());
     let var = format!("v: u32 = 5\n{MAIN}");
     assert_eq!(codes(&var, &pic16f887()), vec!["PYP3001"]);

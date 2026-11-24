@@ -104,8 +104,8 @@ pub enum TypeExprKind {
     /// `Rom[u8]`: datos constantes en la memoria de programa (el parser lo llama Table por dentro).
     Table(Box<TypeExpr>),
     Name(String),
-    /// `Final[T]`
-    Final(Box<TypeExpr>),
+    /// `Const[T]`
+    Const(Box<TypeExpr>),
     /// `None` (solo como tipo de retorno)
     None,
 }

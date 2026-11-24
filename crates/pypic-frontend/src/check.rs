@@ -22,7 +22,7 @@ use crate::types::{Type, INFERENCE_ORDER, U16, U32, U8};
 
 /// Nombres predeclarados (no requieren import; `from pypic import ...` es
 /// opcional para que el archivo siga siendo Python valido en otros editores).
-const PREDECLARED: &[&str] = &["u8", "i8", "u16", "i16", "u32", "i32", "bool", "Final", "interrupt", "init_device", "asm_function"];
+const PREDECLARED: &[&str] = &["u8", "i8", "u16", "i16", "u32", "i32", "bool", "Const", "interrupt", "init_device", "asm_function"];
 
 #[derive(Clone, Copy, Debug)]
 pub struct ExprInfo {
@@ -128,7 +128,7 @@ pub struct Program {
     pub pins: Vec<PinDecl>,
     /// Dispositivo declarado con `from pypic.device import PIC16F887`.
     pub device: Option<String>,
-    /// Reloj efectivo: el de `CLOCK_HZ: Final[u32]` o, si usa esperas y no lo declaro, el del dispositivo.
+    /// Reloj efectivo: el de `CLOCK_HZ: Const[u32]` o, si usa esperas y no lo declaro, el del dispositivo.
     pub clock_hz: Option<u32>,
     /// `clock_hz` es el reloj por defecto del dispositivo (no se declaro `CLOCK_HZ`).
     pub clock_defaulted: bool,
@@ -246,7 +246,7 @@ struct Checker<'a> {
     clock_hz: Option<u32>,
     /// El reloj no se declaro y se uso el del dispositivo por defecto.
     clock_defaulted: bool,
-    /// Verdadero mientras se resuelve el tipo de una constante `Final`: no cuesta nada en el dispositivo.
+    /// Verdadero mientras se resuelve el tipo de una constante `Const`: no cuesta nada en el dispositivo.
     in_const_decl: bool,
     /// Funciones de `pypic.system.time` importadas.
     time_fns: HashMap<String, DelayUnit>,
@@ -364,13 +364,13 @@ impl<'a> Checker<'a> {
         self.declared_device = Some(name.name.clone());
     }
 
-    /// `CLOCK_HZ: Final[u32] = 4_000_000`: frecuencia del reloj del sistema.
+    /// `CLOCK_HZ: Const[u32] = 4_000_000`: frecuencia del reloj del sistema.
     fn check_clock(&mut self, v: &VarDecl, ty: Type, is_final: bool, konst: Option<i128>) {
         if ty == Type::Error {
             return;
         }
         if !is_final || ty != U32 {
-            self.d.error("PYP2093", v.name.span, "CLOCK_HZ debe declararse como 'CLOCK_HZ: Final[u32] = 4_000_000' (frecuencia del reloj del sistema en hercios)");
+            self.d.error("PYP2093", v.name.span, "CLOCK_HZ debe declararse como 'CLOCK_HZ: Const[u32] = 4_000_000' (frecuencia del reloj del sistema en hercios)");
             return;
         }
         match konst {
@@ -549,14 +549,14 @@ impl<'a> Checker<'a> {
                     self.d.warning(
                         "PYP3004",
                         first.span,
-                        format!("no se declaro CLOCK_HZ: se usa el reloj por defecto de {} ({def} Hz); declara 'CLOCK_HZ: Final[u32] = {def}' para fijarlo y quitar este aviso", self.target.name),
+                        format!("no se declaro CLOCK_HZ: se usa el reloj por defecto de {} ({def} Hz); declara 'CLOCK_HZ: Const[u32] = {def}' para fijarlo y quitar este aviso", self.target.name),
                     );
                     self.clock_hz = Some(def);
                     self.clock_defaulted = true;
                     def
                 }
                 None => {
-                    self.d.error("PYP2101", first.span, format!("{} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK_HZ: Final[u32] = 4_000_000'", first.name));
+                    self.d.error("PYP2101", first.span, format!("{} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK_HZ: Const[u32] = 4_000_000'", first.name));
                     return;
                 }
             },
@@ -947,14 +947,14 @@ impl<'a> Checker<'a> {
                 self.d.warning(
                     "PYP3004",
                     span,
-                    format!("no se declaro CLOCK_HZ: se usa el reloj por defecto de {} ({def} Hz); declara 'CLOCK_HZ: Final[u32] = {def}' para fijarlo y quitar este aviso", self.target.name),
+                    format!("no se declaro CLOCK_HZ: se usa el reloj por defecto de {} ({def} Hz); declara 'CLOCK_HZ: Const[u32] = {def}' para fijarlo y quitar este aviso", self.target.name),
                 );
                 self.clock_hz = Some(def);
                 self.clock_defaulted = true;
                 Some(def)
             }
             None => {
-                self.d.error("PYP2101", span, format!("{who} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK_HZ: Final[u32] = 4_000_000'"));
+                self.d.error("PYP2101", span, format!("{who} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK_HZ: Const[u32] = 4_000_000'"));
                 None
             }
         }
@@ -1384,7 +1384,7 @@ impl<'a> Checker<'a> {
     fn declare_variable(&mut self, v: &VarDecl, is_global: bool) {
         let name = &v.name.name;
         match &v.ann.kind {
-            TypeExprKind::Final(inner) if matches!(inner.kind, TypeExprKind::Table(_)) => {
+            TypeExprKind::Const(inner) if matches!(inner.kind, TypeExprKind::Table(_)) => {
                 let TypeExprKind::Table(elem) = &inner.kind else { unreachable!() };
                 return self.declare_table(v, elem, is_global, true);
             }
@@ -1392,7 +1392,7 @@ impl<'a> Checker<'a> {
             _ => {}
         }
         let (inner, is_final) = match &v.ann.kind {
-            TypeExprKind::Final(inner) => (&**inner, true),
+            TypeExprKind::Const(inner) => (&**inner, true),
             _ => (&v.ann, false),
         };
         self.in_const_decl = is_final;
@@ -1416,7 +1416,7 @@ impl<'a> Checker<'a> {
                     let (code, msg) = if is_global {
                         ("PYP2010", "el inicializador de una variable global debe ser una constante")
                     } else {
-                        ("PYP2011", "un valor Final debe ser una expresion constante")
+                        ("PYP2011", "un valor Const debe ser una expresion constante")
                     };
                     self.d.error(code, val.span, msg);
                 }
@@ -1539,7 +1539,7 @@ impl<'a> Checker<'a> {
     /// `NOMBRE: Rom[u8] = [..]`: datos constantes en la memoria de programa (`docs/sdk-tablas.md`).
     fn declare_table(&mut self, v: &VarDecl, inner: &TypeExpr, is_global: bool, is_final: bool) {
         let name = &v.name.name;
-        // Rom ya es de solo lectura: `Final` no hace falta (se acepta `Final[Rom[u8]]`)
+        // Rom ya es de solo lectura: `Const` no hace falta (se acepta `Const[Rom[u8]]`)
         let _ = is_final;
         if !is_global {
             self.d.error("PYP2160", v.span, format!("'{name}': una tabla Rom se declara a nivel de modulo, no dentro de una funcion"));
@@ -1707,7 +1707,7 @@ impl<'a> Checker<'a> {
                     match self.globals.get(&n.name) {
                         None => self.d.error("PYP2020", n.span, format!("'{}' no es una variable global", n.name)),
                         Some(g) if g.is_final => {
-                            self.d.error("PYP2021", n.span, format!("'{}' es constante (Final) y no puede modificarse", n.name))
+                            self.d.error("PYP2021", n.span, format!("'{}' es constante (Const) y no puede modificarse", n.name))
                         }
                         Some(_) => {
                             self.global_decls.insert(n.name.clone());
@@ -1790,7 +1790,7 @@ impl<'a> Checker<'a> {
             return None;
         };
         if sym.is_final {
-            self.d.error("PYP2021", t.span, format!("'{}' es constante (Final) y no puede modificarse", t.name));
+            self.d.error("PYP2021", t.span, format!("'{}' es constante (Const) y no puede modificarse", t.name));
             return None;
         }
         if sym.kind == SymKind::Global && !self.global_decls.contains(&t.name) {

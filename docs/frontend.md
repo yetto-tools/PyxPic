@@ -24,13 +24,13 @@ nativas de software; el compilador emite una advertencia de coste (`PYP3001`, un
 
 ## Subconjunto soportado
 
-- Nivel de modulo: `x: u8 = 0`, `K: Final[u8] = 5` (constante), funciones, `from pypic import ...`.
+- Nivel de modulo: `x: u8 = 0`, `K: Const[u8] = 5` (constante), funciones, `from pypic import ...`.
 - Funciones: parametros y retorno tipados (`-> None` si no devuelve), `@interrupt` (una sola, sin parametros).
 - Sentencias: asignacion, `+= -= *= //= %= &= |= ^= <<= >>=`, `if/elif/else`, `while`,
   `for i in range(...)`, `return`, `break`, `continue`, `pass`, `global`, llamadas.
 - Expresiones: enteros (dec/hex/bin/octal), `True/False`, aritmetica, bit a bit, desplazamientos,
   comparaciones, `and/or/not`, llamadas, conversiones `u8(x)`.
-- `u8 i8 u16 i16 u32 i32 bool Final interrupt` estan predeclarados; `from pypic import ...` es opcional
+- `u8 i8 u16 i16 u32 i32 bool Const interrupt` estan predeclarados; `from pypic import ...` es opcional
   (mantiene el archivo valido para otros editores).
 
 Todo lo demas se rechaza con un diagnostico especifico: clases, listas/tuplas, cadenas, floats, `/`, `**`,
@@ -64,7 +64,7 @@ Un programa dice **a qué PIC está orientado** en su primera línea, y de ahí 
 from pypic.device import PIC16F887        # 1. declaración inicial: obligatoria para compilar (pypic build)
 from pypic.periph.gpio import RB0, RD0
 
-CLOCK_HZ: Final[u32] = 4_000_000          # 2. frecuencia del reloj del sistema (opcional)
+CLOCK_HZ: Const[u32] = 4_000_000          # 2. frecuencia del reloj del sistema (opcional)
 
 
 @init_device                               # 3. se ejecuta una vez, antes de main
@@ -80,10 +80,10 @@ def main() -> None:
 - **`from pypic.device import <DISPOSITIVO>`**: debe ser la **primera línea** y única. `pypic` busca el Device Pack con ese nombre (`devices/pic16f887`) en
   `--devices-dir`, `$PYPIC_DEVICES` y `./devices`; si no existe, el error lista los disponibles. `--device <dir>` fuerza un pack concreto y debe coincidir con la declaración.
   `pypic check` y `pypic ir` funcionan sin declaración (análisis genérico, sin validar pines ni límites del dispositivo); `pypic build` la exige.
-- **`CLOCK_HZ: Final[u32] = <hercios>`**: constante con ese nombre y forma exactos; se valida contra el reloj máximo del dispositivo. No ocupa RAM y no da el aviso de tipo emulado. Si el programa usa esperas (`pypic.system.time`, ver `docs/sdk-time.md`) y no la declara, se usa el reloj por defecto del dispositivo con un aviso.
+- **`CLOCK_HZ: Const[u32] = <hercios>`**: constante con ese nombre y forma exactos; se valida contra el reloj máximo del dispositivo. No ocupa RAM y no da el aviso de tipo emulado. Si el programa usa esperas (`pypic.system.time`, ver `docs/sdk-time.md`) y no la declara, se usa el reloj por defecto del dispositivo con un aviso.
 - **`@init_device`**: una sola función `() -> None` (el nombre es libre); el arranque la llama **después de inicializar las variables y antes de `main`**.
   El código no puede llamarla. Cuenta en el análisis de pila y en la regla de no compartir funciones con la interrupción.
-- Las constantes `Final` se sustituyen por su valor al compilar: **no ocupan RAM** aunque sean de 32 bits.
+- Las constantes `Const` se sustituyen por su valor al compilar: **no ocupan RAM** aunque sean de 32 bits.
 
 ## Diagnosticos
 
