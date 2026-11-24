@@ -39,8 +39,22 @@ Los tipos más anchos que 8 bits se compilan con secuencias nativas (cadenas de 
 - **Argumentos:** el llamador escribe cada argumento en la posición estática del parámetro del llamado, antes del `CALL`.
 - **Retorno:** `u8`/`i8`/`bool` en **W**. Valores de 16/32 bits: byte bajo en W y el resto en `RETV1..RETV3` (posiciones estáticas del **contexto** del llamado).
 - **Banco (decisión):** **invariante de banco 0** — toda función entra y sale con RP1:RP0 = 00 y IRP = 0. Quien use otro banco lo restaura antes de `RETURN`.
-- **PCLATH:** como `CALL`/`GOTO` siempre toman PCLATH<4:3>, antes de cada salto/llamada se carga PCLATH con la página destino (omitible si es
-  la misma que la del código en curso). Al volver, el código sigue en su página. Invariante en los límites de función: PCLATH<4:3> = página del código en ejecución.
+- **PCLATH:** como `CALL`/`GOTO` siempre toman PCLATH<4:3>, antes de cada llamada se carga PCLATH con la página destino y al volver se restablece la actual.
+  Invariante en los límites de función: PCLATH<4:3> = página del código en ejecución. Un programa que cabe en **una página (2048 palabras)** no hace nada de esto.
+  Uno mayor se genera en el **modo de varias páginas** (ver más abajo).
+
+### Programas de más de una página (#31)
+
+`CALL` y `GOTO` llevan 11 bits; los bits 12:11 del destino salen de PCLATH<4:3> (DS40001291H p.38). Cuando el programa no cabe en 2048 palabras el compilador lo vuelve a generar así:
+
+- **Cada función entra entera en una página**: se coloca en la siguiente si cruzaría el límite de 0x800, y una función de más de 2048 palabras es un error (`FunctionTooLarge`). Por eso los saltos
+  dentro de una función no necesitan PCLATH. Lo mismo vale para cada rutina de runtime (`rt.*`).
+- **Cada llamada entre funciones** (también a rutinas de runtime) es `BCF/BSF PCLATH,4` · `BCF/BSF PCLATH,3` · `CALL` · `BCF/BSF PCLATH,4` · `BCF/BSF PCLATH,3`: **5 palabras y +4 ciclos**, sin tocar W (que lleva el valor
+  devuelto), con las páginas resueltas al enlazar. Se paga también cuando origen y destino están en la misma página: el tamaño de cada sitio es fijo, así no hace falta iterar el enlace.
+- **Interrupción**: el `GOTO` del vector `0004h` usaría PCLATH de quien fue interrumpido, así que el **prólogo va en el propio vector** (guarda W, STATUS y PCLATH, y limpia PCLATH) y después carga la página de
+  la ISR y salta a ella. El arranque pasa a ir a continuación del prólogo. La ISR puede estar en cualquier página.
+- **Tablas `Rom`**: la consulta ya cargaba PCLATH completo (incluidas las páginas); al volver restablece solo los bits de página (**18 ciclos** en lugar de 17).
+- Más allá del tamaño de la flash del dispositivo es `TooLarge`. Para un programa chico no cambia ni una palabra del código generado.
 
 ## 5. Interrupciones
 
@@ -89,5 +103,6 @@ Multiplicación, división, módulo y desplazamientos por variable son rutinas n
 | Escritor/lector de Intel HEX (palabra → 2 bytes little-endian, dirección de bytes = 2 × dirección de palabra; config en `400Eh`/`4010h`) | ✅ vectores calculados a mano + ida y vuelta (`crates/pypic-pic14`); **pendiente de verificar en Proteus** |
 | Convención de llamada, invariante de banco 0 (todo el dato en banco 0), temporales por contexto, prólogo/epílogo de ISR, arranque | ✅ `codegen` (ver `docs/backend-pic14.md`); verificado con pruebas diferenciales IR ↔ simulador PIC14 e interrupciones inyectadas |
 | Rutinas de runtime (`*`, `//`, `%`, desplazamientos variables), una copia por contexto | ✅ `docs/sdk-runtime.md` |
-| Overlay de locales y otros bancos de datos, manejo de PCLATH (> 2048 palabras) | ⏳ backend (#26, #31) |
+| Programas de más de 2048 palabras (PCLATH, una función por página, prólogo en el vector) | ✅ `crates/pypic-pic14/tests/pages.rs` |
+| Overlay de locales y otros bancos de datos | ⏳ backend (#26) |
 | Re-comprobación de pila con rutinas de runtime | ⏳ backend |

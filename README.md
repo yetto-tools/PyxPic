@@ -9,9 +9,9 @@ Compilador de firmware para microcontroladores PIC con la **sintaxis de Python**
 
 | | |
 |---|---|
-| **Funciona** (389 pruebas, muchas diferenciales entre el intérprete de referencia y un simulador del núcleo) | frontend con tipos y diagnósticos con ubicación · IR y backend PIC14 · las 35 instrucciones y un ensamblador con la **sintaxis de pic-as** (macros, `PSECT`, `CONFIG`) · Intel HEX · Device Pack del PIC16F887 · GPIO, temporizadores 0/1/2, registros y bits, acarreo, esperas exactas al ciclo, tablas en flash, `*` `//` `%` y desplazamientos · interrupciones · `@asm_function` |
+| **Funciona** (401 pruebas, muchas diferenciales entre el intérprete de referencia y un simulador del núcleo) | frontend con tipos y diagnósticos con ubicación · IR y backend PIC14 · las 35 instrucciones y un ensamblador con la **sintaxis de pic-as** (macros, `PSECT`, `CONFIG`) · Intel HEX · Device Pack del PIC16F887 · GPIO, temporizadores 0/1/2, registros y bits, acarreo, esperas exactas al ciclo, tablas en flash, `*` `//` `%` y desplazamientos · interrupciones · `@asm_function` |
 | **Confirmado en Proteus** | `blink` y `button_led` compilados desde `.py` (`docs/proteus-blink.md`). **Falta confirmarlo en hardware real** (#16) |
-| **Límites conocidos** | solo el PIC16F887 (#25) · sin `u32`/`i32` (#32) · todo el dato en el banco 0 y el programa en 2048 palabras (#26, #31) · sin ADC, PWM, UART, SPI, I²C ni EEPROM (#45) · sin extensión de VS Code, depurador ni terminal serie |
+| **Límites conocidos** | solo el PIC16F887 (#25) · sin `u32`/`i32` (#32) · todo el dato en el banco 0 (#26) y una función no puede pasar de 2048 palabras · sin ADC, PWM, UART, SPI, I²C ni EEPROM (#45) · sin extensión de VS Code, depurador ni terminal serie |
 | **Sin empezar** | herramientas de la Fase 3 (VS Code, Wizard, DAP, I²C Scanner) y la Fase 4 (otros PIC, backends C/ASM, Blockly) |
 
 ## Documentos

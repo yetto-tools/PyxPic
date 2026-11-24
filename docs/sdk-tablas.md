@@ -52,7 +52,7 @@ anterior para que la tabla caiga a ambos lados de `0x100` y comprueba que ningun
 ## Límites
 
 - Solo `u8` (cada entrada es un `RETLW`); tablas de `u16` y de cadenas, más adelante.
-- El programa entero cabe en la página 0 (2048 palabras; `PCLATH` para programas mayores es #31).
+- Con un programa de más de una página (docs/abi-pic14.md, «Programas de más de una página») la consulta cuesta **18 ciclos** (restablece los bits de página de PCLATH en lugar de limpiarlo).
 - La tabla se declara una vez a nivel de módulo; no hay arreglos en RAM (`buf: u8[16]` sigue siendo #8).
 
 ## Verificación

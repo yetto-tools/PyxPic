@@ -53,6 +53,8 @@ pub enum CodegenError {
     Unsupported(String),
     OutOfRam { needed: usize, available: usize },
     TooLarge { words: usize },
+    /// Una funcion no cabe en una pagina de 2048 palabras: `CALL`/`GOTO` solo alcanzan 11 bits y no puede partirse.
+    FunctionTooLarge { name: String, words: usize },
     /// El dispositivo no es compatible con este backend o con el programa.
     Device(String),
     /// Errores del ensamblador de una funcion `@asm_function` (con la linea del fuente).
@@ -73,7 +75,8 @@ impl fmt::Display for CodegenError {
                 let lines: Vec<String> = errs.iter().map(|e| format!("linea {}:{}: error[{}]: {}", e.line, e.col, e.code, e.message)).collect();
                 write!(f, "ensamblador en linea:\n  {}", lines.join("\n  "))
             }
-            CodegenError::TooLarge { words } => write!(f, "el programa ocupa {words} palabras; el limite actual es una pagina de {PAGE_WORDS} (PCLATH no se maneja todavia)"),
+            CodegenError::FunctionTooLarge { name, words } => write!(f, "la funcion '{name}' ocupa {words} palabras y no cabe en una pagina de {PAGE_WORDS}: dividela en funciones mas pequenas"),
+            CodegenError::TooLarge { words } => write!(f, "el programa ocupa {words} palabras y no cabe en la memoria de programa del dispositivo"),
         }
     }
 }
@@ -195,6 +198,13 @@ enum Item {
     RomPad(u32),
     /// `MOVLW` con PC<12:8> de la primera entrada de la tabla (la direccion de la etiqueta + 1).
     HighOf(Label),
+    /// Inicio de una funcion o rutina (modo de varias paginas: se coloca entera dentro de una pagina de 2048 palabras).
+    FuncStart(Label),
+    FuncEnd,
+    /// Dos instrucciones `BCF`/`BSF PCLATH,4` y `PCLATH,3` con la pagina de la etiqueta (no tocan W).
+    PageSet(Label),
+    /// Lo mismo con la pagina del codigo que se esta ejecutando: restablece la invariante PCLATH<4:3> = pagina actual.
+    PageHere,
 }
 
 #[derive(Default)]
@@ -351,11 +361,38 @@ struct Gen<'a> {
     rt_order: Vec<(bool, u8, usize)>,
     /// Al emitir una rutina, el contexto al que pertenece (su memoria de trabajo).
     force_isr: Option<bool>,
+    /// Programa de mas de una pagina de 2048 palabras: cada llamada entre funciones carga PCLATH (docs/abi-pic14.md, 4).
+    multi: bool,
 }
 
 impl<'a> Gen<'a> {
     fn f(&self) -> &'a Function {
         &self.m.functions[self.cur]
+    }
+
+    /// `CALL` a una funcion o rutina: con varias paginas se carga PCLATH con la pagina destino y despues se restablece la actual
+    /// (solo instrucciones de bit: W lleva el valor devuelto).
+    fn call_to(&mut self, l: Label) {
+        if self.multi {
+            self.asm.items.push(Item::PageSet(l));
+            self.asm.call(l);
+            self.asm.items.push(Item::PageHere);
+        } else {
+            self.asm.call(l);
+        }
+    }
+
+    /// Prologo de una interrupcion (p.219): W y STATUS a la RAM comun, PCLATH, y banco 0 / IRP = 0.
+    fn isr_prologue(&mut self) {
+        self.asm.i(Movwf(W_TEMP));
+        self.asm.i(Swapf(STATUS, W));
+        self.asm.i(Movwf(STATUS_TEMP));
+        self.asm.i(Movf(PCLATH, W));
+        self.asm.i(Movwf(PCLATH_TEMP));
+        self.asm.i(Clrf(PCLATH));
+        self.asm.i(Bcf(STATUS, BIT_RP0));
+        self.asm.i(Bcf(STATUS, BIT_RP1));
+        self.asm.i(Bcf(STATUS, BIT_IRP));
     }
 
     fn in_isr(&self) -> bool {
@@ -672,7 +709,7 @@ impl<'a> Gen<'a> {
             }
         }
         let l = self.fn_labels[&func];
-        self.asm.call(l);
+        self.call_to(l);
         if let Some(d) = dst {
             let d = self.regs(d)?;
             self.st(d[0]); // el byte bajo vuelve en W
@@ -969,17 +1006,9 @@ impl<'a> Gen<'a> {
         if f.asm.is_some() {
             return self.asm_function(fi);
         }
-        if f.is_interrupt {
-            // prologo (p.219): W y STATUS a la RAM comun, PCLATH, y banco 0 / IRP = 0
-            self.asm.i(Movwf(W_TEMP));
-            self.asm.i(Swapf(STATUS, W));
-            self.asm.i(Movwf(STATUS_TEMP));
-            self.asm.i(Movf(PCLATH, W));
-            self.asm.i(Movwf(PCLATH_TEMP));
-            self.asm.i(Clrf(PCLATH));
-            self.asm.i(Bcf(STATUS, BIT_RP0));
-            self.asm.i(Bcf(STATUS, BIT_RP1));
-            self.asm.i(Bcf(STATUS, BIT_IRP));
+        // con varias paginas el prologo va en el vector (0004h): el GOTO de un vector usaria PCLATH<4:3> de quien fue interrumpido
+        if f.is_interrupt && !self.multi {
+            self.isr_prologue();
         }
         let live = reachable_blocks(f);
         let order: Vec<usize> = (0..f.blocks.len()).filter(|&b| live[b]).collect();
@@ -1034,6 +1063,14 @@ impl<'a> Gen<'a> {
 
 /// Compila un modulo de IR a una imagen de memoria de programa lista para escribir como HEX.
 pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
+    match compile_mode(m, opts, false) {
+        // no cabe en una pagina de 2048 palabras: se vuelve a generar cargando PCLATH en cada llamada
+        Err(CodegenError::TooLarge { .. }) if opts.program_words as usize > PAGE_WORDS => compile_mode(m, opts, true),
+        other => other,
+    }
+}
+
+fn compile_mode(m: &Module, opts: &Options, multi: bool) -> Result<Compiled, CodegenError> {
     if !SUPPORTED_DEVICES.iter().any(|d| d.eq_ignore_ascii_case(&opts.device)) {
         return Err(CodegenError::Device(format!(
             "el backend PIC14 aun no soporta '{}' (soportados: {}): falta su mapa de registros (#22)",
@@ -1064,7 +1101,7 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
     let isr_ctx = reach(m, &isrs);
 
     let al = allocate(m, &live, &isr_ctx, opts)?;
-    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new(), registers: opts.registers.clone(), rom_labels: HashMap::new(), rom_order: Vec::new(), rt_labels: HashMap::new(), rt_order: Vec::new(), force_isr: None };
+    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new(), registers: opts.registers.clone(), rom_labels: HashMap::new(), rom_order: Vec::new(), rt_labels: HashMap::new(), rt_order: Vec::new(), force_isr: None, multi };
     for &fi in &live {
         let l = g.asm.label(m.functions[fi].name.clone());
         g.fn_labels.insert(fi, l);
@@ -1080,12 +1117,19 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
         [] => g.asm.i(Retfie),
         [isr] => {
             let l = g.fn_labels[isr];
+            if multi {
+                g.isr_prologue();
+                g.asm.items.push(Item::PageSet(l));
+            }
             g.asm.goto(l);
         }
         _ => return unsupported("mas de una funcion @interrupt"),
     }
     // arranque: inicializa todos los globales (la RAM no esta definida tras el reset), llama a main y duerme
-    g.asm.items.push(Item::Org(5));
+    // (con varias paginas y una interrupcion, el prologo ocupa el vector y el arranque va a continuacion)
+    if !(multi && !isrs.is_empty()) {
+        g.asm.items.push(Item::Org(5));
+    }
     g.asm.place(startup);
     for (i, gl) in m.globals.iter().enumerate() {
         if gl.is_const {
@@ -1116,10 +1160,10 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
     }
     for &i in &inits {
         let l = g.fn_labels[&i];
-        g.asm.call(l); // la funcion @init_device va antes de main
+        g.call_to(l); // la funcion @init_device va antes de main
     }
     let main_label = g.fn_labels[&main];
-    g.asm.call(main_label);
+    g.call_to(main_label);
     g.asm.place(halt);
     g.asm.i(Sleep);
     g.asm.goto(halt);
@@ -1127,7 +1171,9 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
     for &fi in &live {
         let f = &m.functions[fi];
         let bb_labels: Vec<Label> = (0..f.blocks.len()).map(|b| g.asm.label(format!("{}.bb{b}", f.name))).collect();
+        g.asm.items.push(Item::FuncStart(g.fn_labels[&fi]));
         g.function(fi, &bb_labels)?;
+        g.asm.items.push(Item::FuncEnd);
     }
     g.emit_roms();
     g.emit_runtime();
@@ -1135,9 +1181,50 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
     // ---- ensamblado: direcciones y etiquetas ----
     let mut addr_of = vec![None::<u32>; g.asm.names.len()];
     let mut pc = 0u32;
-    let mut placed: Vec<(u32, &Item)> = Vec::new();
-    for it in &g.asm.items {
+    // (direccion, item, 0 o 1 para las dos palabras de PageSet/PageHere)
+    let mut placed: Vec<(u32, &Item, u8)> = Vec::new();
+    // palabras de cada funcion (de FuncStart a FuncEnd): con varias paginas no puede cruzar el limite de 2048 palabras
+    let item_words = |it: &Item| match it {
+        Item::Inst(_) | Item::Goto(_) | Item::Call(_) | Item::HighOf(_) => 1u32,
+        Item::PageSet(_) | Item::PageHere => 2,
+        _ => 0,
+    };
+    let mut fsize: HashMap<usize, u32> = HashMap::new();
+    let mut open: Option<(usize, u32)> = None;
+    for (i, it) in g.asm.items.iter().enumerate() {
         match it {
+            Item::FuncStart(_) => open = Some((i, 0)),
+            Item::FuncEnd => {
+                if let Some((s, n)) = open.take() {
+                    fsize.insert(s, n);
+                }
+            }
+            other => {
+                if let Some((_, n)) = open.as_mut() {
+                    *n += item_words(other);
+                }
+            }
+        }
+    }
+    for (idx, it) in g.asm.items.iter().enumerate() {
+        match it {
+            Item::FuncStart(l) => {
+                if multi {
+                    let n = fsize.get(&idx).copied().unwrap_or(0);
+                    if n as usize > PAGE_WORDS {
+                        return Err(CodegenError::FunctionTooLarge { name: g.asm.names[*l].clone(), words: n as usize });
+                    }
+                    if (pc & 0x7FF) + n > 0x800 {
+                        pc = (pc + 0x7FF) & !0x7FF; // la funcion empieza en la pagina siguiente
+                    }
+                }
+            }
+            Item::FuncEnd => {}
+            Item::PageSet(_) | Item::PageHere => {
+                placed.push((pc, it, 0));
+                placed.push((pc + 1, it, 1));
+                pc += 2;
+            }
             Item::Org(a) => pc = *a,
             Item::RomPad(n) => {
                 let first = pc + 1;
@@ -1147,22 +1234,33 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
             }
             Item::Label(l) => addr_of[*l] = Some(pc),
             other => {
-                placed.push((pc, other));
+                placed.push((pc, other, 0));
                 pc += 1;
             }
         }
     }
     let flash_words = placed.len();
-    let top = placed.iter().map(|(a, _)| *a as usize + 1).max().unwrap_or(0);
-    if top > PAGE_WORDS.min(opts.program_words as usize) {
+    let top = placed.iter().map(|(a, _, _)| *a as usize + 1).max().unwrap_or(0);
+    let limit = if multi { opts.program_words as usize } else { PAGE_WORDS.min(opts.program_words as usize) };
+    if top > limit {
         return Err(CodegenError::TooLarge { words: top });
     }
     let mut image = Image::new();
-    for (a, it) in &placed {
+    for (a, it, sub) in &placed {
+        // los bits 12:11 de la direccion salen de PCLATH<4:3>: la instruccion lleva los 11 bajos
+        let page_bit = |page: u32| if *sub == 0 { (page >> 1 & 1, 4u8) } else { (page & 1, 3u8) };
         let inst = match it {
             Item::Inst(i) => *i,
-            Item::Goto(l) => Goto(addr_of[*l].expect("etiqueta sin colocar") as u16),
-            Item::Call(l) => Call(addr_of[*l].expect("etiqueta sin colocar") as u16),
+            Item::Goto(l) => Goto((addr_of[*l].expect("etiqueta sin colocar") & 0x7FF) as u16),
+            Item::Call(l) => Call((addr_of[*l].expect("etiqueta sin colocar") & 0x7FF) as u16),
+            Item::PageSet(_) | Item::PageHere => {
+                let page = match it {
+                    Item::PageSet(l) => addr_of[*l].expect("etiqueta sin colocar") >> 11 & 3,
+                    _ => *a >> 11 & 3,
+                };
+                let (bit, n) = page_bit(page);
+                if bit == 1 { Bsf(PCLATH, n) } else { Bcf(PCLATH, n) }
+            }
             Item::HighOf(l) => Movlw(((addr_of[*l].expect("etiqueta sin colocar") + 1) >> 8 & 0x1F) as u8),
             _ => unreachable!(),
         };
@@ -1294,7 +1392,11 @@ impl<'a> Gen<'a> {
         self.asm.i(Movf(d, W));
         self.asm.call(label);
         self.asm.i(Movwf(d));
-        self.asm.i(Clrf(PCLATH));
+        if self.multi {
+            self.asm.items.push(Item::PageHere); // solo los bits de pagina: W lleva el valor
+        } else {
+            self.asm.i(Clrf(PCLATH));
+        }
         Ok(())
     }
 
@@ -1537,7 +1639,7 @@ impl<'a> Gen<'a> {
             self.ld(rr[i]);
             self.st(b + i as u8);
         }
-        self.asm.call(label);
+        self.call_to(label);
         // la multiplicacion y el modulo dejan el resultado en R; el cociente queda en A
         let from = if op == BinOp::Div { a } else { r };
         for i in 0..n {
@@ -1557,6 +1659,7 @@ impl<'a> Gen<'a> {
             let base = if isr { self.al.rt[1] } else { self.al.rt[0] };
             let (a, b, r, cnt, m, sgn) = (base, base + 2, base + 4, base + 6, base + 7, base + 8);
             let label = self.rt_labels[&(isr, kind, n)];
+            self.asm.items.push(Item::FuncStart(label));
             self.asm.place(label);
             match kind {
                 0 => self.emit_mul(n, a, b, r, cnt, m),
@@ -1566,6 +1669,7 @@ impl<'a> Gen<'a> {
                     self.emit_sdivmod(n, a, b, r, sgn, udiv);
                 }
             }
+            self.asm.items.push(Item::FuncEnd);
         }
         self.force_isr = None;
     }
@@ -1688,7 +1792,7 @@ impl<'a> Gen<'a> {
         self.asm.i(Movlw(1));
         self.asm.i(Xorwf(sgn, F));
         self.asm.place(bpos);
-        self.asm.call(udiv);
+        self.call_to(udiv);
         self.asm.i(Btfss(sgn, 0));
         self.asm.goto(n1);
         self.neg_bytes(a, n);

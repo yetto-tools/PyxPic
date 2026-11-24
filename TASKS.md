@@ -1,13 +1,13 @@
 # Backlog de implementación
 
 Estado verificado (2026-11-24). Leyenda: **[x]** hecho y probado · **[~]** parcial, con su límite y el issue que lo cierra · **[ ]** sin empezar.
-Hecho = hay código, pruebas que pasan (`cargo test`: 389) y, donde aplica, verificación contra el datasheet o el simulador del núcleo.
+Hecho = hay código, pruebas que pasan (`cargo test`: 401) y, donde aplica, verificación contra el datasheet o el simulador del núcleo.
 Nada de lo marcado [x] se ha probado todavía en **hardware real**: el blink y el pulsador se confirmaron en Proteus (#16).
 Los issues abiertos están en <https://github.com/yetto-tools/PyPic/issues>.
 
 ## Fase 0 — Diseño
 - [x] Gramática del subconjunto Python y sistema de tipos (`docs/frontend.md`)
-- [x] IR y ABI PIC14 (`docs/abi-pic14.md`); [~] el overlay de memoria y las páginas de programa (#26, #31)
+- [x] IR y ABI PIC14 (`docs/abi-pic14.md`); [~] el overlay de memoria (#26)
 - [x] Esquema y validación del Device Pack (`docs/device-packs.md`, `pypic device validate`)
 - [~] Licencia, estructura monorepo y políticas de contribución: monorepo hecho; **licencia y CONTRIBUTING pendientes** (#18)
 
@@ -15,7 +15,7 @@ Los issues abiertos están en <https://github.com/yetto-tools/PyPic/issues>.
 - [x] Parser y errores con ubicación (`crates/pypic-frontend`)
 - [x] Tipado y constantes; [~] sin `u32`/`i32` en el backend (#32)
 - [x] Instrucciones PIC14, codificador y desensamblador (las 35, ida y vuelta de las 16 384 palabras)
-- [~] Bancos, saltos y llamadas: todo el dato en el banco 0 y el programa en una página de 2048 palabras (#26, #31); sin enlazador entre módulos
+- [~] Bancos, saltos y llamadas: todo el dato en el banco 0 (#26); programas de hasta toda la flash con PCLATH (una función por página, +4 ciclos por llamada); sin enlazador entre módulos
 - [x] Intel HEX y palabras de configuración por nombre (`pypic build --config`)
 - [x] Blink y pulsador reales compilados desde `.py`, confirmados en Proteus; [ ] confirmación en hardware (#16)
 - [x] Ensamblador textual con la sintaxis de pic-as y ensamblador en línea (`@asm_function`); [~] restos en #49–#52 y #60
@@ -47,7 +47,7 @@ Los issues abiertos están en <https://github.com/yetto-tools/PyPic/issues>.
 
 ## Cómo comprobar lo marcado como hecho
 ```
-cargo test --workspace                                              # 389 pruebas; las diferenciales comparan el intérprete de la IR con el simulador del núcleo
+cargo test --workspace                                              # 401 pruebas; las diferenciales comparan el intérprete de la IR con el simulador del núcleo
 cargo test -p pypic-pic14 --test runtime                            # *, //, %: todos los pares de u8/i8, bordes de 16 bits, interrupciones inyectadas, costos
 cargo test -p pypic-pic14 --test asm                                # ensamblador pic-as; el blink en pic-as reproduce byte a byte el .hex probado en Proteus
 cargo test -p pypic-device                                          # Device Pack del PIC16F887 contra sus propias reglas de coherencia
