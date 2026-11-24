@@ -8,6 +8,22 @@ function activate(context) {
   const output = vscode.window.createOutputChannel("PyPIC");
   context.subscriptions.push(output);
 
+  const actions = [
+    { label: "Comprobar archivo", command: "pypic.check", icon: "check" },
+    { label: "Compilar a HEX", command: "pypic.build", icon: "tools" },
+    { label: "Abrir ejemplo", command: "pypic.examples", icon: "book" },
+    { label: "Configurar PyPIC", command: "pypic.settings", icon: "settings-gear" },
+  ];
+  context.subscriptions.push(vscode.window.registerTreeDataProvider("pypic.actions", {
+    getTreeItem: (item) => item,
+    getChildren: () => actions.map((action) => {
+      const item = new vscode.TreeItem(action.label, vscode.TreeItemCollapsibleState.None);
+      item.iconPath = new vscode.ThemeIcon(action.icon);
+      item.command = { command: action.command, title: action.label };
+      return item;
+    }),
+  }));
+
   async function run(kind) {
     if (!vscode.workspace.isTrusted) {
       void vscode.window.showErrorMessage("PyPIC necesita un espacio de trabajo de confianza para ejecutar el compilador.");
@@ -64,6 +80,7 @@ function activate(context) {
     vscode.commands.registerCommand("pypic.check", () => run("check")),
     vscode.commands.registerCommand("pypic.build", () => run("build")),
     vscode.commands.registerCommand("pypic.examples", examples),
+    vscode.commands.registerCommand("pypic.settings", () => vscode.commands.executeCommand("workbench.action.openSettings", "@ext:pypic.pypic-ide")),
   );
 }
 

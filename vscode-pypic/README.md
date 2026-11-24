@@ -5,7 +5,7 @@ Extensión inicial para VS Code de escritorio. Usa el compilador PyPIC instalado
 1. Compila la CLI con `cargo build -p pypic-cli` desde la raíz del repositorio.
 2. Abre `vscode-pypic` en VS Code y pulsa F5 para iniciar una ventana de desarrollo de extensiones. Abre allí el repositorio o tu proyecto PyPIC en un espacio de trabajo de confianza.
 3. Configura `pypic.executable` con la ruta absoluta a `target/debug/pypic` (en Windows, `pypic.exe`). Para proyectos fuera del repositorio, configura `pypic.devicesDir` con la ruta absoluta a `devices`.
-4. Abre un archivo `.py` y usa los botones del editor o la paleta: **PyPIC: Comprobar archivo** y **PyPIC: Compilar archivo a HEX**. La compilación solicita el destino del HEX. Los mensajes aparecen en Salida → PyPIC.
+4. Abre un archivo `.py` y selecciona el icono PyPIC de la barra de actividad. En **Herramientas** están las acciones de comprobar, compilar, abrir ejemplos y configurar PyPIC. También puedes usar los botones del editor o la paleta. La compilación solicita el destino del HEX. Los mensajes aparecen en Salida → PyPIC.
 5. **PyPIC: Abrir ejemplo** busca archivos Python bajo carpetas `examples` del espacio de trabajo abierto.
 
 El dispositivo se declara en el código fuente, según las reglas actuales de PyPIC. VS Code proporciona el resaltado Python; esta versión no implementa autocompletado específico, diagnósticos en línea, informe de memoria, selección gráfica de dispositivo, grabación, terminal serie, simulación visual ni depuración. Esas funciones siguen pendientes. El comando de compilación puede sustituir el HEX seleccionado; el diálogo de guardado es el del editor.

@@ -16,13 +16,18 @@ test("los comandos comprueban y compilan con la CLI real y muestran sus errores"
   const hex = path.join(dir, "blink.hex");
   fs.copyFileSync(path.join(root, "examples", "blink.py"), source);
   const commands = new Map();
+  let sidebar;
   const messages = [];
   let result;
   let output = "";
   const completed = () => new Promise((resolve) => { result = resolve; });
   const vscode = {
     Uri: { file: (fsPath) => ({ fsPath }) },
+    TreeItem: class { constructor(label) { this.label = label; } },
+    TreeItemCollapsibleState: { None: 0 },
+    ThemeIcon: class { constructor(id) { this.id = id; } },
     window: {
+      registerTreeDataProvider: (_id, provider) => { sidebar = provider; return { dispose() {} }; },
       activeTextEditor: { document: { uri: { scheme: "file", fsPath: source }, languageId: "python", isDirty: false } },
       createOutputChannel: () => ({ clear() { output = ""; }, append(s) { output += s; }, appendLine(s) { output += `${s}\n`; }, show() {}, dispose() {} }),
       showSaveDialog: async () => ({ fsPath: hex }),
@@ -43,6 +48,7 @@ test("los comandos comprueban y compilan con la CLI real y muestran sus errores"
   } finally {
     Module._load = original;
   }
+  assert.deepEqual(sidebar.getChildren().map((item) => item.command.command), ["pypic.check", "pypic.build", "pypic.examples", "pypic.settings"]);
   let done = completed();
   await commands.get("pypic.check")();
   await done;

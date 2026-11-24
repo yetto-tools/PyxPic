@@ -2,15 +2,22 @@
   "name": "pypic-ide",
   "displayName": "PyPIC IDE",
   "description": "Comprueba y compila programas PyPIC desde VS Code.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "pypic",
   "repository": { "type": "git", "url": "https://github.com/yetto-tools/PyPic.git" },
-  "files": ["extension.js", "README.md"],
+  "files": ["extension.js", "README.md", "media"],
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Programming Languages"],
   "main": "./extension.js",
+  "activationEvents": ["onView:pypic.actions"],
   "capabilities": { "untrustedWorkspaces": { "supported": false } },
   "contributes": {
+    "viewsContainers": { "activitybar": [
+      { "id": "pypic", "title": "PyPIC", "icon": "media/pypic.svg" }
+    ] },
+    "views": { "pypic": [
+      { "id": "pypic.actions", "name": "Herramientas" }
+    ] },
     "commands": [
       { "command": "pypic.check", "title": "PyPIC: Comprobar archivo" },
       { "command": "pypic.build", "title": "PyPIC: Compilar archivo a HEX" },
