@@ -62,10 +62,13 @@ pub struct Sim {
     /// El EUSART: los bytes que el programa envio (con el ciclo en que pasaron al registro de desplazamiento), los que se le van a
     /// dar a leer (`uart_feed`: ciclo en que termina su bit de parada) y lo que el programa hizo mal con el.
     pub uart_tx: Vec<(u8, u64)>,
+    /// El noveno bit (TX9D) de cada byte de `uart_tx`, o `false` si el transmisor estaba en 8 bits.
+    pub uart_tx9: Vec<bool>,
     pub uart_violations: Vec<String>,
-    uart_rx_pending: std::collections::VecDeque<(u64, u8, bool)>,
-    uart_fifo: std::collections::VecDeque<(u8, bool)>,
+    uart_rx_pending: std::collections::VecDeque<(u64, u8, bool, bool)>,
+    uart_fifo: std::collections::VecDeque<(u8, bool, bool)>,
     uart_txreg: Option<(u8, u64)>,
+    uart_txreg9: bool,
     uart_tsr_left: u64,
     uart_prev_cren: bool,
     adc_prev_go: bool,
@@ -83,7 +86,7 @@ impl Sim {
                 flash[a as usize] = w;
             }
         }
-        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None, t0_pre: 0, t0_inhibit: 0, t1_pre: 0, t2_pre: 0, t2_post: 0, timer_events: Vec::new(), adc_inputs: [0; 16], fosc_hz: 4_000_000, adc_violations: Vec::new(), adc_tacq_ns: 11_500.0, adc_low_voltage: false, uart_tx: Vec::new(), uart_violations: Vec::new(), uart_rx_pending: Default::default(), uart_fifo: Default::default(), uart_txreg: None, uart_tsr_left: 0, uart_prev_cren: false, adc_prev_go: false, adc_prev_on: false, adc_prev_chs: 0, adc_acq_from: 0, adc_remaining: 0 };
+        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None, t0_pre: 0, t0_inhibit: 0, t1_pre: 0, t2_pre: 0, t2_post: 0, timer_events: Vec::new(), adc_inputs: [0; 16], fosc_hz: 4_000_000, adc_violations: Vec::new(), adc_tacq_ns: 11_500.0, adc_low_voltage: false, uart_tx: Vec::new(), uart_tx9: Vec::new(), uart_txreg9: false, uart_violations: Vec::new(), uart_rx_pending: Default::default(), uart_fifo: Default::default(), uart_txreg: None, uart_tsr_left: 0, uart_prev_cren: false, adc_prev_go: false, adc_prev_on: false, adc_prev_chs: 0, adc_acq_from: 0, adc_remaining: 0 };
         s.reset();
         s
     }
@@ -530,7 +533,7 @@ impl Sim {
         (self.adc_prev_go, self.adc_prev_on, self.adc_prev_chs) = (a & 2 != 0, a & 1 != 0, a >> 2 & 0xF);
     }
 
-    /// Ciclos de instruccion de una trama de 10 bits con el generador de baudios actual (tabla 12-3).
+    /// Ciclos de instruccion de una trama (10 bits, o 11 con TX9) con el generador de baudios actual (tabla 12-3).
     fn uart_frame_cycles(&self) -> u64 {
         let (brg16, brgh) = (self.ram[0x187] & 0x08 != 0, self.ram[0x98] & 0x04 != 0);
         let n = if brg16 { (self.ram[0x9A] as u64) << 8 | self.ram[0x99] as u64 } else { self.ram[0x99] as u64 };
@@ -539,7 +542,8 @@ impl Sim {
             (false, true) | (true, false) => 16,
             (true, true) => 4,
         };
-        (10 * div * (n + 1)).div_ceil(4)
+        let bits = if self.ram[0x98] & 0x40 != 0 { 11 } else { 10 };
+        (bits * div * (n + 1)).div_ceil(4)
     }
 
     fn uart_tx_write(&mut self, v: u8) {
@@ -551,12 +555,18 @@ impl Sim {
             self.uart_violations.push("TXREG escrito antes de que el byte anterior pasara al registro de desplazamiento: se pierde un byte (TXIF aun no era valido)".into());
         }
         self.uart_txreg = Some((v, at));
+        self.uart_txreg9 = self.ram[0x98] & 0x40 != 0 && self.ram[0x98] & 0x01 != 0;
     }
 
     /// Da un caracter al receptor: `complete_at` es el ciclo en que termina su bit de parada; `framing_ok = false` simula una
     /// trama sin bit de parada.
     pub fn uart_feed(&mut self, byte: u8, complete_at: u64, framing_ok: bool) {
-        self.uart_rx_pending.push_back((complete_at, byte, framing_ok));
+        self.uart_rx_pending.push_back((complete_at, byte, framing_ok, false));
+    }
+
+    /// Como `uart_feed` con el noveno bit del caracter (solo se ve con RX9 = 1).
+    pub fn uart_feed9(&mut self, byte: u8, bit9: bool, complete_at: u64) {
+        self.uart_rx_pending.push_back((complete_at, byte, true, bit9));
     }
 
     fn uart_pop(&mut self) {
@@ -570,13 +580,14 @@ impl Sim {
     fn uart_expose(&mut self) {
         let rx_en = self.ram[0x18] & 0x80 != 0 && self.ram[0x18] & 0x10 != 0;
         match self.uart_fifo.front() {
-            Some(&(b, ok)) => {
+            Some(&(b, ok, b9)) => {
                 self.ram[0x1A] = b;
+                if self.ram[0x18] & 0x40 != 0 && b9 { self.ram[0x18] |= 0x01 } else { self.ram[0x18] &= !0x01 }
                 if ok { self.ram[0x18] &= !0x04 } else { self.ram[0x18] |= 0x04 }
                 if rx_en { self.ram[0x0C] |= 0x20 } else { self.ram[0x0C] &= !0x20 }
             }
             None => {
-                self.ram[0x18] &= !0x04;
+                self.ram[0x18] &= !0x05;
                 self.ram[0x0C] &= !0x20;
             }
         }
@@ -589,6 +600,7 @@ impl Sim {
             if now > at && self.uart_tsr_left == 0 {
                 let frame = self.uart_frame_cycles();
                 self.uart_tx.push((b, now));
+                self.uart_tx9.push(self.uart_txreg9);
                 self.uart_txreg = None;
                 self.uart_tsr_left = frame;
             }
@@ -605,7 +617,7 @@ impl Sim {
         if self.uart_tsr_left == 0 && self.uart_txreg.is_none() { self.ram[0x98] |= 0x02 } else { self.ram[0x98] &= !0x02 }
         // receptor
         let (spen, cren) = (self.ram[0x18] & 0x80 != 0, self.ram[0x18] & 0x10 != 0);
-        while let Some(&(at, b, ok)) = self.uart_rx_pending.front() {
+        while let Some(&(at, b, ok, b9)) = self.uart_rx_pending.front() {
             if at > now {
                 break;
             }
@@ -616,7 +628,7 @@ impl Sim {
             if self.uart_fifo.len() >= 2 {
                 self.ram[0x18] |= 0x02; // OERR: un tercer caracter completo antes de leer el FIFO
             } else {
-                self.uart_fifo.push_back((b, ok));
+                self.uart_fifo.push_back((b, ok, b9));
             }
         }
         if self.uart_prev_cren && !cren {

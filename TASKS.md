@@ -47,7 +47,7 @@ Los issues abiertos están en <https://github.com/yetto-tools/PyPic/issues>.
 
 ## Cómo comprobar lo marcado como hecho
 ```
-cargo test --workspace                                              # 459 pruebas; las diferenciales comparan el intérprete de la IR con el simulador del núcleo
+cargo test --workspace                                              # 479 pruebas; las diferenciales comparan el intérprete de la IR con el simulador del núcleo
 cargo test -p pypic-pic14 --test runtime                            # *, //, %: todos los pares de u8/i8, bordes de 16 bits, interrupciones inyectadas, costos
 cargo test -p pypic-pic14 --test asm                                # ensamblador pic-as; el blink en pic-as reproduce byte a byte el .hex probado en Proteus
 cargo test -p pypic-device                                          # Device Pack del PIC16F887 contra sus propias reglas de coherencia

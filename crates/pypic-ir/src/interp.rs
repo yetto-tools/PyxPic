@@ -43,6 +43,9 @@ pub struct Machine<'m> {
     /// La UART de referencia: lo que el programa envio y lo que se le va a dar a leer (la prueba lo carga con `uart_input`).
     pub uart_tx: Vec<u8>,
     pub uart_rx: std::collections::VecDeque<u8>,
+    /// Los caracteres de 9 bits (`write9` y `read9`): lo que el programa envio y lo que se le va a dar a leer.
+    pub uart_tx9: Vec<u16>,
+    pub uart_rx9: std::collections::VecDeque<u16>,
 }
 
 struct Frame {
@@ -70,6 +73,8 @@ impl<'m> Machine<'m> {
             adc_result: 0,
             uart_tx: Vec::new(),
             uart_rx: Default::default(),
+            uart_tx9: Vec::new(),
+            uart_rx9: Default::default(),
         }
     }
 
@@ -238,7 +243,15 @@ impl<'m> Machine<'m> {
                     self.write(f, fr, dst.unwrap(), b as i128);
                 }
                 UartOp::TxReady => self.write(f, fr, dst.unwrap(), 1),
-                UartOp::RxReady => self.write(f, fr, dst.unwrap(), !self.uart_rx.is_empty() as i128),
+                UartOp::Write9 | UartOp::Send9 => {
+                    let v = self.read(fr, arg.as_ref().unwrap());
+                    self.uart_tx9.push((v & 0x1FF) as u16);
+                }
+                UartOp::Read9 | UartOp::Recv9 => {
+                    let b = self.uart_rx9.pop_front().ok_or(Trap::UartEmpty)?;
+                    self.write(f, fr, dst.unwrap(), b as i128);
+                }
+                UartOp::RxReady => self.write(f, fr, dst.unwrap(), (!self.uart_rx.is_empty() || !self.uart_rx9.is_empty()) as i128),
                 UartOp::Sending | UartOp::Overrun | UartOp::FramingError => self.write(f, fr, dst.unwrap(), 0),
             },
             Inst::Adc { call, dst } => match call.op {

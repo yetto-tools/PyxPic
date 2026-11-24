@@ -217,6 +217,8 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         uart_started: false,
         uart_needs: None,
         uart_pending: Vec::new(),
+        uart_uses8: None,
+        uart_uses9: None,
         roms: Vec::new(),
         rom_idx: HashMap::new(),
         rom_gets: BTreeMap::new(),
@@ -310,6 +312,9 @@ struct Checker<'a> {
     uart_started: bool,
     uart_needs: Option<Span>,
     uart_pending: Vec<UartPending>,
+    /// Primer uso de una operacion de 8 bits (`write`, `read`...) y de una de 9 bits (`write9`...): no pueden mezclarse.
+    uart_uses8: Option<Span>,
+    uart_uses9: Option<Span>,
     /// Tablas constantes declaradas, su indice por nombre y las lecturas variables.
     roms: Vec<(String, Vec<u8>)>,
     rom_idx: HashMap<String, usize>,
@@ -349,6 +354,7 @@ struct UartPending {
     id: u32,
     span: Span,
     baud: u32,
+    bits9: bool,
     func: Option<usize>,
 }
 
@@ -1356,10 +1362,20 @@ impl<'a> Checker<'a> {
                     self.d.error("PYP2127", args[0].span, "UART.start se escribe con un argumento con nombre: UART.start(baud=9600)");
                 }
                 let mut baud = None;
+                let mut bits9 = false;
                 for k in kwargs {
+                    if k.name == "bits" {
+                        self.expr(&k.value);
+                        match self.konst(&k.value) {
+                            Some(8) if self.ty(&k.value) != Type::Bool => {}
+                            Some(9) if self.ty(&k.value) != Type::Bool => bits9 = true,
+                            _ => self.d.error("PYP2182", k.value.span, "UART.start: bits es 8 o 9 (constante)"),
+                        }
+                        continue;
+                    }
                     if k.name != "baud" {
                         self.expr(&k.value);
-                        self.d.error("PYP2182", k.name_span, format!("UART.start no tiene el argumento '{}' (admite: baud)", k.name));
+                        self.d.error("PYP2182", k.name_span, format!("UART.start no tiene el argumento '{}' (admite: baud, bits)", k.name));
                         continue;
                     }
                     self.expr(&k.value);
@@ -1376,7 +1392,7 @@ impl<'a> Checker<'a> {
                 };
                 self.note_claims("SPEN", e.span);
                 self.uart_started = true;
-                self.uart_pending.push(UartPending { id: e.id, span: e.span, baud, func: self.cur });
+                self.uart_pending.push(UartPending { id: e.id, span: e.span, baud, bits9, func: self.cur });
                 return void(self);
             }
             "write" => (1, UartOp::Write, Type::Void),
@@ -1389,8 +1405,12 @@ impl<'a> Checker<'a> {
             "overrun" => (0, UartOp::Overrun, Type::Bool),
             "framing_error" => (0, UartOp::FramingError, Type::Bool),
             "clear_overrun" => (0, UartOp::ClearOverrun, Type::Void),
+            "write9" => (1, UartOp::Write9, Type::Void),
+            "send9" => (1, UartOp::Send9, Type::Void),
+            "read9" => (0, UartOp::Read9, U16),
+            "recv9" => (0, UartOp::Recv9, U16),
             other => {
-                self.d.error("PYP2183", e.span, format!("UART no tiene el metodo '{other}' (disponibles: start, write, read, tx_ready, rx_ready, send, recv, sending, overrun, framing_error, clear_overrun)"));
+                self.d.error("PYP2183", e.span, format!("UART no tiene el metodo '{other}' (disponibles: start, write, read, send, recv, write9, read9, send9, recv9, tx_ready, rx_ready, sending, overrun, framing_error, clear_overrun)"));
                 for a in args {
                     self.expr(a);
                 }
@@ -1405,7 +1425,16 @@ impl<'a> Checker<'a> {
             return self.set(e, Type::Error, None);
         }
         if want == 1 {
-            self.expect(&args[0], U8, Some(&format!("UART.{method} envia un uint8: convierte con uint8(...)")));
+            if op.is_9bit() {
+                self.expect(&args[0], U16, Some(&format!("UART.{method} envia un uint16 de 9 bits (0 a 511): convierte con uint16(...)")));
+            } else {
+                self.expect(&args[0], U8, Some(&format!("UART.{method} envia un uint8: convierte con uint8(...)")));
+            }
+        }
+        if op.is_9bit() {
+            self.uart_uses9.get_or_insert(e.span);
+        } else if op.is_8bit_data() {
+            self.uart_uses8.get_or_insert(e.span);
         }
         self.uart_needs.get_or_insert(e.span);
         self.uart_calls.insert(e.id, UartCall { op });
@@ -1425,6 +1454,16 @@ impl<'a> Checker<'a> {
             }
         }
         if let Some(first) = pend.first() {
+            if let Some(other) = pend.iter().find(|p| p.bits9 != first.bits9) {
+                self.d.error("PYP2186", other.span, "UART.start pide un ancho de caracter distinto (bits=8 y bits=9): el EUSART tiene una sola configuracion");
+            }
+            if first.bits9 {
+                if let Some(sp) = self.uart_uses8.take() {
+                    self.d.error("PYP2187", sp, "con UART.start(bits=9) solo valen write9, send9, read9 y recv9: la operacion de 8 bits dejaria TX9D sin definir o descartaria el noveno bit");
+                }
+            } else if let Some(sp) = self.uart_uses9.take() {
+                self.d.error("PYP2187", sp, "write9, send9, read9 y recv9 necesitan UART.start(baud=..., bits=9)");
+            }
             if let Some(other) = pend.iter().find(|p| p.baud != first.baud) {
                 self.d.error("PYP2186", other.span, format!("UART.start pide {} baudios y otra llamada {}: el EUSART tiene un solo generador; repite la misma velocidad", other.baud, first.baud));
             }
@@ -1447,7 +1486,7 @@ impl<'a> Checker<'a> {
             if err.abs() > uart::WARN_PCT {
                 self.d.warning("PYP3014", p.span, format!("error de baudios de {err:+.2} % ({:.0} baudios para los {} pedidos): pasa de {} % y el otro extremo suma el suyo; un reloj distinto lo mejora", brg.achieved(hz), p.baud, uart::WARN_PCT));
             }
-            self.uart_calls.insert(p.id, UartCall { op: UartOp::Start(UartStart { baud: p.baud, brg: Some(brg) }) });
+            self.uart_calls.insert(p.id, UartCall { op: UartOp::Start(UartStart { baud: p.baud, bits9: p.bits9, brg: Some(brg) }) });
         }
     }
 

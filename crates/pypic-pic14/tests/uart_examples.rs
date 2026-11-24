@@ -189,3 +189,22 @@ fn gps_rejects_a_bad_checksum_and_resynchronizes_after_a_truncated_frame() {
     assert_eq!(global(&c, &s, "gga"), 1);
     assert!(global(&c, &s, "invalidas") >= 1);
 }
+
+#[test]
+fn direccion_9bits_only_obeys_data_after_its_own_address() {
+    let c = build("direccion_9bits");
+    let mut s = sim(&c);
+    // dato sin atender ('A' ignorada), direccion ajena, dato ignorado, direccion propia (5), 'A', 'Z' (ignorada), direccion ajena, 'B' ignorada
+    let seq: [(u8, bool); 8] = [(65, false), (9, true), (65, false), (5, true), (65, false), (90, false), (9, true), (66, false)];
+    for (i, (b, b9)) in seq.iter().enumerate() {
+        s.uart_feed9(*b, *b9, 2_000 + i as u64 * (FRAME * 11 / 10 + 3_000));
+    }
+    let step = FRAME * 11 / 10 + 3_000;
+    run(&mut s, 2_000 + 4 * step + step / 2);
+    assert_eq!(s.pin('D', 0), Some(true), "tras la direccion propia y 'A'");
+    assert!(sent(&s).len() == 1 && sent(&s)[0] == 65);
+    run(&mut s, 2_000 + 9 * step);
+    assert_eq!(s.pin('D', 0), Some(true), "'B' tras una direccion ajena no apaga el LED");
+    assert_eq!(sent(&s), vec![65], "solo contesto la 'A' atendida");
+    assert!(s.uart_violations.is_empty(), "{:?}", s.uart_violations);
+}

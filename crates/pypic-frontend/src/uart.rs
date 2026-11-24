@@ -74,6 +74,8 @@ pub fn solve(fosc_hz: u32, baud: u32) -> Option<UartBrg> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct UartStart {
     pub baud: u32,
+    /// `bits=9`: caracteres de 9 bits (TX9/RX9); solo valen `write9`/`send9`/`read9`/`recv9`.
+    pub bits9: bool,
     /// `None` hasta resolver el reloj del sistema.
     pub brg: Option<UartBrg>,
 }
@@ -102,9 +104,27 @@ pub enum UartOp {
     FramingError,
     /// `UART.clear_overrun()`: `CREN` a 0 y a 1 (la unica forma de borrar `OERR`).
     ClearOverrun,
+    /// `UART.write9(x)`: espera `TXIF`, pone `TX9D` con el bit 8 de `x` y escribe `TXREG` con el byte bajo.
+    Write9,
+    /// `UART.send9(x)`: lo mismo sin esperar (y con el `NOP`).
+    Send9,
+    /// `UART.read9()`: espera `RCIF`, lee `RX9D` (antes de `RCREG`) y `RCREG`.
+    Read9,
+    /// `UART.recv9()`: lo mismo sin esperar.
+    Recv9,
 }
 
 impl UartOp {
+    /// Operaciones de caracteres de 9 bits.
+    pub fn is_9bit(self) -> bool {
+        matches!(self, UartOp::Write9 | UartOp::Send9 | UartOp::Read9 | UartOp::Recv9)
+    }
+
+    /// Operaciones de caracteres de 8 bits (las que no valen con `bits=9`).
+    pub fn is_8bit_data(self) -> bool {
+        matches!(self, UartOp::Write | UartOp::Send | UartOp::Read | UartOp::Recv)
+    }
+
     /// Operaciones que devuelven un valor sin efectos laterales: sin destino no se emiten.
     pub fn is_pure_read(self) -> bool {
         matches!(self, UartOp::TxReady | UartOp::RxReady | UartOp::Sending | UartOp::Overrun | UartOp::FramingError)

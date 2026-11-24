@@ -1460,6 +1460,32 @@ impl<'a> Gen<'a> {
         Ok(())
     }
 
+    /// `TX9D` = bit 8 del valor (solo el bit 0 del byte alto; lo que sobre se ignora) y luego `TXREG` = byte bajo, con su `NOP`.
+    fn uart_send9(&mut self, arg: &Operand) -> Result<(), CodegenError> {
+        let bs = self.bytes(arg)?;
+        match bs[1] {
+            B::Imm(k) => self.bit_op("TX9D", k & 1 != 0)?,
+            B::Reg(r) => {
+                // sin saltos, de costo fijo: W = bit 0 del byte alto; TX9D = 0 y luego TXSTA |= W (TX9D es el bit 0 de TXSTA)
+                let (addr, pos) = self.bit_loc("TX9D")?;
+                if pos != 0 {
+                    return Err(CodegenError::Unsupported("TX9D no es el bit 0 de su registro".into()));
+                }
+                self.asm.i(Movf(r, W));
+                self.asm.i(Andlw(1));
+                self.banked(addr, |g, f| {
+                    g.asm.i(Bcf(f, 0));
+                    g.asm.i(Iorwf(f, F));
+                });
+            }
+        }
+        let txreg = self.reg_bank0("TXREG")?;
+        self.ld(bs[0]);
+        self.asm.i(Movwf(txreg));
+        self.asm.i(Nop);
+        Ok(())
+    }
+
     fn uart_flag(&mut self, flag: &str, dst: Place) -> Result<(), CodegenError> {
         let (addr, bit) = self.bit_loc(flag)?;
         let d = self.regs(dst)?[0];
@@ -1488,9 +1514,9 @@ impl<'a> Gen<'a> {
                 self.write_banked("BAUDCTL", (brg.brg16 as u8) << self.bit_pos("BRG16")?)?;
                 self.write_banked("SPBRGH", (brg.n >> 8) as u8)?;
                 self.write_banked("SPBRG", brg.n as u8)?;
-                let txsta = (1u8 << self.bit_pos("TXEN")?) | ((brg.brgh as u8) << self.bit_pos("BRGH")?);
+                let txsta = (1u8 << self.bit_pos("TXEN")?) | ((brg.brgh as u8) << self.bit_pos("BRGH")?) | ((st.bits9 as u8) << self.bit_pos("TX9")?);
                 self.write_banked("TXSTA", txsta)?;
-                let rcsta = (1u8 << self.bit_pos("SPEN")?) | (1u8 << self.bit_pos("CREN")?);
+                let rcsta = (1u8 << self.bit_pos("SPEN")?) | (1u8 << self.bit_pos("CREN")?) | ((st.bits9 as u8) << self.bit_pos("RX9")?);
                 self.write_banked("RCSTA", rcsta)?;
             }
             UartOp::Write => {
@@ -1498,6 +1524,25 @@ impl<'a> Gen<'a> {
                 self.uart_send(arg.expect("Write lleva un byte"))?;
             }
             UartOp::Send => self.uart_send(arg.expect("Send lleva un byte"))?,
+            UartOp::Write9 => {
+                self.uart_wait("TXIF")?;
+                self.uart_send9(arg.expect("Write9 lleva un valor"))?;
+            }
+            UartOp::Send9 => self.uart_send9(arg.expect("Send9 lleva un valor"))?,
+            UartOp::Read9 | UartOp::Recv9 => {
+                if call.op == UartOp::Read9 {
+                    self.uart_wait("RCIF")?;
+                }
+                let d = self.regs(dst.expect("Read9/Recv9 llevan destino"))?;
+                // RX9D es del caracter que esta a punto de salir del FIFO: se lee ANTES que RCREG, que lo saca (12.1.2.4)
+                let (addr, bit) = self.bit_loc("RX9D")?;
+                self.asm.i(Clrf(d[1]));
+                self.asm.i(Btfsc(addr as u8, bit));
+                self.asm.i(Incf(d[1], F));
+                let rcreg = self.reg_bank0("RCREG")?;
+                self.asm.i(Movf(rcreg, W));
+                self.st(d[0]);
+            }
             UartOp::Read | UartOp::Recv => {
                 if call.op == UartOp::Read {
                     self.uart_wait("RCIF")?;

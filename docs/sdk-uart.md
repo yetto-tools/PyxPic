@@ -1,6 +1,6 @@
 # SDK: puerto serie (`pypic.periph.uart`)
 
-**Estado: implementado (segundo módulo de #45).** EUSART del PIC16F887 en modo **asíncrono 8N1** (8 bits de datos, sin paridad, un bit de parada), transmisión y recepción (DS40001291H, cap. 12). Todo se resuelve al compilar.
+**Estado: implementado (segundo módulo de #45).** EUSART del PIC16F887 en modo **asíncrono**, 8N1 (8 bits de datos, sin paridad, un bit de parada) o con **9 bits** de datos (`bits=9`), transmisión y recepción (DS40001291H, cap. 12). Todo se resuelve al compilar.
 
 ```python
 from pypic.periph.uart import UART
@@ -30,9 +30,22 @@ Un nivel RS-232 (±12 V) o RS-485 necesita **un transceptor externo** (MAX232, M
 | `UART.overrun()` → `bool` | `OERR`: llegó un tercer carácter antes de leer el FIFO | 3 |
 | `UART.framing_error()` → `bool` | `FERR` del carácter que está a punto de leerse: **se lee antes** que `read()`/`recv()` | 3 |
 | `UART.clear_overrun()` | `CREN` a 0 y a 1: la única forma de borrar `OERR` (12.1.2.5) | 2 |
+| `UART.write9(x)` | Con `bits=9`: espera `TXIF`, pone `TX9D` con el bit 8 de `x` (`uint16`) y envía el byte bajo | 8 con constante, 11 con variable (transmisor libre) |
+| `UART.send9(x)` | Lo mismo sin esperar, y con el `NOP` | 6 con constante, 9 con variable |
+| `UART.read9()` → `uint16` | Con `bits=9`: espera `RCIF`, lee `RX9D` (**antes** de `RCREG`) y `RCREG`: valor de 0 a 511 | 7 con un carácter esperando |
+| `UART.recv9()` → `uint16` | Lo mismo sin esperar | 5 |
 
 `write` y `read` **son exactamente** `tx_ready`/`rx_ready` + `send`/`recv`, no sinónimos: con las primitivas el programa no se bloquea esperando un byte, y puede hacer otra cosa mientras el chip transmite.
 Todas valen **dentro de una interrupción** (no usan memoria compartida ni esperas fijas); `write` y `read` además se quedan sondeando, así que en una ISR se prefieren `rx_ready()` + `recv()`.
+
+## 9 bits (`UART.start(baud=..., bits=9)`)
+
+Activa `TX9` y `RX9`: cada carácter son 9 bits de datos y la trama dura **11 bits** (no 10). En ese modo solo valen `write9`, `send9`, `read9` y `recv9`, y las de 8 bits (`write`, `send`, `read`, `recv`) son el error `PYP2187`, igual que usar las de 9 bits sin `bits=9`: así ninguna operación deja `TX9D` sin definir ni descarta el noveno bit en silencio. Las banderas (`tx_ready`, `rx_ready`, `sending`, `overrun`, `framing_error`, `clear_overrun`) valen en los dos modos.
+
+- El noveno bit es el **bit 8** del `uint16`; los bits 9 y superiores se ignoran (lo mismo en el intérprete de referencia). `write9` pone `TX9D` con una secuencia **sin saltos** (el costo no depende del valor).
+- `read9` lee `RX9D` **antes** que `RCREG`: `RX9D` es del carácter que está a punto de salir del FIFO y `RCREG` lo saca (12.1.2.4); en el orden contrario se leería el del siguiente.
+- Usos: **direccionamiento multipunto** (bit 8 = 1 es una dirección y = 0 un dato: `examples/uart/direccion_9bits.py`, resuelto por software con `read9`) y **paridad calculada a mano** en el noveno bit.
+- **Todavía no está `ADDEN`** (el filtro de direcciones del propio chip, que descarta los datos sin interrumpir): ver más abajo.
 
 ## El `NOP` de `send`
 
@@ -61,10 +74,11 @@ Se **avisa por encima de 2,0 %** (`PYP3014`: deja margen para que el otro extrem
 |---|---|
 | `PYP2180` | `pypic.periph.uart` no exporta ese nombre (solo `UART`), o el dispositivo no tiene EUSART |
 | `PYP2181` | Se usa la UART pero no hay un `UART.start(baud=...)` que `main` o `@init_device` puedan ejecutar |
-| `PYP2182` | `start` mal formado (hace falta `baud=`, una constante de 50 a 3 000 000) o el error de baudios pasa de 4,5 % |
+| `PYP2182` | `start` mal formado (hace falta `baud=`, una constante de 50 a 3 000 000; `bits=` es 8 o 9) o el error de baudios pasa de 4,5 % |
 | `PYP2183` | Método que no existe |
 | `PYP2185` | `UART` usado como valor |
-| `PYP2186` | Dos llamadas a `UART.start` con velocidades distintas (el EUSART tiene un solo generador) |
+| `PYP2186` | Dos llamadas a `UART.start` con velocidades o anchos (`bits`) distintos (el EUSART tiene una sola configuración) |
+| `PYP2187` | Operación de 8 bits con `bits=9`, u operación de 9 bits sin `bits=9` |
 | `PYP2150` | `RC6` o `RC7` también se importan como E/S |
 | `PYP3014` | Error de baudios mayor de 2,0 % |
 
@@ -72,7 +86,7 @@ Igual que el ADC, el compilador comprueba que el `start()` **exista y sea alcanz
 
 ## Lo que no está (todavía)
 
-- **9 bits de datos**, paridad (hay que calcularla a mano con 9 bits), **modo síncrono**, detección automática de baudios, `SENDB` y LIN: issues aparte.
+- **`ADDEN`** (detección de dirección por hardware), paridad automática (se calcula a mano en el noveno bit), **modo síncrono**, detección automática de baudios, `SENDB` y LIN: pendientes.
 - **Interrupciones**: `RCIF`/`TXIF` se usan con `pypic.regs` (`PIE1.RCIE.set()`, `INTCON.PEIE.set()`...) y se leen con `UART.rx_ready()` + `UART.recv()` en la ISR. No hay helpers `UART.rx_interrupt_on()` porque la ISR no puede compartir memoria con `main` sin un diseño propio.
 - Un carácter que llega con la recepción apagada, o con `OERR` sin borrar, **se pierde** (como en el chip).
 
@@ -80,5 +94,5 @@ Igual que el ADC, el compilador comprueba que el `start()` **exista y sea alcanz
 
 El simulador del núcleo modela el EUSART: `TXREG` y el registro de desplazamiento con la trama de 10 bits que sale de `SPBRG`/`BRGH`/`BRG16` (tabla 12-3), `TXIF` con su ventana de validez, `TRMT`, el FIFO de recepción de **dos caracteres**, `OERR` (tercer carácter), `FERR` (por carácter) y el borrado de `OERR` con `CREN`.
 `crates/pypic-pic14/tests/uart.rs`: la **velocidad medida en el simulador** (a partir de los ciclos entre dos bytes) coincide con la pedida y con el error informado a nueve combinaciones de reloj y baudios; los cuatro modos; el eco contra el intérprete de referencia; FIFO, desbordamiento y error de trama; un byte perdido por
-enviar sin esperar; el valor viejo de `TXIF` sin el `NOP`; los costos de arriba; y las reglas del lenguaje. Ejemplo: `examples/uart_echo.py`.
+enviar sin esperar; el valor viejo de `TXIF` sin el `NOP`; los costos de arriba; y las reglas del lenguaje. Los 9 bits tienen su propio archivo (`tests/uart9.rs`): trama de 11 bits medida en el simulador, `write9` contra el intérprete con los valores límite (0, 255, 256, 511), el emparejado de `RX9D` con su carácter, un eco de 9 bits, las reglas de mezcla y los costos. Ejemplos: `examples/uart_echo.py` y `examples/uart/`.
 **No se ha probado con un puerto serie real.** El simulador usa la misma tabla 12-3 que el compilador: un reloj interno cuya frecuencia real se desvía de la nominal (el oscilador interno del PIC16F887 tiene tolerancia) desplaza los baudios y no se ve ahí.
