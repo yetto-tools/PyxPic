@@ -12,7 +12,8 @@ const USAGE: &str = "uso:
 opciones:
   --device <directorio>   usa el Device Pack (p. ej. devices/pic16f887)
   --native-bits N         ancho nativo del destino (sobrescribe al pack)
-  --max-int-bits N        ancho maximo de entero (sobrescribe al pack)";
+  --max-int-bits N        ancho maximo de entero (sobrescribe al pack)
+  --stack-levels N        niveles de la pila de retorno (sobrescribe al pack)";
 
 fn usage() -> ExitCode {
     eprintln!("{USAGE}");
@@ -65,12 +66,14 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     let mut device_dir = None;
     let mut native = None;
     let mut max = None;
+    let mut stack = None;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--device" => device_dir = it.next().cloned(),
             "--native-bits" => native = it.next().and_then(|v| v.parse::<u32>().ok()),
             "--max-int-bits" => max = it.next().and_then(|v| v.parse::<u32>().ok()),
+            "--stack-levels" => stack = it.next().and_then(|v| v.parse::<u32>().ok()),
             s if s.starts_with("--") => return usage(),
             _ if file.is_none() => file = Some(a.clone()),
             _ => return usage(),
@@ -90,6 +93,9 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     }
     if let Some(m) = max {
         target.max_int_bits = m;
+    }
+    if let Some(s) = stack {
+        target.stack_levels = Some(s);
     }
 
     let src = match std::fs::read_to_string(&file) {

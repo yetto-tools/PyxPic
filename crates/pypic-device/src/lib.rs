@@ -252,6 +252,7 @@ impl DevicePack {
     /// Perfil que consume el frontend: ancho nativo y maximo del dispositivo.
     pub fn target_profile(&self) -> TargetProfile {
         TargetProfile::new(self.device.name.clone(), self.device.cpu.data_bits, self.device.pypic.max_int_bits)
+            .with_stack_levels(self.memory.program.stack_levels)
     }
 
     /// Comprobaciones de coherencia interna. Vacio = pack valido.

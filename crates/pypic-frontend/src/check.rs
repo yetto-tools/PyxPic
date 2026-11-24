@@ -144,6 +144,7 @@ impl<'a> Checker<'a> {
         }
         self.check_recursion();
         self.check_interrupt_sharing();
+        self.check_stack_depth();
     }
 
     fn check_import(&mut self, span: Span, module: &str, names: &[Ident]) {
@@ -396,6 +397,63 @@ impl<'a> Checker<'a> {
                 "PYP2060",
                 span,
                 format!("'{name}' se llama desde la interrupcion y desde el codigo principal; su memoria es estatica y la ISR podria corromperla. Crea una version separada para cada contexto"),
+            );
+        }
+    }
+
+    /// Profundidad maxima de CALL anidados desde `f` (hoja = 0). Sin recursion es finita;
+    /// el guardia de ciclos solo evita bucles si ya se reporto `PYP2013`.
+    fn call_depth(&self, f: &str, visiting: &mut HashSet<String>, memo: &mut HashMap<String, u32>) -> u32 {
+        if let Some(&d) = memo.get(f) {
+            return d;
+        }
+        let Some(&i) = self.fidx.get(f) else { return 0 };
+        if !visiting.insert(f.to_string()) {
+            return 0;
+        }
+        let calls: Vec<String> = self.functions[i].calls.iter().cloned().collect();
+        let d = calls.iter().map(|c| 1 + self.call_depth(c, visiting, memo)).max().unwrap_or(0);
+        visiting.remove(f);
+        memo.insert(f.to_string(), d);
+        d
+    }
+
+    /// La pila de retorno de hardware es chica, circular y no detecta desbordamiento:
+    /// el peor caso (main en su punto mas profundo + interrupcion + sus llamadas) debe caber.
+    fn check_stack_depth(&mut self) {
+        let Some(limit) = self.target.stack_levels else { return };
+        let (mut visiting, mut memo) = (HashSet::new(), HashMap::new());
+        let called: BTreeSet<&String> = self.functions.iter().flat_map(|f| f.calls.iter()).collect();
+        let roots: Vec<String> = if self.fidx.contains_key("main") {
+            vec!["main".to_string()]
+        } else {
+            self.functions.iter().filter(|f| !f.is_interrupt && !called.contains(&f.name)).map(|f| f.name.clone()).collect()
+        };
+        // el arranque entra al contexto principal con un CALL (1 nivel)
+        let mut worst: Option<(u32, String)> = None;
+        for r in &roots {
+            let u = 1 + self.call_depth(r, &mut visiting, &mut memo);
+            if worst.as_ref().map_or(true, |(w, _)| u > *w) {
+                worst = Some((u, r.clone()));
+            }
+        }
+        let (main_use, main_root) = worst.unwrap_or((0, String::new()));
+        // la entrada a la interrupcion empuja el PC (1 nivel) y la ISR puede llamar a otras
+        let isr = self.functions.iter().find(|f| f.is_interrupt).map(|f| f.name.clone());
+        let isr_use = isr.as_ref().map_or(0, |n| 1 + self.call_depth(n, &mut visiting, &mut memo));
+        let total = main_use + isr_use;
+        if total > limit {
+            let at = if main_use > 0 { &main_root } else { isr.as_ref().unwrap() };
+            let span = self.functions[self.fidx[at]].span;
+            self.d.error(
+                "PYP2061",
+                span,
+                format!(
+                    "la pila de retorno de hardware de '{}' tiene {limit} niveles y el peor caso necesita {total} \
+                     (contexto principal: {main_use}, incluida la llamada de arranque; interrupcion: {isr_use}, incluida su entrada). \
+                     Reduce el anidamiento de llamadas",
+                    self.target.name
+                ),
             );
         }
     }

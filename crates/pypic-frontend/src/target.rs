@@ -14,11 +14,18 @@ pub struct TargetProfile {
     pub native_bits: u32,
     /// Ancho maximo de entero que el destino admite (nativo o emulado). Mas alla es error.
     pub max_int_bits: u32,
+    /// Niveles de la pila de retorno de hardware (8 en PIC16). `None` = sin limite conocido.
+    pub stack_levels: Option<u32>,
 }
 
 impl TargetProfile {
     pub fn new(name: impl Into<String>, native_bits: u32, max_int_bits: u32) -> Self {
-        TargetProfile { name: name.into(), native_bits, max_int_bits }
+        TargetProfile { name: name.into(), native_bits, max_int_bits, stack_levels: None }
+    }
+
+    pub fn with_stack_levels(mut self, levels: u32) -> Self {
+        self.stack_levels = Some(levels);
+        self
     }
 
     /// Destino sin restricciones (por defecto): todo es nativo hasta 32 bits.

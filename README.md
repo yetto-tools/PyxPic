@@ -42,6 +42,7 @@ docs/
   spec/             especificación (docx, ZIP y módulos 00–09)
   frontend.md       diseño y semántica del frontend
   device-packs.md   esquema y validación de Device Packs
+  abi-pic14.md      ABI de PIC14 (convención de llamada, banco, ISR, pila)
   ISSUES_BACKLOG.md backlog propuesto como issues
 examples/           programas PyPIC de ejemplo (.py)
 AGENTS.md  TASKS.md

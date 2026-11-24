@@ -52,6 +52,7 @@ lambdas, `try`, `import` general, atributos, indexado, argumentos con nombre, co
 | `for` | Solo `range(...)`; el paso debe ser constante distinto de 0; si todo es literal, el tipo es el menor que cabe. |
 | Recursion | Prohibida (memoria estatica, pila de hardware limitada): `PYP2013`. |
 | ISR vs main | **Decision #3.** Una funcion alcanzable desde `main` y desde la `@interrupt` es error (`PYP2060`): su memoria estatica seria compartida y la ISR podria corromperla. Se escribe una version por contexto. El contexto principal es `main`; si no existe, toda funcion sin llamadores que no sea la ISR. Compartir *globales* si esta permitido. |
+| Pila de retorno | Si el destino declara `stack_levels` (8 en PIC16), el peor caso `1 + prof(main) + 1 + prof(ISR)` no puede exceder el limite: `PYP2061` (ver `docs/abi-pic14.md`). |
 | Ensanchamiento | Sin conversion implicita ni siquiera sin perdida (`u8` + `u16` es `PYP2047`). |
 | Desplazamientos | Cantidad literal `0..bits-1` o entero sin signo; el operando izquierdo necesita tipo. |
 
