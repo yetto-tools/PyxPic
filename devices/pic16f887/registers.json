@@ -1,80 +1,1351 @@
 {
   "schema_version": 1,
   "source": "DS40001291H Tablas 2-1 a 2-4 (p.27-29): resumen de registros de funciones especiales; nombres de bits de los registros de cada periferico",
-  "unimplemented": ["0x18E", "0x18F"],
+  "unimplemented": [
+    "0x18E",
+    "0x18F"
+  ],
   "registers": [
-    { "name": "INDF", "addresses": ["0x000", "0x080", "0x100", "0x180"], "bits": [null, null, null, null, null, null, null, null], "por": "xxxx xxxx", "page": 27, "physical": false },
-    { "name": "TMR0", "addresses": ["0x001", "0x101"], "bits": [null, null, null, null, null, null, null, null], "por": "xxxx xxxx", "page": 27 },
-    { "name": "PCL", "addresses": ["0x002", "0x082", "0x102", "0x182"], "bits": [null, null, null, null, null, null, null, null], "por": "0000 0000", "page": 27 },
-    { "name": "STATUS", "addresses": ["0x003", "0x083", "0x103", "0x183"], "bits": ["C", "DC", "Z", "PD", "TO", "RP0", "RP1", "IRP"], "por": "0001 1xxx", "page": 27 },
-    { "name": "FSR", "addresses": ["0x004", "0x084", "0x104", "0x184"], "bits": [null, null, null, null, null, null, null, null], "por": "xxxx xxxx", "page": 27 },
-    { "name": "PORTA", "addresses": ["0x005"], "bits": ["RA0", "RA1", "RA2", "RA3", "RA4", "RA5", "RA6", "RA7"], "por": "xxxx xxxx", "page": 27 },
-    { "name": "PORTB", "addresses": ["0x006", "0x106"], "bits": ["RB0", "RB1", "RB2", "RB3", "RB4", "RB5", "RB6", "RB7"], "por": "xxxx xxxx", "page": 27 },
-    { "name": "PORTC", "addresses": ["0x007"], "bits": ["RC0", "RC1", "RC2", "RC3", "RC4", "RC5", "RC6", "RC7"], "por": "xxxx xxxx", "page": 27 },
-    { "name": "PORTD", "addresses": ["0x008"], "bits": ["RD0", "RD1", "RD2", "RD3", "RD4", "RD5", "RD6", "RD7"], "por": "xxxx xxxx", "page": 27 },
-    { "name": "PORTE", "addresses": ["0x009"], "bits": ["RE0", "RE1", "RE2", "RE3", null, null, null, null], "por": "---- xxxx", "page": 27 },
-    { "name": "PCLATH", "addresses": ["0x00A", "0x08A", "0x10A", "0x18A"], "bits": [null, null, null, null, null, null, null, null], "por": "---0 0000", "page": 27, "note": "buffer de escritura de los 5 bits altos del PC" },
-    { "name": "INTCON", "addresses": ["0x00B", "0x08B", "0x10B", "0x18B"], "bits": ["RBIF", "INTF", "T0IF", "RBIE", "INTE", "T0IE", "PEIE", "GIE"], "por": "0000 000x", "page": 27 },
-    { "name": "PIR1", "addresses": ["0x00C"], "bits": ["TMR1IF", "TMR2IF", "CCP1IF", "SSPIF", "TXIF", "RCIF", "ADIF", null], "por": "-000 0000", "page": 27 },
-    { "name": "PIR2", "addresses": ["0x00D"], "bits": ["CCP2IF", null, "ULPWUIF", "BCLIF", "EEIF", "C1IF", "C2IF", "OSFIF"], "por": "0000 00-0", "page": 27 },
-    { "name": "TMR1L", "addresses": ["0x00E"], "bits": [null, null, null, null, null, null, null, null], "por": "xxxx xxxx", "page": 27 },
-    { "name": "TMR1H", "addresses": ["0x00F"], "bits": [null, null, null, null, null, null, null, null], "por": "xxxx xxxx", "page": 27 },
-    { "name": "T1CON", "addresses": ["0x010"], "bits": ["TMR1ON", "TMR1CS", "T1SYNC", "T1OSCEN", "T1CKPS0", "T1CKPS1", "TMR1GE", "T1GINV"], "por": "0000 0000", "page": 27 },
-    { "name": "TMR2", "addresses": ["0x011"], "bits": [null, null, null, null, null, null, null, null], "por": "0000 0000", "page": 27 },
-    { "name": "T2CON", "addresses": ["0x012"], "bits": ["T2CKPS0", "T2CKPS1", "TMR2ON", "TOUTPS0", "TOUTPS1", "TOUTPS2", "TOUTPS3", null], "por": "-000 0000", "page": 27 },
-    { "name": "SSPBUF", "addresses": ["0x013"], "bits": [null, null, null, null, null, null, null, null], "por": "xxxx xxxx", "page": 27 },
-    { "name": "SSPCON", "addresses": ["0x014"], "bits": ["SSPM0", "SSPM1", "SSPM2", "SSPM3", "CKP", "SSPEN", "SSPOV", "WCOL"], "por": "0000 0000", "page": 27 },
-    { "name": "CCPR1L", "addresses": ["0x015"], "bits": [null, null, null, null, null, null, null, null], "por": "xxxx xxxx", "page": 27 },
-    { "name": "CCPR1H", "addresses": ["0x016"], "bits": [null, null, null, null, null, null, null, null], "por": "xxxx xxxx", "page": 27 },
-    { "name": "CCP1CON", "addresses": ["0x017"], "bits": ["CCP1M0", "CCP1M1", "CCP1M2", "CCP1M3", "DC1B0", "DC1B1", "P1M0", "P1M1"], "por": "0000 0000", "page": 27 },
-    { "name": "RCSTA", "addresses": ["0x018"], "bits": ["RX9D", "OERR", "FERR", "ADDEN", "CREN", "SREN", "RX9", "SPEN"], "por": "0000 000x", "page": 27 },
-    { "name": "TXREG", "addresses": ["0x019"], "bits": [null, null, null, null, null, null, null, null], "por": "0000 0000", "page": 27 },
-    { "name": "RCREG", "addresses": ["0x01A"], "bits": [null, null, null, null, null, null, null, null], "por": "0000 0000", "page": 27 },
-    { "name": "CCPR2L", "addresses": ["0x01B"], "bits": [null, null, null, null, null, null, null, null], "por": "xxxx xxxx", "page": 27 },
-    { "name": "CCPR2H", "addresses": ["0x01C"], "bits": [null, null, null, null, null, null, null, null], "por": "xxxx xxxx", "page": 27 },
-    { "name": "CCP2CON", "addresses": ["0x01D"], "bits": ["CCP2M0", "CCP2M1", "CCP2M2", "CCP2M3", "DC2B0", "DC2B1", null, null], "por": "--00 0000", "page": 27 },
-    { "name": "ADRESH", "addresses": ["0x01E"], "bits": [null, null, null, null, null, null, null, null], "por": "xxxx xxxx", "page": 27 },
-    { "name": "ADCON0", "addresses": ["0x01F"], "bits": ["ADON", "GO_DONE", "CHS0", "CHS1", "CHS2", "CHS3", "ADCS0", "ADCS1"], "por": "0000 0000", "page": 27 },
-    { "name": "OPTION_REG", "addresses": ["0x081", "0x181"], "bits": ["PS0", "PS1", "PS2", "PSA", "T0SE", "T0CS", "INTEDG", "RBPU"], "por": "1111 1111", "page": 28 },
-    { "name": "TRISA", "addresses": ["0x085"], "bits": ["TRISA0", "TRISA1", "TRISA2", "TRISA3", "TRISA4", "TRISA5", "TRISA6", "TRISA7"], "por": "1111 1111", "page": 28 },
-    { "name": "TRISB", "addresses": ["0x086", "0x186"], "bits": ["TRISB0", "TRISB1", "TRISB2", "TRISB3", "TRISB4", "TRISB5", "TRISB6", "TRISB7"], "por": "1111 1111", "page": 28 },
-    { "name": "TRISC", "addresses": ["0x087"], "bits": ["TRISC0", "TRISC1", "TRISC2", "TRISC3", "TRISC4", "TRISC5", "TRISC6", "TRISC7"], "por": "1111 1111", "page": 28 },
-    { "name": "TRISD", "addresses": ["0x088"], "bits": ["TRISD0", "TRISD1", "TRISD2", "TRISD3", "TRISD4", "TRISD5", "TRISD6", "TRISD7"], "por": "1111 1111", "page": 28 },
-    { "name": "TRISE", "addresses": ["0x089"], "bits": ["TRISE0", "TRISE1", "TRISE2", "TRISE3", null, null, null, null], "por": "---- 1111", "page": 28 },
-    { "name": "PIE1", "addresses": ["0x08C"], "bits": ["TMR1IE", "TMR2IE", "CCP1IE", "SSPIE", "TXIE", "RCIE", "ADIE", null], "por": "-000 0000", "page": 28 },
-    { "name": "PIE2", "addresses": ["0x08D"], "bits": ["CCP2IE", null, "ULPWUIE", "BCLIE", "EEIE", "C1IE", "C2IE", "OSFIE"], "por": "0000 00-0", "page": 28 },
-    { "name": "PCON", "addresses": ["0x08E"], "bits": ["BOR", "POR", null, null, "SBOREN", "ULPWUE", null, null], "por": "--01 --qq", "page": 28 },
-    { "name": "OSCCON", "addresses": ["0x08F"], "bits": ["SCS", "LTS", "HTS", "OSTS", "IRCF0", "IRCF1", "IRCF2", null], "por": "-110 q000", "page": 28 },
-    { "name": "OSCTUNE", "addresses": ["0x090"], "bits": ["TUN0", "TUN1", "TUN2", "TUN3", "TUN4", null, null, null], "por": "---0 0000", "page": 28 },
-    { "name": "SSPCON2", "addresses": ["0x091"], "bits": ["SEN", "RSEN", "PEN", "RCEN", "ACKEN", "ACKDT", "ACKSTAT", "GCEN"], "por": "0000 0000", "page": 28 },
-    { "name": "PR2", "addresses": ["0x092"], "bits": [null, null, null, null, null, null, null, null], "por": "1111 1111", "page": 28 },
-    { "name": "SSPADD", "addresses": ["0x093"], "bits": [null, null, null, null, null, null, null, null], "por": "0000 0000", "page": 28 },
-    { "name": "SSPMSK", "addresses": ["0x093"], "bits": ["MSK0", "MSK1", "MSK2", "MSK3", "MSK4", "MSK5", "MSK6", "MSK7"], "por": "1111 1111", "page": 28, "selected_by": "SSPCON<SSPM3:SSPM0> = 1001" },
-    { "name": "SSPSTAT", "addresses": ["0x094"], "bits": ["BF", "UA", "R_W", "S", "P", "D_A", "CKE", "SMP"], "por": "0000 0000", "page": 28 },
-    { "name": "WPUB", "addresses": ["0x095"], "bits": ["WPUB0", "WPUB1", "WPUB2", "WPUB3", "WPUB4", "WPUB5", "WPUB6", "WPUB7"], "por": "1111 1111", "page": 28 },
-    { "name": "IOCB", "addresses": ["0x096"], "bits": ["IOCB0", "IOCB1", "IOCB2", "IOCB3", "IOCB4", "IOCB5", "IOCB6", "IOCB7"], "por": "0000 0000", "page": 28 },
-    { "name": "VRCON", "addresses": ["0x097"], "bits": ["VR0", "VR1", "VR2", "VR3", "VRSS", "VRR", "VROE", "VREN"], "por": "0000 0000", "page": 28 },
-    { "name": "TXSTA", "addresses": ["0x098"], "bits": ["TX9D", "TRMT", "BRGH", "SENDB", "SYNC", "TXEN", "TX9", "CSRC"], "por": "0000 0010", "page": 28 },
-    { "name": "SPBRG", "addresses": ["0x099"], "bits": ["BRG0", "BRG1", "BRG2", "BRG3", "BRG4", "BRG5", "BRG6", "BRG7"], "por": "0000 0000", "page": 28 },
-    { "name": "SPBRGH", "addresses": ["0x09A"], "bits": ["BRG8", "BRG9", "BRG10", "BRG11", "BRG12", "BRG13", "BRG14", "BRG15"], "por": "0000 0000", "page": 28 },
-    { "name": "PWM1CON", "addresses": ["0x09B"], "bits": ["PDC0", "PDC1", "PDC2", "PDC3", "PDC4", "PDC5", "PDC6", "PRSEN"], "por": "0000 0000", "page": 28 },
-    { "name": "ECCPAS", "addresses": ["0x09C"], "bits": ["PSSBD0", "PSSBD1", "PSSAC0", "PSSAC1", "ECCPAS0", "ECCPAS1", "ECCPAS2", "ECCPASE"], "por": "0000 0000", "page": 28 },
-    { "name": "PSTRCON", "addresses": ["0x09D"], "bits": ["STRA", "STRB", "STRC", "STRD", "STRSYNC", null, null, null], "por": "---0 0001", "page": 28 },
-    { "name": "ADRESL", "addresses": ["0x09E"], "bits": [null, null, null, null, null, null, null, null], "por": "xxxx xxxx", "page": 28 },
-    { "name": "ADCON1", "addresses": ["0x09F"], "bits": [null, null, null, null, "VCFG0", "VCFG1", null, "ADFM"], "por": "0-00 ----", "page": 28 },
-    { "name": "WDTCON", "addresses": ["0x105"], "bits": ["SWDTEN", "WDTPS0", "WDTPS1", "WDTPS2", "WDTPS3", null, null, null], "por": "---0 1000", "page": 29 },
-    { "name": "CM1CON0", "addresses": ["0x107"], "bits": ["C1CH0", "C1CH1", "C1R", null, "C1POL", "C1OE", "C1OUT", "C1ON"], "por": "0000 -000", "page": 29 },
-    { "name": "CM2CON0", "addresses": ["0x108"], "bits": ["C2CH0", "C2CH1", "C2R", null, "C2POL", "C2OE", "C2OUT", "C2ON"], "por": "0000 -000", "page": 29 },
-    { "name": "CM2CON1", "addresses": ["0x109"], "bits": ["C2SYNC", "T1GSS", null, null, "C2RSEL", "C1RSEL", "MC2OUT", "MC1OUT"], "por": "0000 --10", "page": 29 },
-    { "name": "EEDAT", "addresses": ["0x10C"], "bits": ["EEDAT0", "EEDAT1", "EEDAT2", "EEDAT3", "EEDAT4", "EEDAT5", "EEDAT6", "EEDAT7"], "por": "0000 0000", "page": 29 },
-    { "name": "EEADR", "addresses": ["0x10D"], "bits": ["EEADR0", "EEADR1", "EEADR2", "EEADR3", "EEADR4", "EEADR5", "EEADR6", "EEADR7"], "por": "0000 0000", "page": 29 },
-    { "name": "EEDATH", "addresses": ["0x10E"], "bits": ["EEDATH0", "EEDATH1", "EEDATH2", "EEDATH3", "EEDATH4", "EEDATH5", null, null], "por": "--00 0000", "page": 29 },
-    { "name": "EEADRH", "addresses": ["0x10F"], "bits": ["EEADRH0", "EEADRH1", "EEADRH2", "EEADRH3", "EEADRH4", null, null, null], "por": "---- 0000", "page": 29 },
-    { "name": "SRCON", "addresses": ["0x185"], "bits": ["FVREN", null, "PULSR", "PULSS", "C2REN", "C1SEN", "SR0", "SR1"], "por": "0000 00-0", "page": 29 },
-    { "name": "BAUDCTL", "addresses": ["0x187"], "bits": ["ABDEN", "WUE", null, "BRG16", "SCKP", null, "RCIDL", "ABDOVF"], "por": "01-0 0-00", "page": 29 },
-    { "name": "ANSEL", "addresses": ["0x188"], "bits": ["ANS0", "ANS1", "ANS2", "ANS3", "ANS4", "ANS5", "ANS6", "ANS7"], "por": "1111 1111", "page": 29 },
-    { "name": "ANSELH", "addresses": ["0x189"], "bits": ["ANS8", "ANS9", "ANS10", "ANS11", "ANS12", "ANS13", null, null], "por": "--11 1111", "page": 29 },
-    { "name": "EECON1", "addresses": ["0x18C"], "bits": ["RD", "WR", "WREN", "WRERR", null, null, null, "EEPGD"], "por": "x--- x000", "page": 29 },
-    { "name": "EECON2", "addresses": ["0x18D"], "bits": [null, null, null, null, null, null, null, null], "por": "---- ----", "page": 29, "physical": false, "note": "no es un registro fisico: se escribe 55h y AAh para la secuencia de escritura" }
+    {
+      "name": "INDF",
+      "addresses": [
+        "0x000",
+        "0x080",
+        "0x100",
+        "0x180"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "xxxx xxxx",
+      "page": 27,
+      "physical": false
+    },
+    {
+      "name": "TMR0",
+      "addresses": [
+        "0x001",
+        "0x101"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "xxxx xxxx",
+      "page": 27
+    },
+    {
+      "name": "PCL",
+      "addresses": [
+        "0x002",
+        "0x082",
+        "0x102",
+        "0x182"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "0000 0000",
+      "page": 27
+    },
+    {
+      "name": "STATUS",
+      "addresses": [
+        "0x003",
+        "0x083",
+        "0x103",
+        "0x183"
+      ],
+      "bits": [
+        "C",
+        "DC",
+        "Z",
+        "PD",
+        "TO",
+        "RP0",
+        "RP1",
+        "IRP"
+      ],
+      "por": "0001 1xxx",
+      "page": 27
+    },
+    {
+      "name": "FSR",
+      "addresses": [
+        "0x004",
+        "0x084",
+        "0x104",
+        "0x184"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "xxxx xxxx",
+      "page": 27
+    },
+    {
+      "name": "PORTA",
+      "addresses": [
+        "0x005"
+      ],
+      "bits": [
+        "RA0",
+        "RA1",
+        "RA2",
+        "RA3",
+        "RA4",
+        "RA5",
+        "RA6",
+        "RA7"
+      ],
+      "por": "xxxx xxxx",
+      "page": 27
+    },
+    {
+      "name": "PORTB",
+      "addresses": [
+        "0x006",
+        "0x106"
+      ],
+      "bits": [
+        "RB0",
+        "RB1",
+        "RB2",
+        "RB3",
+        "RB4",
+        "RB5",
+        "RB6",
+        "RB7"
+      ],
+      "por": "xxxx xxxx",
+      "page": 27
+    },
+    {
+      "name": "PORTC",
+      "addresses": [
+        "0x007"
+      ],
+      "bits": [
+        "RC0",
+        "RC1",
+        "RC2",
+        "RC3",
+        "RC4",
+        "RC5",
+        "RC6",
+        "RC7"
+      ],
+      "por": "xxxx xxxx",
+      "page": 27
+    },
+    {
+      "name": "PORTD",
+      "addresses": [
+        "0x008"
+      ],
+      "bits": [
+        "RD0",
+        "RD1",
+        "RD2",
+        "RD3",
+        "RD4",
+        "RD5",
+        "RD6",
+        "RD7"
+      ],
+      "por": "xxxx xxxx",
+      "page": 27
+    },
+    {
+      "name": "PORTE",
+      "addresses": [
+        "0x009"
+      ],
+      "bits": [
+        "RE0",
+        "RE1",
+        "RE2",
+        "RE3",
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "---- xxxx",
+      "page": 27
+    },
+    {
+      "name": "PCLATH",
+      "addresses": [
+        "0x00A",
+        "0x08A",
+        "0x10A",
+        "0x18A"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "---0 0000",
+      "page": 27,
+      "note": "buffer de escritura de los 5 bits altos del PC"
+    },
+    {
+      "name": "INTCON",
+      "addresses": [
+        "0x00B",
+        "0x08B",
+        "0x10B",
+        "0x18B"
+      ],
+      "bits": [
+        "RBIF",
+        "INTF",
+        "T0IF",
+        "RBIE",
+        "INTE",
+        "T0IE",
+        "PEIE",
+        "GIE"
+      ],
+      "por": "0000 000x",
+      "page": 27
+    },
+    {
+      "name": "PIR1",
+      "addresses": [
+        "0x00C"
+      ],
+      "bits": [
+        "TMR1IF",
+        "TMR2IF",
+        "CCP1IF",
+        "SSPIF",
+        "TXIF",
+        "RCIF",
+        "ADIF",
+        null
+      ],
+      "por": "-000 0000",
+      "page": 27
+    },
+    {
+      "name": "PIR2",
+      "addresses": [
+        "0x00D"
+      ],
+      "bits": [
+        "CCP2IF",
+        null,
+        "ULPWUIF",
+        "BCLIF",
+        "EEIF",
+        "C1IF",
+        "C2IF",
+        "OSFIF"
+      ],
+      "por": "0000 00-0",
+      "page": 27
+    },
+    {
+      "name": "TMR1L",
+      "addresses": [
+        "0x00E"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "xxxx xxxx",
+      "page": 27
+    },
+    {
+      "name": "TMR1H",
+      "addresses": [
+        "0x00F"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "xxxx xxxx",
+      "page": 27
+    },
+    {
+      "name": "T1CON",
+      "addresses": [
+        "0x010"
+      ],
+      "bits": [
+        "TMR1ON",
+        "TMR1CS",
+        "T1SYNC",
+        "T1OSCEN",
+        "T1CKPS0",
+        "T1CKPS1",
+        "TMR1GE",
+        "T1GINV"
+      ],
+      "por": "0000 0000",
+      "page": 27
+    },
+    {
+      "name": "TMR2",
+      "addresses": [
+        "0x011"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "0000 0000",
+      "page": 27
+    },
+    {
+      "name": "T2CON",
+      "addresses": [
+        "0x012"
+      ],
+      "bits": [
+        "T2CKPS0",
+        "T2CKPS1",
+        "TMR2ON",
+        "TOUTPS0",
+        "TOUTPS1",
+        "TOUTPS2",
+        "TOUTPS3",
+        null
+      ],
+      "por": "-000 0000",
+      "page": 27
+    },
+    {
+      "name": "SSPBUF",
+      "addresses": [
+        "0x013"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "xxxx xxxx",
+      "page": 27
+    },
+    {
+      "name": "SSPCON",
+      "addresses": [
+        "0x014"
+      ],
+      "bits": [
+        "SSPM0",
+        "SSPM1",
+        "SSPM2",
+        "SSPM3",
+        "CKP",
+        "SSPEN",
+        "SSPOV",
+        "WCOL"
+      ],
+      "por": "0000 0000",
+      "page": 27
+    },
+    {
+      "name": "CCPR1L",
+      "addresses": [
+        "0x015"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "xxxx xxxx",
+      "page": 27
+    },
+    {
+      "name": "CCPR1H",
+      "addresses": [
+        "0x016"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "xxxx xxxx",
+      "page": 27
+    },
+    {
+      "name": "CCP1CON",
+      "addresses": [
+        "0x017"
+      ],
+      "bits": [
+        "CCP1M0",
+        "CCP1M1",
+        "CCP1M2",
+        "CCP1M3",
+        "DC1B0",
+        "DC1B1",
+        "P1M0",
+        "P1M1"
+      ],
+      "por": "0000 0000",
+      "page": 27
+    },
+    {
+      "name": "RCSTA",
+      "addresses": [
+        "0x018"
+      ],
+      "bits": [
+        "RX9D",
+        "OERR",
+        "FERR",
+        "ADDEN",
+        "CREN",
+        "SREN",
+        "RX9",
+        "SPEN"
+      ],
+      "por": "0000 000x",
+      "page": 27
+    },
+    {
+      "name": "TXREG",
+      "addresses": [
+        "0x019"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "0000 0000",
+      "page": 27
+    },
+    {
+      "name": "RCREG",
+      "addresses": [
+        "0x01A"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "0000 0000",
+      "page": 27
+    },
+    {
+      "name": "CCPR2L",
+      "addresses": [
+        "0x01B"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "xxxx xxxx",
+      "page": 27
+    },
+    {
+      "name": "CCPR2H",
+      "addresses": [
+        "0x01C"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "xxxx xxxx",
+      "page": 27
+    },
+    {
+      "name": "CCP2CON",
+      "addresses": [
+        "0x01D"
+      ],
+      "bits": [
+        "CCP2M0",
+        "CCP2M1",
+        "CCP2M2",
+        "CCP2M3",
+        "DC2B0",
+        "DC2B1",
+        null,
+        null
+      ],
+      "por": "--00 0000",
+      "page": 27
+    },
+    {
+      "name": "ADRESH",
+      "addresses": [
+        "0x01E"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "xxxx xxxx",
+      "page": 27
+    },
+    {
+      "name": "ADCON0",
+      "addresses": [
+        "0x01F"
+      ],
+      "bits": [
+        "ADON",
+        "GO_DONE",
+        "CHS0",
+        "CHS1",
+        "CHS2",
+        "CHS3",
+        "ADCS0",
+        "ADCS1"
+      ],
+      "por": "0000 0000",
+      "page": 27
+    },
+    {
+      "name": "OPTION_REG",
+      "addresses": [
+        "0x081",
+        "0x181"
+      ],
+      "bits": [
+        "PS0",
+        "PS1",
+        "PS2",
+        "PSA",
+        "T0SE",
+        "T0CS",
+        "INTEDG",
+        "RBPU"
+      ],
+      "por": "1111 1111",
+      "page": 28
+    },
+    {
+      "name": "TRISA",
+      "addresses": [
+        "0x085"
+      ],
+      "bits": [
+        "TRISA0",
+        "TRISA1",
+        "TRISA2",
+        "TRISA3",
+        "TRISA4",
+        "TRISA5",
+        "TRISA6",
+        "TRISA7"
+      ],
+      "por": "1111 1111",
+      "page": 28
+    },
+    {
+      "name": "TRISB",
+      "addresses": [
+        "0x086",
+        "0x186"
+      ],
+      "bits": [
+        "TRISB0",
+        "TRISB1",
+        "TRISB2",
+        "TRISB3",
+        "TRISB4",
+        "TRISB5",
+        "TRISB6",
+        "TRISB7"
+      ],
+      "por": "1111 1111",
+      "page": 28
+    },
+    {
+      "name": "TRISC",
+      "addresses": [
+        "0x087"
+      ],
+      "bits": [
+        "TRISC0",
+        "TRISC1",
+        "TRISC2",
+        "TRISC3",
+        "TRISC4",
+        "TRISC5",
+        "TRISC6",
+        "TRISC7"
+      ],
+      "por": "1111 1111",
+      "page": 28
+    },
+    {
+      "name": "TRISD",
+      "addresses": [
+        "0x088"
+      ],
+      "bits": [
+        "TRISD0",
+        "TRISD1",
+        "TRISD2",
+        "TRISD3",
+        "TRISD4",
+        "TRISD5",
+        "TRISD6",
+        "TRISD7"
+      ],
+      "por": "1111 1111",
+      "page": 28
+    },
+    {
+      "name": "TRISE",
+      "addresses": [
+        "0x089"
+      ],
+      "bits": [
+        "TRISE0",
+        "TRISE1",
+        "TRISE2",
+        "TRISE3",
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "---- 1111",
+      "page": 28
+    },
+    {
+      "name": "PIE1",
+      "addresses": [
+        "0x08C"
+      ],
+      "bits": [
+        "TMR1IE",
+        "TMR2IE",
+        "CCP1IE",
+        "SSPIE",
+        "TXIE",
+        "RCIE",
+        "ADIE",
+        null
+      ],
+      "por": "-000 0000",
+      "page": 28
+    },
+    {
+      "name": "PIE2",
+      "addresses": [
+        "0x08D"
+      ],
+      "bits": [
+        "CCP2IE",
+        null,
+        "ULPWUIE",
+        "BCLIE",
+        "EEIE",
+        "C1IE",
+        "C2IE",
+        "OSFIE"
+      ],
+      "por": "0000 00-0",
+      "page": 28
+    },
+    {
+      "name": "PCON",
+      "addresses": [
+        "0x08E"
+      ],
+      "bits": [
+        "BOR",
+        "POR",
+        null,
+        null,
+        "SBOREN",
+        "ULPWUE",
+        null,
+        null
+      ],
+      "por": "--01 --qq",
+      "page": 28
+    },
+    {
+      "name": "OSCCON",
+      "addresses": [
+        "0x08F"
+      ],
+      "bits": [
+        "SCS",
+        "LTS",
+        "HTS",
+        "OSTS",
+        "IRCF0",
+        "IRCF1",
+        "IRCF2",
+        null
+      ],
+      "por": "-110 q000",
+      "page": 28
+    },
+    {
+      "name": "OSCTUNE",
+      "addresses": [
+        "0x090"
+      ],
+      "bits": [
+        "TUN0",
+        "TUN1",
+        "TUN2",
+        "TUN3",
+        "TUN4",
+        null,
+        null,
+        null
+      ],
+      "por": "---0 0000",
+      "page": 28
+    },
+    {
+      "name": "SSPCON2",
+      "addresses": [
+        "0x091"
+      ],
+      "bits": [
+        "SEN",
+        "RSEN",
+        "PEN",
+        "RCEN",
+        "ACKEN",
+        "ACKDT",
+        "ACKSTAT",
+        "GCEN"
+      ],
+      "por": "0000 0000",
+      "page": 28
+    },
+    {
+      "name": "PR2",
+      "addresses": [
+        "0x092"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "1111 1111",
+      "page": 28
+    },
+    {
+      "name": "SSPADD",
+      "addresses": [
+        "0x093"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "0000 0000",
+      "page": 28
+    },
+    {
+      "name": "SSPMSK",
+      "addresses": [
+        "0x093"
+      ],
+      "bits": [
+        "MSK0",
+        "MSK1",
+        "MSK2",
+        "MSK3",
+        "MSK4",
+        "MSK5",
+        "MSK6",
+        "MSK7"
+      ],
+      "por": "1111 1111",
+      "page": 28,
+      "selected_by": "SSPCON<SSPM3:SSPM0> = 1001"
+    },
+    {
+      "name": "SSPSTAT",
+      "addresses": [
+        "0x094"
+      ],
+      "bits": [
+        "BF",
+        "UA",
+        "R_W",
+        "S",
+        "P",
+        "D_A",
+        "CKE",
+        "SMP"
+      ],
+      "por": "0000 0000",
+      "page": 28
+    },
+    {
+      "name": "WPUB",
+      "addresses": [
+        "0x095"
+      ],
+      "bits": [
+        "WPUB0",
+        "WPUB1",
+        "WPUB2",
+        "WPUB3",
+        "WPUB4",
+        "WPUB5",
+        "WPUB6",
+        "WPUB7"
+      ],
+      "por": "1111 1111",
+      "page": 28
+    },
+    {
+      "name": "IOCB",
+      "addresses": [
+        "0x096"
+      ],
+      "bits": [
+        "IOCB0",
+        "IOCB1",
+        "IOCB2",
+        "IOCB3",
+        "IOCB4",
+        "IOCB5",
+        "IOCB6",
+        "IOCB7"
+      ],
+      "por": "0000 0000",
+      "page": 28
+    },
+    {
+      "name": "VRCON",
+      "addresses": [
+        "0x097"
+      ],
+      "bits": [
+        "VR0",
+        "VR1",
+        "VR2",
+        "VR3",
+        "VRSS",
+        "VRR",
+        "VROE",
+        "VREN"
+      ],
+      "por": "0000 0000",
+      "page": 28
+    },
+    {
+      "name": "TXSTA",
+      "addresses": [
+        "0x098"
+      ],
+      "bits": [
+        "TX9D",
+        "TRMT",
+        "BRGH",
+        "SENDB",
+        "SYNC",
+        "TXEN",
+        "TX9",
+        "CSRC"
+      ],
+      "por": "0000 0010",
+      "page": 28
+    },
+    {
+      "name": "SPBRG",
+      "addresses": [
+        "0x099"
+      ],
+      "bits": [
+        "BRG0",
+        "BRG1",
+        "BRG2",
+        "BRG3",
+        "BRG4",
+        "BRG5",
+        "BRG6",
+        "BRG7"
+      ],
+      "por": "0000 0000",
+      "page": 28
+    },
+    {
+      "name": "SPBRGH",
+      "addresses": [
+        "0x09A"
+      ],
+      "bits": [
+        "BRG8",
+        "BRG9",
+        "BRG10",
+        "BRG11",
+        "BRG12",
+        "BRG13",
+        "BRG14",
+        "BRG15"
+      ],
+      "por": "0000 0000",
+      "page": 28
+    },
+    {
+      "name": "PWM1CON",
+      "addresses": [
+        "0x09B"
+      ],
+      "bits": [
+        "PDC0",
+        "PDC1",
+        "PDC2",
+        "PDC3",
+        "PDC4",
+        "PDC5",
+        "PDC6",
+        "PRSEN"
+      ],
+      "por": "0000 0000",
+      "page": 28
+    },
+    {
+      "name": "ECCPAS",
+      "addresses": [
+        "0x09C"
+      ],
+      "bits": [
+        "PSSBD0",
+        "PSSBD1",
+        "PSSAC0",
+        "PSSAC1",
+        "ECCPAS0",
+        "ECCPAS1",
+        "ECCPAS2",
+        "ECCPASE"
+      ],
+      "por": "0000 0000",
+      "page": 28
+    },
+    {
+      "name": "PSTRCON",
+      "addresses": [
+        "0x09D"
+      ],
+      "bits": [
+        "STRA",
+        "STRB",
+        "STRC",
+        "STRD",
+        "STRSYNC",
+        null,
+        null,
+        null
+      ],
+      "por": "---0 0001",
+      "page": 28
+    },
+    {
+      "name": "ADRESL",
+      "addresses": [
+        "0x09E"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "xxxx xxxx",
+      "page": 28
+    },
+    {
+      "name": "ADCON1",
+      "addresses": [
+        "0x09F"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        "VCFG0",
+        "VCFG1",
+        null,
+        "ADFM"
+      ],
+      "por": "0-00 ----",
+      "page": 28
+    },
+    {
+      "name": "WDTCON",
+      "addresses": [
+        "0x105"
+      ],
+      "bits": [
+        "SWDTEN",
+        "WDTPS0",
+        "WDTPS1",
+        "WDTPS2",
+        "WDTPS3",
+        null,
+        null,
+        null
+      ],
+      "por": "---0 1000",
+      "page": 29
+    },
+    {
+      "name": "CM1CON0",
+      "addresses": [
+        "0x107"
+      ],
+      "bits": [
+        "C1CH0",
+        "C1CH1",
+        "C1R",
+        null,
+        "C1POL",
+        "C1OE",
+        "C1OUT",
+        "C1ON"
+      ],
+      "por": "0000 -000",
+      "page": 29
+    },
+    {
+      "name": "CM2CON0",
+      "addresses": [
+        "0x108"
+      ],
+      "bits": [
+        "C2CH0",
+        "C2CH1",
+        "C2R",
+        null,
+        "C2POL",
+        "C2OE",
+        "C2OUT",
+        "C2ON"
+      ],
+      "por": "0000 -000",
+      "page": 29
+    },
+    {
+      "name": "CM2CON1",
+      "addresses": [
+        "0x109"
+      ],
+      "bits": [
+        "C2SYNC",
+        "T1GSS",
+        null,
+        null,
+        "C2RSEL",
+        "C1RSEL",
+        "MC2OUT",
+        "MC1OUT"
+      ],
+      "por": "0000 --10",
+      "page": 29
+    },
+    {
+      "name": "EEDAT",
+      "addresses": [
+        "0x10C"
+      ],
+      "bits": [
+        "EEDAT0",
+        "EEDAT1",
+        "EEDAT2",
+        "EEDAT3",
+        "EEDAT4",
+        "EEDAT5",
+        "EEDAT6",
+        "EEDAT7"
+      ],
+      "por": "0000 0000",
+      "page": 29
+    },
+    {
+      "name": "EEADR",
+      "addresses": [
+        "0x10D"
+      ],
+      "bits": [
+        "EEADR0",
+        "EEADR1",
+        "EEADR2",
+        "EEADR3",
+        "EEADR4",
+        "EEADR5",
+        "EEADR6",
+        "EEADR7"
+      ],
+      "por": "0000 0000",
+      "page": 29
+    },
+    {
+      "name": "EEDATH",
+      "addresses": [
+        "0x10E"
+      ],
+      "bits": [
+        "EEDATH0",
+        "EEDATH1",
+        "EEDATH2",
+        "EEDATH3",
+        "EEDATH4",
+        "EEDATH5",
+        null,
+        null
+      ],
+      "por": "--00 0000",
+      "page": 29
+    },
+    {
+      "name": "EEADRH",
+      "addresses": [
+        "0x10F"
+      ],
+      "bits": [
+        "EEADRH0",
+        "EEADRH1",
+        "EEADRH2",
+        "EEADRH3",
+        "EEADRH4",
+        null,
+        null,
+        null
+      ],
+      "por": "---- 0000",
+      "page": 29
+    },
+    {
+      "name": "SRCON",
+      "addresses": [
+        "0x185"
+      ],
+      "bits": [
+        "FVREN",
+        null,
+        "PULSR",
+        "PULSS",
+        "C2REN",
+        "C1SEN",
+        "SR0",
+        "SR1"
+      ],
+      "por": "0000 00-0",
+      "page": 29
+    },
+    {
+      "name": "BAUDCTL",
+      "addresses": [
+        "0x187"
+      ],
+      "bits": [
+        "ABDEN",
+        "WUE",
+        null,
+        "BRG16",
+        "SCKP",
+        null,
+        "RCIDL",
+        "ABDOVF"
+      ],
+      "por": "01-0 0-00",
+      "page": 29
+    },
+    {
+      "name": "ANSEL",
+      "addresses": [
+        "0x188"
+      ],
+      "bits": [
+        "ANS0",
+        "ANS1",
+        "ANS2",
+        "ANS3",
+        "ANS4",
+        "ANS5",
+        "ANS6",
+        "ANS7"
+      ],
+      "por": "1111 1111",
+      "page": 29
+    },
+    {
+      "name": "ANSELH",
+      "addresses": [
+        "0x189"
+      ],
+      "bits": [
+        "ANS8",
+        "ANS9",
+        "ANS10",
+        "ANS11",
+        "ANS12",
+        "ANS13",
+        null,
+        null
+      ],
+      "por": "--11 1111",
+      "page": 29
+    },
+    {
+      "name": "EECON1",
+      "addresses": [
+        "0x18C"
+      ],
+      "bits": [
+        "RD",
+        "WR",
+        "WREN",
+        "WRERR",
+        null,
+        null,
+        null,
+        "EEPGD"
+      ],
+      "por": "x--- x000",
+      "page": 29
+    },
+    {
+      "name": "EECON2",
+      "addresses": [
+        "0x18D"
+      ],
+      "bits": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "por": "---- ----",
+      "page": 29,
+      "physical": false,
+      "note": "no es un registro fisico: se escribe 55h y AAh para la secuencia de escritura"
+    }
   ]
 }

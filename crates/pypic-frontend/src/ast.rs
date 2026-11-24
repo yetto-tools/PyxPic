@@ -91,7 +91,7 @@ pub enum ExprKind {
     Bool_(BoolOp, Vec<Expr>),
     Call { func: String, func_span: Span, args: Vec<Expr> },
     /// `pin.metodo(args)`, p. ej. `RD0.toggle()`.
-    MethodCall { obj: String, obj_span: Span, method: String, args: Vec<Expr> },
+    MethodCall { obj: String, obj_span: Span, method: String, args: Vec<Expr>, kwargs: Vec<Kwarg> },
 }
 
 #[derive(Clone, Debug)]
@@ -150,6 +150,14 @@ pub enum StmtKind {
 pub struct Param {
     pub name: Ident,
     pub ann: TypeExpr,
+}
+
+/// Argumento con nombre (`prescaler=16`): solo en los metodos de periféricos del SDK.
+#[derive(Clone, Debug)]
+pub struct Kwarg {
+    pub name: String,
+    pub name_span: Span,
+    pub value: Expr,
 }
 
 /// Cuerpo de una funcion `@asm_function`: el texto ensamblador.

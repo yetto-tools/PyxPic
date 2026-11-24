@@ -5,7 +5,7 @@
 //! registros virtuales que el backend asigna.
 
 pub use pypic_frontend::ast::{BinOp, CmpOp};
-pub use pypic_frontend::{DelayUnit, Type};
+pub use pypic_frontend::{DelayUnit, TimerCall, TimerId, TimerOp, TimerStart, Type};
 
 pub type BlockId = usize;
 
@@ -51,6 +51,9 @@ pub enum Inst {
     /// Espera activa de `amount` en la unidad dada. Con `Cycles` y `Us` la cantidad es una constante; con `Ms` y `S`, una
     /// constante o un u16. El backend la convierte en ciclos de instruccion exactos segun el reloj.
     Delay { unit: DelayUnit, amount: Operand },
+    /// Operacion sobre un temporizador (`TMR2.start(...)`, `TMR1.value()`...). `dst` recibe el resultado de `Value`
+    /// (u8/u16) y `Expired` (bool); `arg` es el valor de `Set`.
+    Timer { call: TimerCall, dst: Option<Place>, arg: Option<Operand> },
 }
 
 #[derive(Clone, Debug, PartialEq)]

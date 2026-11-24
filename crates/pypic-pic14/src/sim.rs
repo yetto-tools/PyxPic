@@ -2,7 +2,8 @@
 //!
 //! Modela W, PC de 13 bits con PCLATH, pila de 8 niveles circular, STATUS (C, DC, Z, TO, PD, RP, IRP),
 //! 4 bancos de RAM con los registros espejados y la zona comun 70h-7Fh, direccionamiento indirecto
-//! (INDF/FSR/IRP) y ciclos. NO modela perifericos ni interrupciones: PORTx/TRISx son registros planos.
+//! (INDF/FSR/IRP) y ciclos. De los perifericos solo modela Timer0/1/2 con reloj interno (ver `tick_timers`);
+//! PORTx/TRISx son registros planos y las interrupciones solo se fuerzan con `interrupt`.
 //! Fuente de la semantica: DS40001291H seccion 2 y tabla 15-2 (p.227).
 
 use crate::hex::Image;
@@ -33,6 +34,14 @@ pub struct Sim {
     pub flash_words: usize,
     /// Destino del PC si la instruccion en curso escribio PCL (salto calculado).
     pcl_write: Option<u16>,
+    /// Estado oculto de los temporizadores: preescaladores, ciclos de inhibicion de TMR0 y postescalador de Timer2.
+    t0_pre: u32,
+    t0_inhibit: u32,
+    t1_pre: u32,
+    t2_pre: u32,
+    t2_post: u32,
+    /// Ciclo exacto en que cada temporizador activo su bandera ("T0IF", "TMR1IF", "TMR2IF"); se guardan los primeros 4096.
+    pub timer_events: Vec<(&'static str, u64)>,
 }
 
 impl Sim {
@@ -43,7 +52,7 @@ impl Sim {
                 flash[a as usize] = w;
             }
         }
-        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None };
+        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None, t0_pre: 0, t0_inhibit: 0, t1_pre: 0, t2_pre: 0, t2_post: 0, timer_events: Vec::new() };
         s.reset();
         s
     }
@@ -56,6 +65,9 @@ impl Sim {
         }
         self.ram[0x188] = 0xFF; // ANSEL: todo analogico tras el reset
         self.ram[0x189] = 0x3F; // ANSELH (--11 1111)
+        self.ram[0x81] = 0xFF; // OPTION_REG
+        self.ram[0x92] = 0xFF; // PR2
+        (self.t0_pre, self.t0_inhibit, self.t1_pre, self.t2_pre, self.t2_post) = (0, 0, 0, 0, 0);
         self.pc = 0;
         self.pclath = 0;
         self.sp = 0;
@@ -110,7 +122,20 @@ impl Sim {
         match f {
             0x02 => self.pcl_write = Some((self.pclath as u16 & 0x1F) << 8 | v as u16), // PCH sale de PCLATH<4:0>
             0x0A => self.pclath = v & 0x1F,
-            _ => self.ram[Self::phys(self.bank_base() | f as usize)] = v,
+            _ => {
+                let a = Self::phys(self.bank_base() | f as usize);
+                self.ram[a] = v;
+                match a & 0xFF {
+                    // escribir TMR0 pone a cero su preescalador e inhibe el incremento durante 2 ciclos (p.76)
+                    0x01 if a < 0x100 => self.t0_pre = 0,
+                    0x0E | 0x0F if a < 0x100 => self.t1_pre = 0,
+                    0x11 if a < 0x100 => self.t2_pre = 0,
+                    _ => {}
+                }
+                if a == 0x01 {
+                    self.t0_inhibit = 2;
+                }
+            }
         }
     }
 
@@ -337,7 +362,79 @@ impl Sim {
         }
         self.pc = next;
         self.cycles += cyc;
+        for i in 0..cyc {
+            self.tick_timers(self.cycles - cyc + i + 1);
+        }
         true
+    }
+
+    /// Un ciclo de instruccion de Timer0, Timer1 y Timer2 con reloj interno (FOSC/4). Los relojes externos,
+    /// la compuerta de Timer1 y el modo asincrono no se modelan. Los ticks de la propia instruccion que escribe
+    /// un contador se aplican despues de la escritura (error maximo de 1 ciclo en el valor absoluto, ninguno en los periodos).
+    fn tick_timers(&mut self, now: u64) {
+        let (option, intcon) = (self.ram[0x81], 0x0B);
+        // Timer0: T0CS = 0 (reloj interno); PSA = 0 asigna el preescalador a Timer0
+        if option & 0x20 == 0 {
+            if self.t0_inhibit > 0 {
+                self.t0_inhibit -= 1;
+            } else {
+                let div = if option & 0x08 == 0 { 2u32 << (option & 7) } else { 1 };
+                self.t0_pre += 1;
+                if self.t0_pre >= div {
+                    self.t0_pre = 0;
+                    self.ram[0x01] = self.ram[0x01].wrapping_add(1);
+                    if self.ram[0x01] == 0 {
+                        self.ram[intcon] |= 0x04; // T0IF
+                        self.log("T0IF", now);
+                    }
+                }
+            }
+        }
+        // Timer1: TMR1ON = 1 y TMR1CS = 0
+        let t1con = self.ram[0x10];
+        if t1con & 0x01 != 0 && t1con & 0x02 == 0 {
+            self.t1_pre += 1;
+            if self.t1_pre >= 1 << (t1con >> 4 & 3) {
+                self.t1_pre = 0;
+                let n = (u16::from(self.ram[0x0F]) << 8 | u16::from(self.ram[0x0E])).wrapping_add(1);
+                self.ram[0x0E] = n as u8;
+                self.ram[0x0F] = (n >> 8) as u8;
+                if n == 0 {
+                    self.ram[0x0C] |= 0x01; // TMR1IF
+                    self.log("TMR1IF", now);
+                }
+            }
+        }
+        // Timer2: TMR2ON = 1; al llegar TMR2 a PR2 se reinicia y cuenta el postescalador
+        let t2con = self.ram[0x12];
+        if t2con & 0x04 != 0 {
+            self.t2_pre += 1;
+            let pre = match t2con & 3 {
+                0 => 1,
+                1 => 4,
+                _ => 16,
+            };
+            if self.t2_pre >= pre {
+                self.t2_pre = 0;
+                if self.ram[0x11] == self.ram[0x92] {
+                    self.ram[0x11] = 0;
+                    self.t2_post += 1;
+                    if self.t2_post > u32::from(t2con >> 3 & 0xF) {
+                        self.t2_post = 0;
+                        self.ram[0x0C] |= 0x02; // TMR2IF
+                        self.log("TMR2IF", now);
+                    }
+                } else {
+                    self.ram[0x11] = self.ram[0x11].wrapping_add(1);
+                }
+            }
+        }
+    }
+
+    fn log(&mut self, flag: &'static str, now: u64) {
+        if self.timer_events.len() < 4096 {
+            self.timer_events.push((flag, now));
+        }
     }
 
     fn add_flags(&mut self, a: u8, b: u8) {

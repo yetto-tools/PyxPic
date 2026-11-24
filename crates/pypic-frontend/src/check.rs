@@ -9,6 +9,7 @@
 //!  * Las condiciones deben ser bool (sin "truthiness").
 //!  * Sin recursion: la memoria es estatica y la pila de hardware es limitada.
 
+use crate::timer::{self, Gate, GateSource, TimerCall, TimerId, TimerOp, TimerSource, TimerStart};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::ast::*;
@@ -126,6 +127,8 @@ pub struct Program {
     pub clock_hz: Option<u32>,
     /// `clock_hz` es el reloj por defecto del dispositivo (no se declaro `CLOCK_HZ`).
     pub clock_defaulted: bool,
+    /// Llamadas a metodos de `pypic.periph.timer`, por id de expresion.
+    pub timer_calls: BTreeMap<u32, TimerCall>,
 }
 
 pub struct Checked {
@@ -136,6 +139,7 @@ pub struct Checked {
     pub device: Option<String>,
     pub clock_hz: Option<u32>,
     pub clock_defaulted: bool,
+    pub timer_calls: BTreeMap<u32, TimerCall>,
 }
 
 pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Checked {
@@ -160,9 +164,16 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         in_const_decl: false,
         time_fns: HashMap::new(),
         time_uses: Vec::new(),
+        timer_names: HashMap::new(),
+        timer_consts: HashSet::new(),
+        timer_calls: BTreeMap::new(),
+        timer_started: BTreeSet::new(),
+        timer_needs: BTreeMap::new(),
+        timer_every: Vec::new(),
+        timer_pins: Vec::new(),
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -212,6 +223,27 @@ struct Checker<'a> {
     /// Funciones de `pypic.system.time` importadas.
     time_fns: HashMap<String, DelayUnit>,
     time_uses: Vec<TimeUse>,
+    /// Temporizadores importados de `pypic.periph.timer` y sus constantes (`INTERNAL`, `T1OSC`...).
+    timer_names: HashMap<String, TimerId>,
+    timer_consts: HashSet<String>,
+    timer_calls: BTreeMap<u32, TimerCall>,
+    /// Temporizadores con una llamada a `start` o `every_*`.
+    timer_started: BTreeSet<TimerId>,
+    /// Primer uso de cada temporizador que exige haberlo iniciado.
+    timer_needs: BTreeMap<TimerId, Span>,
+    /// `every_us`/`every_ms` pendientes de resolver cuando se conoce el reloj.
+    timer_every: Vec<TimerEvery>,
+    /// Pines que un temporizador reclama (`T0CKI` en RA4...).
+    timer_pins: Vec<(&'static str, &'static str, Span)>,
+}
+
+struct TimerEvery {
+    expr: u32,
+    span: Span,
+    name: &'static str,
+    amount: i128,
+    /// Divisor de la unidad: 1_000_000 (us) o 1_000 (ms).
+    div: u128,
 }
 
 impl<'a> Checker<'a> {
@@ -245,6 +277,7 @@ impl<'a> Checker<'a> {
         self.check_interrupt_sharing();
         self.check_stack_depth();
         self.check_pin_usage();
+        self.check_timer_usage();
         self.check_time_usage();
         self.check_asm_usage();
     }
@@ -319,6 +352,25 @@ impl<'a> Checker<'a> {
                     );
                 } else {
                     self.d.error("PYP1002", n.span, format!("'pypic.system.time' no exporta '{}' (exporta: delay_cycles, delay_us, pause, wait; reservadas: nap, sleep)", n.name));
+                }
+            }
+            return;
+        }
+        if module == "pypic.periph.timer" {
+            for n in names {
+                if let Some(t) = TimerId::from_name(&n.name) {
+                    if let Some(set) = &self.target.peripherals {
+                        if !set.contains(t.peripheral()) {
+                            self.d.error("PYP2120", n.span, format!("'{}' no tiene {} ({}): el dispositivo no lo trae", self.target.name, n.name, t.peripheral()));
+                            continue;
+                        }
+                    }
+                    self.timer_names.insert(n.name.clone(), t);
+                } else if timer::constant(&n.name).is_some() {
+                    self.timer_consts.insert(n.name.clone());
+                } else {
+                    let all: Vec<&str> = ["TMR0", "TMR1", "TMR2"].into_iter().chain(timer::CONSTANTS.iter().map(|(n, _)| *n)).collect();
+                    self.d.error("PYP2120", n.span, format!("'pypic.periph.timer' no exporta '{}' (exporta: {})", n.name, all.join(", ")));
                 }
             }
             return;
@@ -526,7 +578,362 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn method_call(&mut self, e: &Expr, obj: &str, obj_span: Span, method: &str, args: &[Expr]) -> Type {
+    // ------------------------------------------------------ temporizadores
+    /// Evalua un argumento con nombre que debe ser una constante entera, booleana o de `pypic.periph.timer`.
+    fn timer_const(&mut self, k: &Kwarg) -> Option<i128> {
+        if let ExprKind::Name(n) = &k.value.kind {
+            if self.timer_consts.contains(n) {
+                let v = timer::constant(n);
+                self.set(&k.value, Type::Literal, v);
+                return v;
+            }
+        }
+        let t = self.expr(&k.value);
+        if t == Type::Error {
+            return None;
+        }
+        match self.konst(&k.value) {
+            Some(v) => Some(v),
+            None => {
+                self.d.error("PYP2122", k.value.span, format!("el argumento '{}' debe ser una constante: se escribe en un registro al compilar", k.name));
+                None
+            }
+        }
+    }
+
+    fn timer_start(&mut self, e: &Expr, tid: TimerId, kwargs: &[Kwarg]) -> Option<TimerStart> {
+        let allowed: &[&str] = match tid {
+            TimerId::T0 => &["prescaler", "source", "edge"],
+            TimerId::T1 => &["prescaler", "source", "sync", "gate"],
+            TimerId::T2 => &["prescaler", "period", "postscaler"],
+        };
+        let name = tid.name();
+        let mut vals: HashMap<&str, (i128, Span)> = HashMap::new();
+        let mut ok = true;
+        for k in kwargs {
+            let v = self.timer_const(k);
+            if !allowed.contains(&k.name.as_str()) {
+                self.d.error("PYP2122", k.name_span, format!("{name}.start no tiene el argumento '{}' (admite: {})", k.name, allowed.join(", ")));
+                ok = false;
+            } else if let Some(v) = v {
+                vals.insert(allowed.iter().find(|a| **a == k.name).unwrap(), (v, k.value.span));
+            } else {
+                ok = false;
+            }
+        }
+        let bad = |this: &mut Self, span: Span, msg: String| {
+            this.d.error("PYP2122", span, msg);
+            false
+        };
+        let mut st = TimerStart::new();
+        match vals.get("prescaler") {
+            Some(&(p, sp)) => {
+                let valid: &[i128] = match tid {
+                    TimerId::T0 => &[1, 2, 4, 8, 16, 32, 64, 128, 256],
+                    TimerId::T1 => &[1, 2, 4, 8],
+                    TimerId::T2 => &[1, 4, 16],
+                };
+                if valid.contains(&p) {
+                    st.prescaler = p as u32;
+                } else {
+                    let list = valid.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ");
+                    ok = bad(self, sp, format!("{name}: prescaler={p} no existe; el hardware admite {list}")) && ok;
+                }
+            }
+            None if tid == TimerId::T1 => {}
+            None => ok = bad(self, e.span, format!("{name}.start necesita prescaler=...")) && ok,
+        }
+        match tid {
+            TimerId::T0 => {
+                match vals.get("source").map(|x| x.0) {
+                    None | Some(0) => {}
+                    Some(1) => st.source = TimerSource::T0cki,
+                    Some(_) => ok = bad(self, vals["source"].1, "TMR0: source debe ser INTERNAL o T0CKI".into()) && ok,
+                }
+                if let Some(&(edge, sp)) = vals.get("edge") {
+                    if st.source != TimerSource::T0cki {
+                        ok = bad(self, sp, "TMR0: edge solo tiene sentido con source=T0CKI".into()) && ok;
+                    } else if edge == 5 {
+                        st.falling = true;
+                    } else if edge != 4 {
+                        ok = bad(self, sp, "TMR0: edge debe ser RISING o FALLING".into()) && ok;
+                    }
+                }
+            }
+            TimerId::T1 => {
+                match vals.get("source").map(|x| x.0) {
+                    None | Some(0) => {}
+                    Some(2) => st.source = TimerSource::T1cki,
+                    Some(3) => st.source = TimerSource::T1osc,
+                    Some(_) => ok = bad(self, vals["source"].1, "TMR1: source debe ser INTERNAL, T1CKI o T1OSC".into()) && ok,
+                }
+                if let Some(&(s, sp)) = vals.get("sync") {
+                    if st.source == TimerSource::Internal {
+                        ok = bad(self, sp, "TMR1: sync solo tiene sentido con un reloj externo (source=T1CKI o T1OSC)".into()) && ok;
+                    } else if s == 0 || s == 1 {
+                        st.sync = s == 1;
+                    } else {
+                        ok = bad(self, sp, "TMR1: sync es True o False".into()) && ok;
+                    }
+                }
+                if let Some(&(g, sp)) = vals.get("gate") {
+                    st.gate = match g {
+                        6 => Some(Gate { source: GateSource::T1g, active_high: true }),
+                        7 => Some(Gate { source: GateSource::T1g, active_high: false }),
+                        8 => Some(Gate { source: GateSource::C2out, active_high: true }),
+                        9 => Some(Gate { source: GateSource::C2out, active_high: false }),
+                        _ => {
+                            ok = bad(self, sp, "TMR1: gate debe ser T1G_HIGH, T1G_LOW, C2_HIGH o C2_LOW".into()) && ok;
+                            None
+                        }
+                    };
+                }
+            }
+            TimerId::T2 => {
+                match vals.get("period") {
+                    Some(&(p, _)) if (0..=255).contains(&p) => st.period = p as u32,
+                    Some(&(p, sp)) => ok = bad(self, sp, format!("TMR2: period={p} fuera de 0..=255 (es el valor de PR2)")) && ok,
+                    None => ok = bad(self, e.span, "TMR2.start necesita period=... (el valor de PR2)".into()) && ok,
+                }
+                match vals.get("postscaler") {
+                    None => {}
+                    Some(&(p, _)) if (1..=16).contains(&p) => st.postscaler = p as u32,
+                    Some(&(p, sp)) => ok = bad(self, sp, format!("TMR2: postscaler={p} fuera de 1..=16")) && ok,
+                }
+            }
+        }
+        ok.then_some(st)
+    }
+
+    fn timer_method(&mut self, e: &Expr, tid: TimerId, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
+        let name = tid.name();
+        let ret_ty = |t: TimerId| if t == TimerId::T1 { U16 } else { U8 };
+        let void = |this: &mut Self| this.set(e, Type::Void, None);
+        let note = |this: &mut Self, started: bool| {
+            if started {
+                this.timer_started.insert(tid);
+            } else {
+                this.timer_needs.entry(tid).or_insert(e.span);
+            }
+        };
+        // los argumentos con nombre solo los admite start
+        if method != "start" {
+            if let Some(k) = kwargs.first() {
+                self.d.error("PYP2122", k.name_span, format!("{name}.{method} no acepta argumentos con nombre"));
+                for k in kwargs {
+                    self.expr(&k.value);
+                }
+            }
+        }
+        let arity = |this: &mut Self, n: usize| -> bool {
+            if args.len() != n {
+                this.d.error("PYP2055", e.span, format!("'{name}.{method}' recibe {n} argumento(s)"));
+                for a in args {
+                    this.expr(a);
+                }
+                return false;
+            }
+            true
+        };
+        match method {
+            "start" => {
+                if !args.is_empty() {
+                    self.d.error("PYP2127", args[0].span, format!("{name}.start se escribe con argumentos con nombre, p. ej. {name}.start(prescaler=...)"));
+                    for a in args {
+                        self.expr(a);
+                    }
+                }
+                if let Some(st) = self.timer_start(e, tid, kwargs) {
+                    self.timer_calls.insert(e.id, TimerCall { timer: tid, op: TimerOp::Start(st) });
+                    let (src, pin) = match (tid, st.source) {
+                        (TimerId::T0, TimerSource::T0cki) => ("T0CKI", Some("RA4")),
+                        (TimerId::T1, TimerSource::T1cki) => ("T1CKI", Some("RC0")),
+                        (TimerId::T1, TimerSource::T1osc) => ("T1OSC", Some("RC0")),
+                        _ => ("", None),
+                    };
+                    if let Some(pin) = pin {
+                        self.timer_pins.push((src, pin, e.span));
+                        if src == "T1OSC" {
+                            self.timer_pins.push((src, "RC1", e.span));
+                        }
+                    }
+                    if matches!(st.gate, Some(Gate { source: GateSource::T1g, .. })) {
+                        self.timer_pins.push(("T1G", "RB5", e.span));
+                    }
+                }
+                note(self, true);
+                void(self)
+            }
+            "every_us" | "every_ms" => {
+                if tid != TimerId::T2 {
+                    self.d.error("PYP2123", e.span, format!("{name}.{method}: solo Timer2 tiene registro de periodo (PR2); con {name} usa start(...) y set(...) para precargar la cuenta"));
+                    for a in args {
+                        self.expr(a);
+                    }
+                    return void(self);
+                }
+                if !arity(self, 1) {
+                    return void(self);
+                }
+                let a = &args[0];
+                let t = self.expr(a);
+                match (t, self.konst(a)) {
+                    (Type::Error, _) => {}
+                    (t, Some(v)) if matches!(t, Type::Literal | Type::Int { .. }) && v > 0 && v <= u32::MAX as i128 => {
+                        let (n, div) = if method == "every_us" { ("every_us", 1_000_000) } else { ("every_ms", 1_000) };
+                        self.timer_every.push(TimerEvery { expr: e.id, span: e.span, name: n, amount: v, div });
+                        if t == Type::Literal {
+                            self.coerce_literal(a, U32);
+                        }
+                    }
+                    _ => self.d.error("PYP2122", a.span, format!("{name}.{method} necesita una constante mayor que 0: el periodo se resuelve al compilar, a prescaler/PR2/postscaler exactos")),
+                }
+                note(self, true);
+                void(self)
+            }
+            "stop" => {
+                if tid == TimerId::T0 {
+                    self.d.error("PYP2123", e.span, "TMR0 no se puede detener: cuenta mientras haya reloj. Para dejar de usarlo cambia a un reloj externo parado o ignora la bandera");
+                    return void(self);
+                }
+                if arity(self, 0) {
+                    self.timer_calls.insert(e.id, TimerCall { timer: tid, op: TimerOp::Stop });
+                }
+                note(self, false);
+                void(self)
+            }
+            "value" => {
+                if arity(self, 0) {
+                    self.timer_calls.insert(e.id, TimerCall { timer: tid, op: TimerOp::Value });
+                }
+                note(self, false);
+                self.set(e, ret_ty(tid), None)
+            }
+            "set" => {
+                if arity(self, 1) {
+                    self.expect(&args[0], ret_ty(tid), Some(&format!("{name}.set recibe un {}", ret_ty(tid))));
+                    self.timer_calls.insert(e.id, TimerCall { timer: tid, op: TimerOp::Set });
+                }
+                note(self, false);
+                void(self)
+            }
+            "expired" => {
+                if arity(self, 0) {
+                    self.timer_calls.insert(e.id, TimerCall { timer: tid, op: TimerOp::Expired });
+                }
+                note(self, false);
+                self.set(e, Type::Bool, None)
+            }
+            "clear" | "interrupt_on" | "interrupt_off" => {
+                if arity(self, 0) {
+                    let op = match method {
+                        "clear" => TimerOp::Clear,
+                        "interrupt_on" => TimerOp::InterruptOn,
+                        _ => TimerOp::InterruptOff,
+                    };
+                    self.timer_calls.insert(e.id, TimerCall { timer: tid, op });
+                }
+                note(self, false);
+                void(self)
+            }
+            other => {
+                self.d.error("PYP2124", e.span, format!("un temporizador no tiene el metodo '{other}' (disponibles: start, every_us, every_ms, stop, value, set, expired, clear, interrupt_on, interrupt_off)"));
+                for a in args {
+                    self.expr(a);
+                }
+                self.set(e, Type::Error, None)
+            }
+        }
+    }
+
+    /// Reloj efectivo para resolver tiempos: el declarado o, con aviso, el del dispositivo.
+    fn effective_clock(&mut self, span: Span, who: &str) -> Option<u32> {
+        if let Some(hz) = self.clock_hz {
+            return Some(hz);
+        }
+        match self.target.default_clock_hz {
+            Some(def) => {
+                self.d.warning(
+                    "PYP3004",
+                    span,
+                    format!("no se declaro CLOCK_HZ: se usa el reloj por defecto de {} ({def} Hz); declara 'CLOCK_HZ: Final[u32] = {def}' para fijarlo y quitar este aviso", self.target.name),
+                );
+                self.clock_hz = Some(def);
+                self.clock_defaulted = true;
+                Some(def)
+            }
+            None => {
+                self.d.error("PYP2101", span, format!("{who} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK_HZ: Final[u32] = 4_000_000'"));
+                None
+            }
+        }
+    }
+
+    /// Reglas globales de los temporizadores: iniciarlos, pines que reclaman y periodos `every_*`.
+    fn check_timer_usage(&mut self) {
+        for (t, sp) in std::mem::take(&mut self.timer_needs) {
+            if !self.timer_started.contains(&t) {
+                self.d.error("PYP2121", sp, format!("{0} se usa pero nunca se inicia: llama a {0}.start(...) (o {0}.every_ms(...)) en algun punto del programa", t.name()));
+            }
+        }
+        for (func, pin, sp) in std::mem::take(&mut self.timer_pins) {
+            if self.pin_names.contains_key(pin) {
+                self.d.error("PYP2125", sp, format!("el pin {pin} es la entrada {func} del temporizador y tambien se importa como pin de E/S: un pin no puede ser las dos cosas a la vez"));
+            }
+        }
+        let pend = std::mem::take(&mut self.timer_every);
+        let Some(first) = pend.first() else { return };
+        let Some(hz) = self.effective_clock(first.span, first.name) else { return };
+        let Some(cpc) = self.target.clocks_per_cycle else {
+            self.d.error("PYP2101", first.span, format!("{} necesita un dispositivo declarado: los ciclos de instruccion dependen del dispositivo", first.name));
+            return;
+        };
+        for p in pend {
+            let den = cpc as u128 * p.div;
+            let num = p.amount as u128 * hz as u128;
+            if num % den != 0 {
+                self.d.error(
+                    "PYP2126",
+                    p.span,
+                    format!("{}({}) no cae en un numero entero de ciclos de instruccion a {hz} Hz (un ciclo dura {:.1} ns): el periodo de Timer2 es un multiplo exacto del ciclo", p.name, p.amount, cpc as f64 * 1e9 / hz as f64),
+                );
+                continue;
+            }
+            let cycles = (num / den) as u64;
+            match timer::solve_t2(cycles) {
+                Some(st) => {
+                    self.timer_calls.insert(p.expr, TimerCall { timer: TimerId::T2, op: TimerOp::Start(st) });
+                }
+                None => {
+                    let (lo, hi) = timer::nearest_t2(cycles);
+                    let near = match (lo, hi) {
+                        (Some(l), Some(h)) => format!("los periodos exactos mas cercanos son {l} y {h} ciclos"),
+                        (Some(l), None) => format!("el periodo exacto mas largo es {l} ciclos"),
+                        (None, Some(h)) => format!("el periodo exacto mas corto es {h} ciclos"),
+                        (None, None) => String::new(),
+                    };
+                    self.d.error(
+                        "PYP2126",
+                        p.span,
+                        format!("{}({}) son {cycles} ciclos y Timer2 no puede dar ese periodo exacto (prescaler 1/4/16 x PR2+1 de 1 a 256 x postscaler 1 a 16 = {} ciclos como maximo); {near}; usa TMR2.start(...) con otros valores", p.name, p.amount, timer::T2_MAX_CYCLES),
+                    );
+                }
+            }
+        }
+    }
+
+    fn method_call(&mut self, e: &Expr, obj: &str, obj_span: Span, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
+        if let Some(&tid) = self.timer_names.get(obj) {
+            return self.timer_method(e, tid, method, args, kwargs);
+        }
+        if let Some(k) = kwargs.first() {
+            if self.pin_names.contains_key(obj) {
+                self.d.error("PYP2082", k.name_span, format!("los metodos de un pin no aceptan argumentos con nombre ('{}')", k.name));
+            }
+            for k in kwargs {
+                self.expr(&k.value);
+            }
+        }
         let Some(&pi) = self.pin_names.get(obj) else {
             let hint = if self.pin_info(obj).is_some() { format!("; importalo con 'from pypic.periph.gpio import {obj}'") } else { String::new() };
             self.d.error("PYP2078", obj_span, format!("'{obj}' no es un pin importado{hint}"));
@@ -678,7 +1085,7 @@ impl<'a> Checker<'a> {
             self.d.error("PYP2002", f.name.span, format!("funcion '{}' ya definida", f.name.name));
             return;
         }
-        if self.pin_names.contains_key(&f.name.name) || self.time_fns.contains_key(&f.name.name) {
+        if self.pin_names.contains_key(&f.name.name) || self.time_fns.contains_key(&f.name.name) || self.timer_names.contains_key(&f.name.name) || self.timer_consts.contains(&f.name.name) {
             self.d.error("PYP2009", f.name.span, format!("'{}' ya esta declarado (es un pin o una funcion del SDK importados)", f.name.name));
             return;
         }
@@ -769,7 +1176,7 @@ impl<'a> Checker<'a> {
         let exists = if is_global { self.globals.contains_key(name) } else { self.locals.contains_key(name) };
         if !is_global && self.globals.contains_key(name) {
             self.d.error("PYP2008", v.name.span, format!("'{name}' oculta una variable global del mismo nombre"));
-        } else if exists || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.time_fns.contains_key(name) {
+        } else if exists || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.time_fns.contains_key(name) || self.timer_names.contains_key(name) || self.timer_consts.contains(name) {
             self.d.error("PYP2009", v.name.span, format!("'{name}' ya esta declarado"));
         }
         let mut konst = None;
@@ -1183,7 +1590,7 @@ impl<'a> Checker<'a> {
             ExprKind::Binary(op, l, r) => self.binary(e, *op, l, r),
             ExprKind::Compare(op, l, r) => self.compare(e, *op, l, r),
             ExprKind::Call { func, args, .. } => self.call(e, func, args),
-            ExprKind::MethodCall { obj, obj_span, method, args } => self.method_call(e, obj, *obj_span, method, args),
+            ExprKind::MethodCall { obj, obj_span, method, args, kwargs } => self.method_call(e, obj, *obj_span, method, args, kwargs),
         }
     }
 
@@ -1191,7 +1598,11 @@ impl<'a> Checker<'a> {
         if let Some(sym) = self.lookup(n) {
             return self.set(e, sym.ty, sym.konst);
         }
-        if self.pin_names.contains_key(n) {
+        if self.timer_consts.contains(n) {
+            self.d.error("PYP2128", e.span, format!("'{n}' es una constante de configuracion de temporizadores: solo se usa como argumento de TMRx.start(...)"));
+        } else if self.timer_names.contains_key(n) {
+            self.d.error("PYP2129", e.span, format!("'{n}' es un temporizador: usa sus metodos ({n}.start(...), {n}.value(), {n}.expired()...)"));
+        } else if self.pin_names.contains_key(n) {
             self.d.error("PYP2077", e.span, format!("'{n}' es un pin: usa sus metodos ({n}.on(), {n}.off(), {n}.toggle(), {n}.value())"));
         } else if self.fidx.contains_key(n) {
             self.d.error("PYP2042", e.span, format!("'{n}' es una funcion; llamala con parentesis"));
@@ -1473,7 +1884,7 @@ const PERIPH_MODULES: &[&str] = &["gpio", "adc", "timer", "pwm", "ccp", "eccp", 
 const SYSTEM_MODULES: &[&str] = &["time", "irq", "wdt", "clock", "power", "flash"];
 /// `pypic.soft.*`: implementaciones por software sobre cualquier GPIO (cuestan ciclos de CPU).
 const SOFT_MODULES: &[&str] = &["spi", "i2c", "uart", "onewire"];
-const IMPLEMENTED_MODULES: &[&str] = &["pypic.periph.gpio", "pypic.system.time"];
+const IMPLEMENTED_MODULES: &[&str] = &["pypic.periph.gpio", "pypic.periph.timer", "pypic.system.time"];
 
 /// Problema con la ruta de un modulo `pypic.*` (renombrado, categoria sin modulo, inexistente o aun no implementado).
 /// `None` si es un modulo implementado o no es del arbol de categorias.

@@ -90,7 +90,7 @@ fn backend_options(pack: &DevicePack) -> Result<pypic_pic14::Options, String> {
         config_addr: (cfg[0].address.0, cfg[1].address.0),
         // TODO: por nombre de campo desde el pack (#33)
         config: (pypic_pic14::samples::BLINK_CONFIG1, pypic_pic14::samples::BLINK_CONFIG2),
-        sfr: pack.registers.asm_symbols(),
+        registers: pack.registers.clone(),
     })
 }
 

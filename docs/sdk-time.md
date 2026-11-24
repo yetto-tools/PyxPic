@@ -69,8 +69,6 @@ como dos funciones con el comportamiento de PICAXE tras leer la sección del wat
 
 Cada espera usa 5 bytes de contadores (compartidos por todas las esperas del programa) en el banco 0, solo si el programa las usa.
 
-## Lo que sigue: timers como periféricos
+## Timers
 
-Los timers (Timer0, Timer1, Timer2) son **periféricos**: se declararán en el Device Pack (`peripherals.json`, #23) y se importarán como nombres, igual que los pines
-(`from pypic.periph.timer import TMR1`), validados contra el dispositivo. Objetivo: la misma precisión y flexibilidad que en ensamblador (prescaler, postscaler,
-desbordamiento, lectura/escritura del contador, interrupciones, cristal de 32 kHz de Timer1).
+Los temporizadores son periféricos y tienen su propio documento: `docs/sdk-timer.md` (`from pypic.periph.timer import TMR2`).

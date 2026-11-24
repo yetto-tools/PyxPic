@@ -87,6 +87,16 @@ fn verify_fn(m: &Module, f: &Function, errs: &mut Vec<String>) {
                         e(format!("{}: Delay mal tipado (ciclos/us: constante; ms/s: constante o u16)", at(i)));
                     }
                 }
+                Inst::Timer { call, dst, arg } => {
+                    let width = call.timer.bits();
+                    let want_ty = |t: Type| t.is_int() && t.bits() == width && !t.is_signed();
+                    match call.op {
+                        TimerOp::Value if !dst.is_some_and(|d| valid(d) && want_ty(m.place_ty(f, d))) => e(format!("{}: Timer value necesita un destino de {width} bits sin signo", at(i))),
+                        TimerOp::Expired if !dst.is_some_and(|d| valid(d) && m.place_ty(f, d) == Type::Bool) => e(format!("{}: Timer expired necesita un destino bool", at(i))),
+                        TimerOp::Set if !arg.as_ref().is_some_and(|a| want_ty(ty(a))) => e(format!("{}: Timer set necesita un valor de {width} bits sin signo", at(i))),
+                        _ => {}
+                    }
+                }
                 Inst::PinCfg { pin, .. } | Inst::PinToggle { pin } => {
                     if *pin >= m.pins.len() {
                         e(format!("{}: pin invalido", at(i)));

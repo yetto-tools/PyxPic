@@ -14,6 +14,8 @@ pub enum Trap {
     BadArgs,
     /// Las funciones `@asm_function` solo existen en el dispositivo: el interprete de referencia no las ejecuta.
     AsmFunction(String),
+    /// Los temporizadores son hardware: el interprete de referencia no los modela (se prueban en el simulador del nucleo).
+    Timer(String),
 }
 
 pub struct Machine<'m> {
@@ -204,6 +206,7 @@ impl<'m> Machine<'m> {
                 let v = self.read(fr, src);
                 self.write(f, fr, *dst, v);
             }
+            Inst::Timer { call, .. } => return Err(Trap::Timer(call.timer.name().to_string())),
             Inst::Delay { unit, amount } => {
                 let v = self.read(fr, amount);
                 self.delays.push((*unit, v));

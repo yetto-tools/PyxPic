@@ -23,7 +23,7 @@ Quien hoy escribe en ensamblador debe poder escribir lo mismo aquí, con menos e
 | Interrupciones con guardado de contexto | ✅ `@interrupt` |
 | Arranque y configuración inicial | ✅ `@init_device`, `CLOCK_HZ`, declaración del dispositivo |
 | Bajo consumo (`SLEEP`, watchdog) | ⏳ `nap`/`sleep` reservadas (#38) |
-| Timers (prescaler, desbordamiento, interrupciones) | ⏳ periféricos importables (#39) |
+| Timers (prescaler, desbordamiento, interrupciones) | ✅ `pypic.periph.timer`, `docs/sdk-timer.md` (#39) |
 | **Acceso directo a cualquier registro (SFR) y a sus bits** | ⏳ #40 (necesita `registers.json`, #22) |
 | **Rotación por el acarreo, `SWAPF`, prueba/puesta de bits y banderas C/Z/DC** | ⏳ #41 |
 | Ensamblador textual de las 35 instrucciones (`pypic asm`) | ✅ `docs/asm-pic14.md` |

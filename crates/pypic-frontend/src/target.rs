@@ -39,11 +39,18 @@ pub struct TargetProfile {
     pub clocks_per_cycle: Option<u32>,
     /// Reloj del dispositivo tras el reset con la configuracion por defecto (p. ej. 4 MHz con el oscilador interno).
     pub default_clock_hz: Option<u32>,
+    /// Perifericos del dispositivo (`TIMER0`, `ADC`... de `peripherals.json`). `None` = sin validar.
+    pub peripherals: Option<std::collections::BTreeSet<String>>,
 }
 
 impl TargetProfile {
     pub fn new(name: impl Into<String>, native_bits: u32, max_int_bits: u32) -> Self {
-        TargetProfile { name: name.into(), native_bits, max_int_bits, stack_levels: None, pins: None, device: None, max_clock_hz: None, clocks_per_cycle: None, default_clock_hz: None }
+        TargetProfile { name: name.into(), native_bits, max_int_bits, stack_levels: None, pins: None, device: None, max_clock_hz: None, clocks_per_cycle: None, default_clock_hz: None, peripherals: None }
+    }
+
+    pub fn with_peripherals(mut self, names: impl IntoIterator<Item = String>) -> Self {
+        self.peripherals = Some(names.into_iter().collect());
+        self
     }
 
     pub fn with_device(mut self, name: impl Into<String>, max_clock_hz: u32) -> Self {

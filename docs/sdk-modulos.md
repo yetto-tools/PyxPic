@@ -13,7 +13,7 @@ from pypic.system.time import pause           # sistema: CPU, reloj y energía
 
 | Categoría | Qué es | Módulos |
 |---|---|---|
-| `pypic.periph.*` | **Hardware integrado del chip**; solo existe si el dispositivo lo tiene (lo valida el Device Pack) | `gpio` ✅, `adc`, `timer`, `pwm`, `ccp`, `eccp`, `uart`, `spi`, `i2c`, `comparator`, `vref`, `eeprom`, `latch` |
+| `pypic.periph.*` | **Hardware integrado del chip**; solo existe si el dispositivo lo tiene (lo valida el Device Pack) | `gpio` ✅, `timer` ✅ (`docs/sdk-timer.md`), `adc`, `pwm`, `ccp`, `eccp`, `uart`, `spi`, `i2c`, `comparator`, `vref`, `eeprom`, `latch` |
 | `pypic.system.*` | **CPU, reloj y energía** | `time` ✅ (`pause`, `wait`, `delay_us`, `delay_cycles`; `nap`/`sleep` reservadas), `irq`, `wdt`, `clock`, `power`, `flash` |
 | `pypic.soft.*` | **Implementaciones por software** de protocolos, sobre cualquier GPIO | `spi`, `i2c`, `uart`, `onewire` |
 
@@ -38,5 +38,5 @@ from pypic.system.time import pause           # sistema: CPU, reloj y energía
 
 ## Pendiente
 
-Cada módulo reservado se implementa con su issue: timers (#39), `nap`/`sleep` (#38), y el resto del catálogo (`docs/catalogo-pic16f887.md`, #23). Todos dependen de que el Device Pack
+Cada módulo reservado se implementa con su issue: `nap`/`sleep` (#38), y el resto del catálogo (`docs/catalogo-pic16f887.md`, #23). Todos dependen de que el Device Pack
 describa los periféricos y los registros (`peripherals.json`, `registers.json`, #22/#23): ahí se declara qué módulos de `pypic.periph` existen en cada dispositivo.

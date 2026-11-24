@@ -8,7 +8,8 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
-use pypic_ir::ir::{BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, Terminator, Type, UnaryOp};
+use pypic_ir::ir::{BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, Terminator, TimerCall, TimerId, TimerOp, TimerStart, Type, UnaryOp};
+use pypic_frontend::timer::{GateSource, TimerSource};
 
 use crate::asm::{assemble_fragment, AsmError, FragItem};
 use crate::hex::Image;
@@ -97,14 +98,14 @@ pub struct Options {
     pub config: (u16, u16),
     /// Relojes del oscilador por ciclo de instruccion (4 en PIC16): convierte tiempo en ciclos.
     pub clocks_per_cycle: u32,
-    /// Registros y bits que el ensamblador en linea conoce por nombre (desplazamiento de 7 bits y numero de bit):
-    /// salen de `registers.json` del Device Pack.
-    pub sfr: Vec<(String, u8)>,
+    /// Mapa de registros del dispositivo (`registers.json` del Device Pack): el ensamblador en linea y los
+    /// temporizadores los usan por nombre.
+    pub registers: pypic_device::Registers,
 }
 
 /// Registros del PIC16F887 (`devices/pic16f887/registers.json`, incluido en el binario) para los usos sin pack.
-fn builtin_sfr() -> Vec<(String, u8)> {
-    pypic_device::Registers::parse(include_str!("../../../devices/pic16f887/registers.json")).expect("registers.json incluido es valido").asm_symbols()
+fn builtin_registers() -> pypic_device::Registers {
+    pypic_device::Registers::parse(include_str!("../../../devices/pic16f887/registers.json")).expect("registers.json incluido es valido")
 }
 
 impl Default for Options {
@@ -119,7 +120,7 @@ impl Default for Options {
             config_addr: (CONFIG1, CONFIG2),
             config: (BLINK_CONFIG1, BLINK_CONFIG2),
             clocks_per_cycle: 4,
-            sfr: builtin_sfr(),
+            registers: builtin_registers(),
         }
     }
 }
@@ -323,7 +324,7 @@ struct Gen<'a> {
     clock_hz: Option<u32>,
     cpc: u32,
     timing: Vec<DelayReport>,
-    sfr: Vec<(String, u8)>,
+    registers: pypic_device::Registers,
 }
 
 impl<'a> Gen<'a> {
@@ -838,6 +839,7 @@ impl<'a> Gen<'a> {
             I::Cast { dst, src } => self.cast(*dst, src),
             I::Call { dst, func, args } => self.call_inst(*dst, *func, args),
             I::Delay { unit, amount } => self.delay(*unit, amount),
+            I::Timer { call, dst, arg } => self.timer(call, *dst, arg.as_ref()),
             I::PinCfg { pin, output } => self.pin_cfg(*pin, *output),
             I::PinSet { pin, value } => self.pin_set(*pin, value),
             I::PinToggle { pin } => {
@@ -887,9 +889,10 @@ impl<'a> Gen<'a> {
         let m = self.m;
         let f = &m.functions[fi];
         let a = f.asm.as_ref().expect("funcion de ensamblador");
-        let mut ext: BTreeMap<String, i64> = self.sfr.iter().map(|(n, v)| (n.clone(), *v as i64)).collect();
+        let syms = self.registers.asm_symbols();
+        let mut ext: BTreeMap<String, i64> = syms.iter().map(|(n, v)| (n.clone(), *v as i64)).collect();
         ext.insert("RETV".into(), RETV_MAIN as i64);
-        let reserved = |n: &str| (n == "RETV" || self.sfr.iter().any(|(s, _)| s == n)) && a.text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).any(|w| w == n);
+        let reserved = |n: &str| (n == "RETV" || syms.iter().any(|(s, _)| s == n)) && a.text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).any(|w| w == n);
         let mut clashes = Vec::new();
         for (i, g) in m.globals.iter().enumerate() {
             if reserved(&g.name) {
@@ -1031,7 +1034,7 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
     let isr_ctx = reach(m, &isrs);
 
     let al = allocate(m, &live, opts)?;
-    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new(), sfr: opts.sfr.clone() };
+    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new(), registers: opts.registers.clone() };
     for &fi in &live {
         let l = g.asm.label(m.functions[fi].name.clone());
         g.fn_labels.insert(fi, l);
@@ -1153,4 +1156,242 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
         .collect();
     let functions = live.iter().map(|&fi| (m.functions[fi].name.clone(), addr_of[g.fn_labels[&fi]].unwrap())).collect();
     Ok(Compiled { timing: g.timing, image, globals, functions, listing, flash_words, ram_bytes: g.al.used })
+}
+
+// ---- temporizadores (pypic.periph.timer) ---------------------------------------------------------------
+// Los registros y bits salen del Device Pack (registers.json) por nombre; ver docs/sdk-timer.md para el
+// equivalente en ensamblador de cada operacion.
+impl<'a> Gen<'a> {
+    fn reg_addr(&self, name: &str) -> Result<u16, CodegenError> {
+        self.registers.get(name).map(|r| r.addresses[0].0 as u16).ok_or_else(|| CodegenError::Device(format!("el Device Pack no define el registro {name}")))
+    }
+
+    /// (direccion del registro, numero de bit) del bit con nombre `name`.
+    fn bit_loc(&self, name: &str) -> Result<(u16, u8), CodegenError> {
+        for r in &self.registers.registers {
+            if let Some(i) = r.bits.iter().position(|b| b.as_deref() == Some(name)) {
+                return Ok((r.addresses[0].0 as u16, i as u8));
+            }
+        }
+        Err(CodegenError::Device(format!("el Device Pack no define el bit {name}")))
+    }
+
+    fn bit_pos(&self, name: &str) -> Result<u8, CodegenError> {
+        Ok(self.bit_loc(name)?.1)
+    }
+
+    /// Direccion de 7 bits de un registro del banco 0 (donde viven los datos del compilador).
+    fn reg_bank0(&self, name: &str) -> Result<u8, CodegenError> {
+        let a = self.reg_addr(name)?;
+        if a > 0x7F {
+            return Err(CodegenError::Unsupported(format!("{name} no esta en el banco 0")));
+        }
+        Ok(a as u8)
+    }
+
+    /// Selecciona el banco de `addr`, ejecuta `body` con su desplazamiento de 7 bits y vuelve al banco 0 (ABI).
+    fn banked(&mut self, addr: u16, body: impl FnOnce(&mut Self, u8)) {
+        let bank = (addr >> 7) & 3;
+        if bank & 1 != 0 {
+            self.asm.i(Bsf(STATUS, BIT_RP0));
+        }
+        if bank & 2 != 0 {
+            self.asm.i(Bsf(STATUS, BIT_RP1));
+        }
+        body(self, (addr & 0x7F) as u8);
+        if bank & 1 != 0 {
+            self.asm.i(Bcf(STATUS, BIT_RP0));
+        }
+        if bank & 2 != 0 {
+            self.asm.i(Bcf(STATUS, BIT_RP1));
+        }
+    }
+
+    fn bit_op(&mut self, name: &str, set: bool) -> Result<(), CodegenError> {
+        let (addr, b) = self.bit_loc(name)?;
+        self.banked(addr, |g, f| g.asm.i(if set { Bsf(f, b) } else { Bcf(f, b) }));
+        Ok(())
+    }
+
+    fn timer_flag(t: TimerId) -> &'static str {
+        match t {
+            TimerId::T0 => "T0IF",
+            TimerId::T1 => "TMR1IF",
+            TimerId::T2 => "TMR2IF",
+        }
+    }
+
+    fn timer_enable(t: TimerId) -> &'static str {
+        match t {
+            TimerId::T0 => "T0IE",
+            TimerId::T1 => "TMR1IE",
+            TimerId::T2 => "TMR2IE",
+        }
+    }
+
+    fn timer(&mut self, call: &TimerCall, dst: Option<Place>, arg: Option<&Operand>) -> Result<(), CodegenError> {
+        let t = call.timer;
+        match call.op {
+            TimerOp::Start(st) => match t {
+                TimerId::T0 => self.t0_start(&st),
+                TimerId::T1 => self.t1_start(&st),
+                TimerId::T2 => self.t2_start(&st),
+            },
+            TimerOp::Stop => match t {
+                TimerId::T1 => self.bit_op("TMR1ON", false),
+                TimerId::T2 => self.bit_op("TMR2ON", false),
+                TimerId::T0 => unsupported("TMR0.stop no existe en el hardware"),
+            },
+            TimerOp::Value => {
+                let d = self.regs(dst.expect("Value lleva destino"))?;
+                match t {
+                    TimerId::T0 | TimerId::T2 => {
+                        let r = self.reg_bank0(if t == TimerId::T0 { "TMR0" } else { "TMR2" })?;
+                        self.asm.i(Movf(r, W));
+                        self.st(d[0]);
+                    }
+                    TimerId::T1 => {
+                        // lectura de 16 bits coherente: H, L, H; si H cambio entre las dos lecturas se repite (DS40001291H 6.5.1)
+                        let (h, l) = (self.reg_bank0("TMR1H")?, self.reg_bank0("TMR1L")?);
+                        let retry = self.asm.label("tmr1.read");
+                        self.asm.place(retry);
+                        self.asm.i(Movf(h, W));
+                        self.st(d[1]);
+                        self.asm.i(Movf(l, W));
+                        self.st(d[0]);
+                        self.asm.i(Movf(h, W));
+                        self.asm.i(Subwf(d[1], W));
+                        self.asm.i(Btfss(STATUS, BIT_Z));
+                        self.asm.goto(retry);
+                    }
+                }
+                Ok(())
+            }
+            TimerOp::Set => {
+                let b = self.bytes(arg.expect("Set lleva valor"))?;
+                match t {
+                    TimerId::T0 | TimerId::T2 => {
+                        let r = self.reg_bank0(if t == TimerId::T0 { "TMR0" } else { "TMR2" })?;
+                        self.ld(b[0]);
+                        self.st(r);
+                    }
+                    TimerId::T1 => {
+                        // se pone a cero el byte bajo antes de escribir el alto para que un acarreo no ensucie la escritura
+                        let (h, l) = (self.reg_bank0("TMR1H")?, self.reg_bank0("TMR1L")?);
+                        self.asm.i(Clrf(l));
+                        self.ld(b[1]);
+                        self.st(h);
+                        self.ld(b[0]);
+                        self.st(l);
+                    }
+                }
+                Ok(())
+            }
+            TimerOp::Expired => {
+                let (addr, bit) = self.bit_loc(Self::timer_flag(t))?;
+                if addr > 0x7F {
+                    return unsupported("la bandera del temporizador no esta en el banco 0");
+                }
+                let d = self.regs(dst.expect("Expired lleva destino"))?[0];
+                self.asm.i(Clrf(d));
+                self.asm.i(Btfsc(addr as u8, bit));
+                self.asm.i(Incf(d, F));
+                Ok(())
+            }
+            TimerOp::Clear => self.bit_op(Self::timer_flag(t), false),
+            TimerOp::InterruptOn => {
+                self.bit_op(Self::timer_enable(t), true)?;
+                if t != TimerId::T0 {
+                    self.bit_op("PEIE", true)?; // las interrupciones de perifericos pasan por PEIE
+                }
+                Ok(())
+            }
+            TimerOp::InterruptOff => self.bit_op(Self::timer_enable(t), false),
+        }
+    }
+
+    /// Timer0: bits de OPTION_REG uno a uno (no se pisa RBPU ni INTEDG) y la secuencia del datasheet para
+    /// cambiar la asignacion del preescalador (ejemplos 5-1 y 5-2, p.76).
+    fn t0_start(&mut self, st: &TimerStart) -> Result<(), CodegenError> {
+        let opt = self.reg_addr("OPTION_REG")?;
+        let (t0cs, t0se, psa) = (self.bit_pos("T0CS")?, self.bit_pos("T0SE")?, self.bit_pos("PSA")?);
+        let external = st.source == TimerSource::T0cki;
+        let edge_falling = external && st.falling;
+        if st.prescaler >= 2 {
+            let ps = (st.prescaler.trailing_zeros() - 1) as u8; // 2 -> 000 ... 256 -> 111
+            self.asm.i(Clrwdt);
+            self.banked(opt, |g, f| {
+                g.asm.i(if external { Bsf(f, t0cs) } else { Bcf(f, t0cs) });
+                g.asm.i(if edge_falling { Bsf(f, t0se) } else { Bcf(f, t0se) });
+                g.asm.i(Movlw(0xF0)); // conserva RBPU, INTEDG, T0CS y T0SE; pone PSA = 0 y PS<2:0>
+                g.asm.i(Andwf(f, W));
+                g.asm.i(Iorlw(ps));
+                g.asm.i(Movwf(f));
+            });
+        } else {
+            // 1:1: el preescalador pasa al WDT (PSA = 1)
+            let tmr0 = self.reg_bank0("TMR0")?;
+            self.asm.i(Clrwdt);
+            self.asm.i(Clrf(tmr0)); // pone a cero TMR0 y el preescalador
+            self.banked(opt, |g, f| {
+                g.asm.i(Bsf(f, psa));
+                g.asm.i(Clrwdt);
+                g.asm.i(if external { Bsf(f, t0cs) } else { Bcf(f, t0cs) });
+                g.asm.i(if edge_falling { Bsf(f, t0se) } else { Bcf(f, t0se) });
+                g.asm.i(Movlw(0xF8));
+                g.asm.i(Andwf(f, W));
+                g.asm.i(Iorlw(0x05)); // el valor del ejemplo 5-1: el preescalador del WDT a 1:32
+                g.asm.i(Movwf(f));
+            });
+            // Movwf(f) borra PSA con la mascara 0xF8 solo en los bits PS; PSA queda en 1 porque 0xF8 lo conserva
+        }
+        Ok(())
+    }
+
+    /// Timer1: todo T1CON se escribe de una vez (todos sus bits son de Timer1); la fuente de la compuerta
+    /// (T1GSS) esta en CM2CON1.
+    fn t1_start(&mut self, st: &TimerStart) -> Result<(), CodegenError> {
+        let external = st.source != TimerSource::Internal;
+        let mut v: u8 = 0;
+        for (name, on) in [("TMR1ON", true), ("TMR1CS", external), ("T1SYNC", external && !st.sync), ("T1OSCEN", st.source == TimerSource::T1osc)] {
+            if on {
+                v |= 1 << self.bit_pos(name)?; // T1SYNC = 1: no sincronizar
+            }
+        }
+        v |= (st.prescaler.trailing_zeros() as u8) << self.bit_pos("T1CKPS0")?; // 1,2,4,8 -> 0..3
+        if let Some(g) = st.gate {
+            v |= 1 << self.bit_pos("TMR1GE")?;
+            if g.active_high {
+                v |= 1 << self.bit_pos("T1GINV")?;
+            }
+            let gss = g.source == GateSource::T1g;
+            self.bit_op("T1GSS", gss)?;
+            if gss {
+                self.bit_op("ANS13", false)?; // RB5/AN13/T1G arranca como analogico
+            }
+        }
+        let t1con = self.reg_bank0("T1CON")?;
+        self.asm.i(Movlw(v));
+        self.asm.i(Movwf(t1con));
+        Ok(())
+    }
+
+    /// Timer2: TMR2 a cero, PR2 y despues T2CON con TMR2ON; el periodo de la bandera es
+    /// `prescaler * (PR2 + 1) * postscaler` ciclos de instruccion.
+    fn t2_start(&mut self, st: &TimerStart) -> Result<(), CodegenError> {
+        let (tmr2, t2con) = (self.reg_bank0("TMR2")?, self.reg_bank0("T2CON")?);
+        let pr2 = self.reg_addr("PR2")?;
+        let ckps: u8 = match st.prescaler {
+            1 => 0,
+            4 => 1,
+            _ => 2,
+        };
+        let v = (((st.postscaler - 1) as u8) << self.bit_pos("TOUTPS0")?) | (1 << self.bit_pos("TMR2ON")?) | (ckps << self.bit_pos("T2CKPS0")?);
+        self.asm.i(Clrf(tmr2)); // escribir T2CON no pone a cero TMR2 (p.83)
+        self.asm.i(Movlw(st.period as u8));
+        self.banked(pr2, |g, f| g.asm.i(Movwf(f)));
+        self.asm.i(Movlw(v));
+        self.asm.i(Movwf(t2con));
+        Ok(())
+    }
 }

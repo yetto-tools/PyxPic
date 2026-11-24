@@ -664,21 +664,42 @@ impl<'a> Parser<'a> {
         Ok(self.mk(span, ExprKind::Unary(op, Box::new(e))))
     }
 
-    fn call_args(&mut self) -> R<Vec<Expr>> {
+    /// Argumentos de una llamada. Los de nombre (`prescaler=16`) solo se admiten en los metodos de los
+    /// perifericos del SDK (`allow_kw`); van despues de los posicionales y sin repetirse.
+    fn call_args_kw(&mut self, allow_kw: bool) -> R<(Vec<Expr>, Vec<Kwarg>)> {
         self.expect(Tok::LParen, "'('")?;
         let mut args = Vec::new();
+        let mut kwargs: Vec<Kwarg> = Vec::new();
         while !self.at(&Tok::RParen) {
             if matches!(self.peek(), Tok::Ident(_)) && *self.peek_at(1) == Tok::Assign {
                 let sp = self.span();
-                return self.err("PYP1024", sp, "argumentos con nombre no soportados");
+                if !allow_kw {
+                    return self.err("PYP1024", sp, "los argumentos con nombre solo se admiten en los metodos de los perifericos del SDK (TMR2.start(prescaler=16, ...))");
+                }
+                let name = self.ident("el nombre del argumento")?;
+                self.bump(); // '='
+                if kwargs.iter().any(|k| k.name == name.name) {
+                    return self.err("PYP1028", name.span, format!("el argumento '{}' esta repetido", name.name));
+                }
+                let value = self.expr()?;
+                kwargs.push(Kwarg { name: name.name, name_span: name.span, value });
+            } else {
+                if !kwargs.is_empty() {
+                    let sp = self.span();
+                    return self.err("PYP1027", sp, "un argumento posicional no puede ir despues de uno con nombre");
+                }
+                args.push(self.expr()?);
             }
-            args.push(self.expr()?);
             if !self.eat(&Tok::Comma) {
                 break;
             }
         }
         self.expect(Tok::RParen, "')'")?;
-        Ok(args)
+        Ok((args, kwargs))
+    }
+
+    fn call_args(&mut self) -> R<Vec<Expr>> {
+        Ok(self.call_args_kw(false)?.0)
     }
 
     fn atom(&mut self) -> R<Expr> {
@@ -719,9 +740,9 @@ impl<'a> Parser<'a> {
                         self.bump();
                         let attr = self.ident("un nombre despues del punto")?;
                         if self.at(&Tok::LParen) {
-                            let args = self.call_args()?;
+                            let (args, kwargs) = self.call_args_kw(true)?;
                             let span = sp.to(self.prev_span());
-                            self.mk(span, ExprKind::MethodCall { obj: s, obj_span: sp, method: attr.name, args })
+                            self.mk(span, ExprKind::MethodCall { obj: s, obj_span: sp, method: attr.name, args, kwargs })
                         } else {
                             return self.err("PYP1026", sp.to(attr.span), "el acceso a atributos (a.b) no esta soportado; los pines usan metodos, p. ej. RD0.toggle()");
                         }

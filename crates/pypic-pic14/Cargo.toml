@@ -7,6 +7,6 @@ description = "PyPIC PIC14 (PIC16 classic) backend: instruction set model, encod
 [dependencies]
 pypic-ir = { path = "../pypic-ir" }
 pypic-device = { path = "../pypic-device" }
+pypic-frontend = { path = "../pypic-frontend" }
 
 [dev-dependencies]
-pypic-frontend = { path = "../pypic-frontend" }
