@@ -158,3 +158,31 @@ fn removed_aliases_point_to_the_single_name() {
     assert_eq!(o.status.code(), Some(1));
     assert!(text(&o).contains("PYP2104") && text(&o).contains("pause"), "{}", text(&o));
 }
+
+// ---- ensamblador ---------------------------------------------------------------------------------------
+
+#[test]
+fn asm_reproduces_the_proteus_verified_hex_byte_for_byte() {
+    let out = tmp("asm").join("blink_rd0.hex");
+    let o = pypic(&root(), &["asm", "examples/asm/blink_rd0.asm", "-o", out.to_str().unwrap()]);
+    assert!(o.status.success(), "{}", text(&o));
+    let made = std::fs::read_to_string(&out).unwrap().replace("\r\n", "\n");
+    let verified = std::fs::read_to_string(root().join("examples/hex/blink_rd0.hex")).unwrap().replace("\r\n", "\n");
+    assert_eq!(made, verified);
+}
+
+#[test]
+fn asm_lists_and_reports_errors_with_location() {
+    let dir = tmp("asmerr");
+    let good = dir.join("g.asm");
+    std::fs::write(&good, "    MOVLW 0x2A\n").unwrap();
+    let o = pypic(&root(), &["asm", good.to_str().unwrap(), "-o", dir.join("g.hex").to_str().unwrap(), "--listing"]);
+    assert!(o.status.success() && text(&o).contains("0000 302A      MOVLW 0x2A"), "{}", text(&o));
+    let bad = dir.join("b.asm");
+    std::fs::write(&bad, "    MOVLB 1\n    MOVLW 999\n").unwrap();
+    let o = pypic(&root(), &["asm", bad.to_str().unwrap(), "-o", dir.join("b.hex").to_str().unwrap()]);
+    assert_eq!(o.status.code(), Some(1));
+    let t = text(&o);
+    assert!(t.contains(":1:5: error[ASM002]") && t.contains(":2:11: error[ASM004]"), "{t}");
+    assert!(!dir.join("b.hex").exists());
+}

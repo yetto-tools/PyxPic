@@ -4,12 +4,14 @@
 //! palabras de 14 bits, desensamblador (verificado contra DS40001291H p.227) y
 //! escritor/lector de Intel HEX.
 
+pub mod asm;
 pub mod codegen;
 pub mod hex;
 pub mod isa;
 pub mod samples;
 pub mod sim;
 
+pub use asm::{assemble, render_errors, AsmError, Assembled};
 pub use codegen::{compile, CodegenError, Compiled, DelayReport, Options};
 pub use hex::{HexError, Image};
 pub use isa::{disassemble, Cycles, Dest, EncodeError, Flag, Inst};

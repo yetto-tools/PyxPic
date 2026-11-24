@@ -9,6 +9,7 @@ const USAGE: &str = "uso:
   pypic check <archivo.py> [opciones]
   pypic ir <archivo.py> [opciones]
   pypic build <archivo.py> [-o salida.hex] [--listing] [--timing] [opciones]
+  pypic asm <archivo.asm> [-o salida.hex] [--listing]
   pypic disasm <archivo.hex>
   pypic device validate <directorio-del-pack>
 
@@ -140,9 +141,52 @@ fn main() -> ExitCode {
     match args.first().map(String::as_str) {
         Some("device") => device(&args[1..]),
         Some("disasm") => disasm(&args[1..]),
+        Some("asm") => asm_cmd(&args[1..]),
         Some(c @ ("check" | "ir" | "build")) => compile(c, &args[1..]),
         _ => usage(),
     }
+}
+
+/// Ensambla un `.asm` PIC14 a Intel HEX (ver docs/asm-pic14.md).
+fn asm_cmd(args: &[String]) -> ExitCode {
+    let mut file = None;
+    let mut out_path: Option<String> = None;
+    let mut listing = false;
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "-o" => out_path = it.next().cloned(),
+            "--listing" => listing = true,
+            s if s.starts_with('-') => return usage(),
+            _ if file.is_none() => file = Some(a.clone()),
+            _ => return usage(),
+        }
+    }
+    let Some(file) = file else { return usage() };
+    let src = match std::fs::read_to_string(&file) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("no se pudo leer '{file}': {e}");
+            return ExitCode::from(2);
+        }
+    };
+    let asm = match pypic_pic14::assemble(&src) {
+        Ok(a) => a,
+        Err(errors) => {
+            eprint!("{}", pypic_pic14::render_errors(&errors, &file));
+            return ExitCode::from(1);
+        }
+    };
+    let out_path = out_path.unwrap_or_else(|| Path::new(&file).with_extension("hex").to_string_lossy().into_owned());
+    if let Err(e) = std::fs::write(&out_path, asm.image.to_intel_hex(16)) {
+        eprintln!("no se pudo escribir '{out_path}': {e}");
+        return ExitCode::from(2);
+    }
+    if listing {
+        print!("{}", asm.listing);
+    }
+    println!("{out_path}: {} palabras", asm.image.len());
+    ExitCode::SUCCESS
 }
 
 /// Desensambla un `.hex` (PIC14): util para inspeccionar lo que se carga en Proteus o en un programador.
