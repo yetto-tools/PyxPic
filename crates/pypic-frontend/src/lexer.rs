@@ -9,6 +9,8 @@ pub enum Tok {
     Int(i128),
     /// Contenido literal entre comillas (sin interpretar escapes).
     Str(String, u8),
+    /// `f"..."`: el contenido sin decodificar.
+    FStr(String),
     Newline,
     Indent,
     Dedent,
@@ -119,7 +121,18 @@ impl<'a> Lexer<'a> {
                         self.i += 1;
                     }
                     let s = self.src[start..self.i].to_string();
-                    self.push(Tok::Ident(s), start);
+                    if s == "f" && matches!(self.peek(0), b'"' | b'\'') {
+                        let q = self.peek(0);
+                        self.string(q);
+                        if let Some(Token { tok: Tok::Str(inner, quote), .. }) = self.out.pop() {
+                            if quote == 3 {
+                                self.d.error("PYP0007", Span::new(start, self.i), "las f-strings de tres comillas no estan soportadas");
+                            }
+                            self.push(Tok::FStr(inner), start);
+                        }
+                    } else {
+                        self.push(Tok::Ident(s), start);
+                    }
                 }
                 _ => self.punct(),
             }

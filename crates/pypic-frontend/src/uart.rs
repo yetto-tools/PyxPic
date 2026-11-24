@@ -16,6 +16,8 @@
 //! lee fuera de su ventana. Se avisa por encima de **2,0 %** (el margen para que el otro extremo tambien tenga su error) y es un
 //! error por encima de **4,5 %** (aunque el otro extremo fuera exacto, la comunicacion fallaria).
 
+use crate::ast::{FKind, FSpec};
+
 /// El generador de baudios resuelto: el valor pedido, los bits de modo y `n`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct UartBrg {
@@ -114,6 +116,8 @@ pub enum UartOp {
     Recv9,
     /// `UART.write_text(texto)`: envia los bytes de la tabla `Rom` (indice en `Program.roms`) con `write`; la IR lo desarma en un bucle.
     WriteText(usize),
+    /// `UART.write_text(f"...")`: las partes estan en `Program.uart_fmt` (por id de expresion); la IR lo desarma en bucles y aritmetica.
+    WriteFmt,
 }
 
 impl UartOp {
@@ -124,13 +128,57 @@ impl UartOp {
 
     /// Operaciones de caracteres de 8 bits (las que no valen con `bits=9`).
     pub fn is_8bit_data(self) -> bool {
-        matches!(self, UartOp::Write | UartOp::Send | UartOp::Read | UartOp::Recv | UartOp::WriteText(_))
+        matches!(self, UartOp::Write | UartOp::Send | UartOp::Read | UartOp::Recv | UartOp::WriteText(_) | UartOp::WriteFmt)
     }
 
     /// Operaciones que devuelven un valor sin efectos laterales: sin destino no se emiten.
     pub fn is_pure_read(self) -> bool {
         matches!(self, UartOp::TxReady | UartOp::RxReady | UartOp::Sending | UartOp::Overrun | UartOp::FramingError)
     }
+}
+
+/// Una parte de `write_text(f"...")` ya resuelta por el checker.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FmtPart {
+    /// Texto constante (tambien los campos de valor constante, ya formateados): indice de la `Rom` que lo guarda.
+    Lit(usize),
+    /// Un campo de variable: `ast` es su posicion entre las partes de la f-string del AST, `bits` el ancho del entero (8 o 16) y
+    /// `tables` las `Rom` que usa su conversion: los digitos hexadecimales (X y x) o las potencias de diez, byte bajo y byte alto
+    /// (decimal; el alto solo con 16 bits).
+    Field { ast: usize, bits: u8, spec: FSpec, tables: [Option<usize>; 2] },
+}
+
+/// Potencias de diez de un decimal de 8 bits (100, 10, 1) y de 16 bits (10000, 1000, 100, 10, 1): byte bajo y byte alto.
+pub const POW10_8_LO: &[u8] = &[100, 10, 1];
+pub const POW10_16_LO: &[u8] = &[0x10, 0xE8, 100, 10, 1];
+pub const POW10_16_HI: &[u8] = &[0x27, 0x03, 0, 0, 0];
+
+pub const HEX_UPPER: &[u8; 16] = b"0123456789ABCDEF";
+pub const HEX_LOWER: &[u8; 16] = b"0123456789abcdef";
+
+/// El formato de referencia de un entero sin signo de `bits` bits (8 o 16): es lo que generan el compilador (para los campos de
+/// valor constante) y el codigo del PIC (para los variables), y lo que las pruebas comparan.
+///
+/// * `Dec`: decimal; con ancho, relleno a la izquierda con espacios (o ceros con `zero`); un numero mas ancho no se recorta.
+/// * `X`, `x`, `b`: siempre con ceros a la izquierda, al menos los digitos del tipo (2 o 4 hex, 8 o 16 binarios): ancho fijo.
+pub fn format_uint(v: u16, bits: u8, spec: FSpec) -> Vec<u8> {
+    let v = if bits == 8 { v & 0xFF } else { v };
+    let (radix_digits, shift): (usize, u32) = match spec.kind {
+        FKind::Dec => (0, 0),
+        FKind::HexUpper | FKind::HexLower => (bits as usize / 4, 4),
+        FKind::Bin => (bits as usize, 1),
+    };
+    if spec.kind == FKind::Dec {
+        let s = v.to_string().into_bytes();
+        let w = spec.width as usize;
+        let pad = if spec.zero { b'0' } else { b' ' };
+        let mut out = vec![pad; w.saturating_sub(s.len())];
+        out.extend(s);
+        return out;
+    }
+    let table = if spec.kind == FKind::HexLower { HEX_LOWER } else { HEX_UPPER };
+    let n = radix_digits.max(spec.width as usize);
+    (0..n).rev().map(|j| table[((v as u32 >> (shift * j as u32).min(31)) & ((1 << shift) - 1)) as usize]).collect()
 }
 
 /// Decodifica el contenido de un literal de texto a bytes ASCII: escapes `\n`, `\r`, `\t`, `\0`, `\\`, `\"` y `\'`; cualquier

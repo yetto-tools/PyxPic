@@ -46,6 +46,7 @@ pub fn lower(prog: &Program) -> Module {
                 locals: Vec::new(),
                 lmap: HashMap::new(),
                 temps: Vec::new(),
+                pool: HashMap::new(),
                 blocks: vec![(Vec::new(), None)],
                 cur: 0,
                 loops: Vec::new(),
@@ -68,6 +69,9 @@ struct FnLower<'a> {
     locals: Vec<Local>,
     lmap: HashMap<String, u32>,
     temps: Vec<Type>,
+    /// Temporales del formato de texto, reutilizados por todas las llamadas de la funcion (por papel y tipo): asi el costo en RAM
+    /// no crece con el numero de `write_text` y las f-strings.
+    pool: HashMap<(&'static str, Type), Place>,
     blocks: Vec<(Vec<Inst>, Option<Terminator>)>,
     cur: BlockId,
     /// (destino de break, destino de continue)
@@ -107,6 +111,15 @@ impl<'a> FnLower<'a> {
     fn new_temp(&mut self, ty: Type) -> Place {
         self.temps.push(ty);
         Place::Temp(self.temps.len() as u32 - 1)
+    }
+
+    fn pooled(&mut self, role: &'static str, ty: Type) -> Place {
+        if let Some(&p) = self.pool.get(&(role, ty)) {
+            return p;
+        }
+        let p = self.new_temp(ty);
+        self.pool.insert((role, ty), p);
+        p
     }
 
     fn new_block(&mut self) -> BlockId {
@@ -202,6 +215,11 @@ impl<'a> FnLower<'a> {
                     self.write_text(rom);
                     return;
                 }
+                if call.op == pypic_frontend::UartOp::WriteFmt {
+                    let parts = self.prog.uart_fmt[&e.id].clone();
+                    self.write_fmt(&args[0], &parts);
+                    return;
+                }
                 let arg = matches!(call.op, pypic_frontend::UartOp::Write | pypic_frontend::UartOp::Send | pypic_frontend::UartOp::Write9 | pypic_frontend::UartOp::Send9).then(|| self.value(&args[0]));
                 // las consultas de bandera sin usar no hacen nada; read/recv sacan un byte del FIFO aunque se descarte
                 if call.op.is_pure_read() && dst.is_none() {
@@ -228,7 +246,7 @@ impl<'a> FnLower<'a> {
                 let index = self.value(index);
                 self.emit(Inst::RomGet { dst: dst.unwrap(), rom, index });
             }
-            ExprKind::Str(_) => unreachable!("el frontend rechaza el texto fuera de UART.write_text"),
+            ExprKind::Str(_) | ExprKind::FStr(_) => unreachable!("el frontend rechaza el texto fuera de UART.write_text"),
             ExprKind::List(_) => unreachable!("el frontend rechaza las listas fuera de una tabla"),
             ExprKind::Call { func, args, .. } => {
                 if self.prog.bits_calls.contains_key(&e.id) {
@@ -404,17 +422,172 @@ impl<'a> FnLower<'a> {
     /// el contador daria la vuelta (250 + 10 = 4) y el bucle no terminaria. Al final de
     /// cada iteracion se comprueba el recorrido restante (en el tipo sin signo del mismo
     /// ancho, donde la resta es exacta) y solo se avanza si queda al menos un paso.
+    fn uart_put(&mut self, ch: Operand) {
+        let call = pypic_frontend::UartCall { op: pypic_frontend::UartOp::Write };
+        self.emit(Inst::Uart { call, dst: None, arg: Some(ch) });
+    }
+
+    /// `UART.write_text(f"...")`: cada parte en orden. El texto constante se envia con `write_text`; un campo se convierte con
+    /// aritmetica y bifurcaciones de la IR (sin division ni memoria dinamica) y cada caracter sale con `UART.write`.
+    fn write_fmt(&mut self, arg: &Expr, parts: &[pypic_frontend::FmtPart]) {
+        let ExprKind::FStr(ast) = &arg.kind else { unreachable!("el frontend solo deja f-strings aqui") };
+        for p in parts {
+            match *p {
+                pypic_frontend::FmtPart::Lit(rom) => self.write_text(rom),
+                pypic_frontend::FmtPart::Field { ast: i, bits, spec, tables } => {
+                    let pypic_frontend::ast::FPart::Field { expr, .. } = &ast[i] else { unreachable!("el campo existe en el AST") };
+                    let v = self.value(expr);
+                    if spec.kind == pypic_frontend::ast::FKind::Dec {
+                        self.fmt_decimal(v, bits, spec, tables);
+                    } else {
+                        self.fmt_radix(v, bits, spec, tables);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Decimal por restas sucesivas de 10000, 1000, 100, 10 y 1 (100, 10 y 1 con 8 bits), en un bucle sobre una tabla de potencias de
+    /// diez: sin ceros a la izquierda y con el relleno del ancho pedido. El tamano no depende del ancho; el tiempo depende del
+    /// valor (hasta 9 restas por cifra).
+    fn fmt_decimal(&mut self, v: Operand, bits: u8, spec: pypic_frontend::ast::FSpec, tables: [Option<usize>; 2]) {
+        let u8t = Type::Int { bits: 8, signed: false };
+        let vt = Type::Int { bits, signed: false };
+        let n: i128 = if bits == 8 { 3 } else { 5 };
+        let w = spec.width as i128;
+        let pad = Operand::Const { value: if spec.zero { b'0' } else { b' ' } as i128, ty: u8t };
+        for _ in n..w {
+            self.uart_put(pad);
+        }
+        let cur = self.pooled("cur", vt);
+        self.emit(Inst::Copy { dst: cur, src: v });
+        let started = self.pooled("started", Type::Bool);
+        self.emit(Inst::Copy { dst: started, src: Operand::Const { value: 0, ty: Type::Bool } });
+        let idx = self.pooled("idx", u8t);
+        self.emit(Inst::Copy { dst: idx, src: Operand::Const { value: 0, ty: u8t } });
+        let (header, body, exit) = (self.new_block(), self.new_block(), self.new_block());
+        self.terminate(Terminator::Jump(header));
+        self.cur = header;
+        let c = self.pooled("cond", Type::Bool);
+        self.emit(Inst::Compare { dst: c, op: CmpOp::Lt, lhs: Operand::Place(idx), rhs: Operand::Const { value: n, ty: u8t } });
+        self.terminate(Terminator::Branch { cond: Operand::Place(c), then_bb: body, else_bb: exit });
+        self.cur = body;
+        // p = potencia de diez de esta vuelta, de la tabla (el byte alto solo con 16 bits)
+        let lo = self.pooled("lo", u8t);
+        self.emit(Inst::RomGet { dst: lo, rom: tables[0].expect("el frontend da la tabla de potencias de diez"), index: Operand::Place(idx) });
+        let p = if bits == 8 {
+            Operand::Place(lo)
+        } else {
+            let hi = self.pooled("hi", u8t);
+            self.emit(Inst::RomGet { dst: hi, rom: tables[1].expect("el frontend da la tabla del byte alto"), index: Operand::Place(idx) });
+            let pw = self.pooled("p16", vt);
+            self.emit(Inst::Cast { dst: pw, src: Operand::Place(hi) });
+            self.emit(Inst::Binary { dst: pw, op: BinOp::Shl, lhs: Operand::Place(pw), rhs: Operand::Const { value: 8, ty: u8t } });
+            let lw = self.pooled("l16", vt);
+            self.emit(Inst::Cast { dst: lw, src: Operand::Place(lo) });
+            self.emit(Inst::Binary { dst: pw, op: BinOp::BitOr, lhs: Operand::Place(pw), rhs: Operand::Place(lw) });
+            Operand::Place(pw)
+        };
+        let d = self.pooled("digit", u8t);
+        self.emit(Inst::Copy { dst: d, src: Operand::Const { value: 0, ty: u8t } });
+        let (ih, ib, ix) = (self.new_block(), self.new_block(), self.new_block());
+        self.terminate(Terminator::Jump(ih));
+        self.cur = ih;
+        self.emit(Inst::Compare { dst: c, op: CmpOp::Ge, lhs: Operand::Place(cur), rhs: p });
+        self.terminate(Terminator::Branch { cond: Operand::Place(c), then_bb: ib, else_bb: ix });
+        self.cur = ib;
+        self.emit(Inst::Binary { dst: cur, op: BinOp::Sub, lhs: Operand::Place(cur), rhs: p });
+        self.emit(Inst::Binary { dst: d, op: BinOp::Add, lhs: Operand::Place(d), rhs: Operand::Const { value: 1, ty: u8t } });
+        self.terminate(Terminator::Jump(ih));
+        self.cur = ix;
+        // se escribe la cifra si no es cero, si ya se escribio una, o si es la ultima (el valor 0 se escribe "0")
+        let (emit_bb, chk_started, chk_last, pad_bb, join) = (self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block());
+        let nz = self.pooled("nz", Type::Bool);
+        self.emit(Inst::Compare { dst: nz, op: CmpOp::Ne, lhs: Operand::Place(d), rhs: Operand::Const { value: 0, ty: u8t } });
+        self.terminate(Terminator::Branch { cond: Operand::Place(nz), then_bb: emit_bb, else_bb: chk_started });
+        self.cur = chk_started;
+        self.terminate(Terminator::Branch { cond: Operand::Place(started), then_bb: emit_bb, else_bb: chk_last });
+        self.cur = chk_last;
+        self.emit(Inst::Compare { dst: nz, op: CmpOp::Eq, lhs: Operand::Place(idx), rhs: Operand::Const { value: n - 1, ty: u8t } });
+        self.terminate(Terminator::Branch { cond: Operand::Place(nz), then_bb: emit_bb, else_bb: pad_bb });
+        self.cur = pad_bb;
+        if w > 0 {
+            // relleno si esta posicion (contada desde la derecha: n-1-idx) cabe en el ancho pedido
+            let pos = self.pooled("pos", u8t);
+            self.emit(Inst::Binary { dst: pos, op: BinOp::Sub, lhs: Operand::Const { value: n - 1, ty: u8t }, rhs: Operand::Place(idx) });
+            let (put, skip) = (self.new_block(), self.new_block());
+            self.emit(Inst::Compare { dst: nz, op: CmpOp::Lt, lhs: Operand::Place(pos), rhs: Operand::Const { value: w, ty: u8t } });
+            self.terminate(Terminator::Branch { cond: Operand::Place(nz), then_bb: put, else_bb: skip });
+            self.cur = put;
+            self.uart_put(pad);
+            self.terminate(Terminator::Jump(skip));
+            self.cur = skip;
+        }
+        self.terminate(Terminator::Jump(join));
+        self.cur = emit_bb;
+        self.emit(Inst::Copy { dst: started, src: Operand::Const { value: 1, ty: Type::Bool } });
+        let ch = self.pooled("char", u8t);
+        self.emit(Inst::Binary { dst: ch, op: BinOp::Add, lhs: Operand::Place(d), rhs: Operand::Const { value: 48, ty: u8t } });
+        self.uart_put(Operand::Place(ch));
+        self.terminate(Terminator::Jump(join));
+        self.cur = join;
+        self.emit(Inst::Binary { dst: idx, op: BinOp::Add, lhs: Operand::Place(idx), rhs: Operand::Const { value: 1, ty: u8t } });
+        self.terminate(Terminator::Jump(header));
+        self.cur = exit;
+    }
+
+    /// Hexadecimal (cuatro bits por digito, con una tabla `Rom`) o binario (un bit por digito): ancho fijo, con ceros a la
+    /// izquierda. Un bucle que toma el digito alto y desplaza el valor: el tamano y el costo por digito no dependen del valor.
+    fn fmt_radix(&mut self, v: Operand, bits: u8, spec: pypic_frontend::ast::FSpec, tables: [Option<usize>; 2]) {
+        let u8t = Type::Int { bits: 8, signed: false };
+        let vt = Type::Int { bits, signed: false };
+        let bin = spec.kind == pypic_frontend::ast::FKind::Bin;
+        let (per, mask) = if bin { (1i128, 1i128) } else { (4, 15) };
+        let digits = bits as i128 / per;
+        for _ in digits..spec.width as i128 {
+            self.uart_put(Operand::Const { value: b'0' as i128, ty: u8t });
+        }
+        let cur = self.pooled("cur", vt);
+        self.emit(Inst::Copy { dst: cur, src: v });
+        let idx = self.pooled("idx", u8t);
+        self.emit(Inst::Copy { dst: idx, src: Operand::Const { value: 0, ty: u8t } });
+        let (header, body, exit) = (self.new_block(), self.new_block(), self.new_block());
+        self.terminate(Terminator::Jump(header));
+        self.cur = header;
+        let c = self.pooled("cond", Type::Bool);
+        self.emit(Inst::Compare { dst: c, op: CmpOp::Lt, lhs: Operand::Place(idx), rhs: Operand::Const { value: digits, ty: u8t } });
+        self.terminate(Terminator::Branch { cond: Operand::Place(c), then_bb: body, else_bb: exit });
+        self.cur = body;
+        let top = self.pooled("shifted", vt);
+        self.emit(Inst::Binary { dst: top, op: BinOp::Shr, lhs: Operand::Place(cur), rhs: Operand::Const { value: bits as i128 - per, ty: u8t } });
+        let low = self.pooled("low", u8t);
+        self.emit(Inst::Cast { dst: low, src: Operand::Place(top) });
+        let digit = self.pooled("digit", u8t);
+        self.emit(Inst::Binary { dst: digit, op: BinOp::BitAnd, lhs: Operand::Place(low), rhs: Operand::Const { value: mask, ty: u8t } });
+        let ch = self.pooled("char", u8t);
+        if bin {
+            self.emit(Inst::Binary { dst: ch, op: BinOp::Add, lhs: Operand::Place(digit), rhs: Operand::Const { value: 48, ty: u8t } });
+        } else {
+            self.emit(Inst::RomGet { dst: ch, rom: tables[0].expect("el frontend da la tabla de digitos hexadecimales"), index: Operand::Place(digit) });
+        }
+        self.uart_put(Operand::Place(ch));
+        self.emit(Inst::Binary { dst: cur, op: BinOp::Shl, lhs: Operand::Place(cur), rhs: Operand::Const { value: per, ty: u8t } });
+        self.emit(Inst::Binary { dst: idx, op: BinOp::Add, lhs: Operand::Place(idx), rhs: Operand::Const { value: 1, ty: u8t } });
+        self.terminate(Terminator::Jump(header));
+        self.cur = exit;
+    }
+
     /// `UART.write_text`: `i = 0; mientras i < n: UART.write(TABLA[i]); i += 1`. Dos temporales de un byte y nada mas en RAM.
     fn write_text(&mut self, rom: usize) {
         let u8t = Type::Int { bits: 8, signed: false };
         let n = self.prog.roms[rom].1.len() as i128;
-        let i = self.new_temp(u8t);
-        let byte = self.new_temp(u8t);
+        let i = self.pooled("idx", u8t);
+        let byte = self.pooled("byte", u8t);
         self.emit(Inst::Copy { dst: i, src: Operand::Const { value: 0, ty: u8t } });
         let (header, body, exit) = (self.new_block(), self.new_block(), self.new_block());
         self.terminate(Terminator::Jump(header));
         self.cur = header;
-        let c = self.new_temp(Type::Bool);
+        let c = self.pooled("cond", Type::Bool);
         self.emit(Inst::Compare { dst: c, op: CmpOp::Lt, lhs: Operand::Place(i), rhs: Operand::Const { value: n, ty: u8t } });
         self.terminate(Terminator::Branch { cond: Operand::Place(c), then_bb: body, else_bb: exit });
         self.cur = body;

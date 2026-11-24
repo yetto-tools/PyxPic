@@ -96,9 +96,40 @@ pub enum ExprKind {
     List(Vec<Expr>),
     /// `"texto"`: solo como argumento de `UART.write_text`; el contenido va sin decodificar (con sus escapes).
     Str(String),
+    /// `f"texto {nombre:formato}"`: solo como argumento de `UART.write_text`.
+    FStr(Vec<FPart>),
     /// `TABLA[indice]`.
     Index { obj: String, obj_span: Span, index: Box<Expr> },
     MethodCall { obj: String, obj_span: Span, attr: Option<Ident>, method: String, args: Vec<Expr>, kwargs: Vec<Kwarg> },
+}
+
+/// Una parte de una f-string: texto literal (con sus escapes sin decodificar) o un campo `{nombre:formato}`.
+#[derive(Clone, Debug)]
+pub enum FPart {
+    Lit(String),
+    Field { expr: Box<Expr>, spec: FSpec },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FKind {
+    /// `{v}` o `{v:d}`: decimal sin ceros a la izquierda.
+    Dec,
+    /// `{v:X}`: hexadecimal en mayusculas.
+    HexUpper,
+    /// `{v:x}`: hexadecimal en minusculas.
+    HexLower,
+    /// `{v:b}`: binario.
+    Bin,
+}
+
+/// El formato de un campo: `[0][ancho][d|X|x|b]`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FSpec {
+    pub kind: FKind,
+    /// 0 si no se pidio ancho.
+    pub width: u8,
+    /// `{v:05}`: relleno con ceros en lugar de espacios (los formatos X, x y b siempre rellenan con ceros).
+    pub zero: bool,
 }
 
 #[derive(Clone, Debug)]

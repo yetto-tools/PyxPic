@@ -243,7 +243,7 @@ impl<'m> Machine<'m> {
                     self.write(f, fr, dst.unwrap(), b as i128);
                 }
                 UartOp::TxReady => self.write(f, fr, dst.unwrap(), 1),
-                UartOp::WriteText(_) => unreachable!("la IR desarma write_text en un bucle"),
+                UartOp::WriteText(_) | UartOp::WriteFmt => unreachable!("la IR desarma write_text en un bucle"),
                 UartOp::Write9 | UartOp::Send9 => {
                     let v = self.read(fr, arg.as_ref().unwrap());
                     self.uart_tx9.push((v & 0x1FF) as u16);

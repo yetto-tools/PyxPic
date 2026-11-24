@@ -10,7 +10,7 @@
 //!  * Sin recursion: la memoria es estatica y la pila de hardware es limitada.
 
 use crate::adc::{self, AdcCall, AdcOp};
-use crate::uart::{self, UartCall, UartOp, UartStart};
+use crate::uart::{self, FmtPart, UartCall, UartOp, UartStart};
 use crate::bits::{self, BitsOp};
 use crate::regs::{RegCall, RegOp, BANK_BITS, WRITE_PROTECTED};
 use crate::target::RegInfo;
@@ -151,6 +151,8 @@ pub struct Program {
     pub adc_config: adc::AdcConfig,
     /// Llamadas a metodos de `pypic.periph.uart`, por id de expresion.
     pub uart_calls: BTreeMap<u32, UartCall>,
+    /// Las partes de cada `UART.write_text(f"...")`, por id de expresion.
+    pub uart_fmt: BTreeMap<u32, Vec<FmtPart>>,
 }
 
 pub struct Checked {
@@ -169,6 +171,7 @@ pub struct Checked {
     pub adc_calls: BTreeMap<u32, AdcCall>,
     pub adc_config: adc::AdcConfig,
     pub uart_calls: BTreeMap<u32, UartCall>,
+    pub uart_fmt: BTreeMap<u32, Vec<FmtPart>>,
 }
 
 pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Checked {
@@ -214,6 +217,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         adc_config: adc::AdcConfig::default(),
         uart_name: false,
         uart_calls: BTreeMap::new(),
+        uart_fmt: BTreeMap::new(),
         uart_started: false,
         uart_needs: None,
         uart_pending: Vec::new(),
@@ -229,7 +233,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         stmt_top: None,
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, adc_calls: c.adc_calls, adc_config: c.adc_config, uart_calls: c.uart_calls }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, adc_calls: c.adc_calls, adc_config: c.adc_config, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -309,6 +313,7 @@ struct Checker<'a> {
     /// UART: importada, llamadas, si se inicio y los `start` por resolver (necesitan el reloj).
     uart_name: bool,
     uart_calls: BTreeMap<u32, UartCall>,
+    uart_fmt: BTreeMap<u32, Vec<FmtPart>>,
     uart_started: bool,
     uart_needs: Option<Span>,
     uart_pending: Vec<UartPending>,
@@ -1457,6 +1462,9 @@ impl<'a> Checker<'a> {
             return self.set(e, Type::Error, None);
         }
         let a = &args[0];
+        if let ExprKind::FStr(parts) = &a.kind {
+            return self.uart_write_fmt(e, a, parts);
+        }
         let rom = match &a.kind {
             ExprKind::Str(raw) => match uart::decode_text(raw) {
                 Ok(b) if b.is_empty() => {
@@ -1490,6 +1498,101 @@ impl<'a> Checker<'a> {
         self.uart_uses8.get_or_insert(e.span);
         self.uart_needs.get_or_insert(e.span);
         self.uart_calls.insert(e.id, UartCall { op: UartOp::WriteText(rom) });
+        self.set(e, Type::Void, None)
+    }
+
+    /// `UART.write_text(f"ADC: {valor:04X}\r\n")`: el texto y los campos de valor constante se resuelven al compilar (a una `Rom`);
+    /// los campos de variable se convierten con codigo nativo en el PIC. Solo enteros sin signo (uint8 y uint16).
+    fn uart_write_fmt(&mut self, e: &Expr, a: &Expr, parts: &[crate::ast::FPart]) -> Type {
+        use crate::ast::{FKind, FPart};
+        let mut out: Vec<FmtPart> = Vec::new();
+        let mut pending: Vec<u8> = Vec::new();
+        let mut ok = true;
+        let mut has_field = false;
+        let mut hex_tables: [Option<usize>; 2] = [None, None];
+        for (i, p) in parts.iter().enumerate() {
+            match p {
+                FPart::Lit(raw) => match uart::decode_text(raw) {
+                    Ok(b) => pending.extend(b),
+                    Err(msg) => {
+                        self.d.error("PYP2165", a.span, msg);
+                        ok = false;
+                    }
+                },
+                FPart::Field { expr, spec } => {
+                    let t = self.expr(expr);
+                    let bits = match t {
+                        Type::Error => {
+                            ok = false;
+                            continue;
+                        }
+                        Type::Int { bits: b @ (8 | 16), signed: false } => b as u8,
+                        other => {
+                            self.d.error("PYP2167", expr.span, format!("el campo es de tipo {other}: write_text formatea uint8 y uint16 por ahora (convierte con uint8(...) o uint16(...))"));
+                            ok = false;
+                            continue;
+                        }
+                    };
+                    let natural = if spec.kind == FKind::Dec { 0 } else if matches!(spec.kind, FKind::Bin) { bits } else { bits / 4 };
+                    if spec.kind != FKind::Dec && spec.width != 0 && spec.width < natural {
+                        let (unit, tipo) = if spec.kind == FKind::Bin { ("binarios", format!("uint{bits}")) } else { ("hexadecimales", format!("uint{bits}")) };
+                        self.d.error("PYP2168", expr.span, format!("un {tipo} se muestra con {natural} digitos {unit} como minimo (ancho fijo, sin recortar): el ancho {} es menor", spec.width));
+                        ok = false;
+                        continue;
+                    }
+                    has_field = true;
+                    if let Some(v) = self.konst(expr) {
+                        // un valor conocido al compilar se formatea aqui y no cuesta nada en el PIC
+                        pending.extend(uart::format_uint(v as u16, bits, *spec));
+                        continue;
+                    }
+                    if !pending.is_empty() {
+                        let r = self.text_rom(std::mem::take(&mut pending));
+                        out.push(FmtPart::Lit(r));
+                    }
+                    let tables = match spec.kind {
+                        FKind::HexUpper | FKind::HexLower => {
+                            let k = (spec.kind == FKind::HexLower) as usize;
+                            if hex_tables[k].is_none() {
+                                hex_tables[k] = Some(self.text_rom(if k == 1 { uart::HEX_LOWER.to_vec() } else { uart::HEX_UPPER.to_vec() }));
+                            }
+                            [hex_tables[k], None]
+                        }
+                        FKind::Dec if bits == 8 => [Some(self.text_rom(uart::POW10_8_LO.to_vec())), None],
+                        FKind::Dec => [Some(self.text_rom(uart::POW10_16_LO.to_vec())), Some(self.text_rom(uart::POW10_16_HI.to_vec()))],
+                        FKind::Bin => [None, None],
+                    };
+                    out.push(FmtPart::Field { ast: i, bits, spec: *spec, tables });
+                }
+            }
+        }
+        if !ok {
+            return self.set(e, Type::Error, None);
+        }
+        let _ = has_field;
+        if !pending.is_empty() {
+            let r = self.text_rom(pending);
+            out.push(FmtPart::Lit(r));
+        }
+        if out.is_empty() {
+            self.d.error("PYP2165", a.span, "UART.write_text con un texto vacio no envia nada: quita la llamada");
+            return self.set(e, Type::Error, None);
+        }
+        for p in &out {
+            if let FmtPart::Lit(r) = p {
+                if self.roms[*r].1.len() > 255 {
+                    self.d.error("PYP2165", a.span, format!("cada trozo de texto constante de write_text tiene hasta 255 bytes y este tiene {}: divídelo en varias llamadas", self.roms[*r].1.len()));
+                    return self.set(e, Type::Error, None);
+                }
+            }
+        }
+        if let Some(cur) = self.cur {
+            self.functions[cur].uses_rom = true;
+        }
+        self.uart_uses8.get_or_insert(e.span);
+        self.uart_needs.get_or_insert(e.span);
+        self.uart_calls.insert(e.id, UartCall { op: UartOp::WriteFmt });
+        self.uart_fmt.insert(e.id, out);
         self.set(e, Type::Void, None)
     }
 
@@ -2406,8 +2509,8 @@ impl<'a> Checker<'a> {
             ExprKind::Bool(b) => self.set(e, Type::Bool, Some(*b as i128)),
             ExprKind::Name(n) => self.name(e, n),
             ExprKind::Index { obj, obj_span, index } => self.index_expr(e, obj, *obj_span, index),
-            ExprKind::Str(_) => {
-                self.d.error("PYP2164", e.span, "un texto entre comillas solo se admite como argumento de UART.write_text");
+            ExprKind::Str(_) | ExprKind::FStr(_) => {
+                self.d.error("PYP2164", e.span, "un texto entre comillas o una f-string solo se admite como argumento de UART.write_text");
                 self.set(e, Type::Error, None)
             }
             ExprKind::List(items) => {

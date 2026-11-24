@@ -34,6 +34,7 @@ fn describe(t: &Tok) -> String {
         Tok::Ident(s) => format!("'{s}'"),
         Tok::Int(_) => "un numero".into(),
         Tok::Str(..) => "una cadena".into(),
+        Tok::FStr(..) => "una f-string".into(),
         Tok::Newline => "fin de linea".into(),
         Tok::Indent => "una indentacion".into(),
         Tok::Dedent => "el fin del bloque".into(),
@@ -707,6 +708,94 @@ impl<'a> Parser<'a> {
         Ok((args, kwargs))
     }
 
+    /// Parte el contenido de una f-string en texto y campos `{nombre:formato}`; `{{` y `}}` son llaves literales. Dentro de un campo
+    /// solo se admite el nombre de una variable (no expresiones), para que el costo de cada campo se vea en el formato.
+    fn fstring_parts(&mut self, inner: &str, sp: Span) -> Vec<FPart> {
+        let base = sp.start as usize + 2; // `f` y la comilla
+        let b = inner.as_bytes();
+        let mut parts = Vec::new();
+        let mut lit = String::new();
+        let mut i = 0;
+        while i < b.len() {
+            match b[i] {
+                b'{' if b.get(i + 1) == Some(&b'{') => {
+                    lit.push('{');
+                    i += 2;
+                }
+                b'}' if b.get(i + 1) == Some(&b'}') => {
+                    lit.push('}');
+                    i += 2;
+                }
+                b'{' => {
+                    let Some(close) = inner[i..].find('}').map(|k| i + k) else {
+                        self.d.error("PYP1030", Span::new(base + i, base + inner.len()), "falta la '}' que cierra el campo de la f-string");
+                        return parts;
+                    };
+                    if !lit.is_empty() {
+                        parts.push(FPart::Lit(std::mem::take(&mut lit)));
+                    }
+                    let body = &inner[i + 1..close];
+                    let (name, spec) = body.split_once(':').unwrap_or((body, ""));
+                    let fsp = Span::new(base + i, base + close + 1);
+                    let valid = !name.is_empty() && !name.as_bytes()[0].is_ascii_digit() && name.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_');
+                    if !valid {
+                        self.d.error("PYP1030", fsp, format!("en un campo de f-string solo se admite el nombre de una variable, no '{name}': calculalo antes en una variable"));
+                    } else if let Some(spec) = self.fspec(spec, fsp) {
+                        let expr = self.mk(Span::new(base + i + 1, base + i + 1 + name.len()), ExprKind::Name(name.to_string()));
+                        parts.push(FPart::Field { expr: Box::new(expr), spec });
+                    }
+                    i = close + 1;
+                }
+                b'}' => {
+                    self.d.error("PYP1030", Span::new(base + i, base + i + 1), "'}' suelta en la f-string: para una llave literal escribe '}}'");
+                    i += 1;
+                }
+                _ => {
+                    let ch = inner[i..].chars().next().unwrap();
+                    lit.push(ch);
+                    i += ch.len_utf8();
+                }
+            }
+        }
+        if !lit.is_empty() {
+            parts.push(FPart::Lit(lit));
+        }
+        parts
+    }
+
+    /// `[0][ancho][d|X|x|b]`
+    fn fspec(&mut self, s: &str, sp: Span) -> Option<FSpec> {
+        let (mut kind, mut rest) = (FKind::Dec, s);
+        if let Some(last) = s.chars().last().filter(|c| c.is_ascii_alphabetic()) {
+            kind = match last {
+                'd' => FKind::Dec,
+                'X' => FKind::HexUpper,
+                'x' => FKind::HexLower,
+                'b' => FKind::Bin,
+                other => {
+                    self.d.error("PYP1031", sp, format!("el formato '{other}' no existe (admite: d, X, x, b)"));
+                    return None;
+                }
+            };
+            rest = &s[..s.len() - 1];
+        }
+        let zero = rest.starts_with('0') && rest.len() > 1;
+        let digits = if zero { &rest[1..] } else { rest };
+        let width = if digits.is_empty() {
+            0
+        } else if digits.bytes().all(|c| c.is_ascii_digit()) && digits.len() <= 2 && digits.parse::<u32>().is_ok_and(|w| (1..=32).contains(&w)) {
+            digits.parse::<u8>().unwrap()
+        } else {
+            self.d.error("PYP1031", sp, format!("el ancho '{digits}' no es valido: un numero de 1 a 32 (por ejemplo {{v:04X}})"));
+            return None;
+        };
+        if rest == "0" {
+            self.d.error("PYP1031", sp, "el formato '0' necesita un ancho: {v:05}");
+            return None;
+        }
+        Some(FSpec { kind, width, zero })
+    }
+
     fn call_args(&mut self) -> R<Vec<Expr>> {
         Ok(self.call_args_kw(false)?.0)
     }
@@ -731,6 +820,11 @@ impl<'a> Parser<'a> {
             Tok::Str(text, _) => {
                 self.bump();
                 self.mk(sp, ExprKind::Str(text))
+            }
+            Tok::FStr(inner) => {
+                self.bump();
+                let parts = self.fstring_parts(&inner, sp);
+                self.mk(sp, ExprKind::FStr(parts))
             }
             Tok::LBracket => {
                 self.bump();

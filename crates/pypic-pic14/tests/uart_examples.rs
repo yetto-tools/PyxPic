@@ -208,3 +208,15 @@ fn direccion_9bits_only_obeys_data_after_its_own_address() {
     assert_eq!(sent(&s), vec![65], "solo contesto la 'A' atendida");
     assert!(s.uart_violations.is_empty(), "{:?}", s.uart_violations);
 }
+
+#[test]
+fn adc_serial_sends_the_converted_value_as_text_for_two_different_readings() {
+    let c = build("adc_serial");
+    for (v, text) in [(512u16, "ADC: 0512 (0x0200)\r\n"), (1023, "ADC: 1023 (0x03FF)\r\n"), (7, "ADC: 0007 (0x0007)\r\n")] {
+        let mut s = sim(&c);
+        s.adc_inputs[0] = v;
+        run(&mut s, 300_000);
+        assert_eq!(String::from_utf8(sent(&s)).unwrap(), text, "con {v} en AN0");
+        assert!(s.uart_violations.is_empty() && s.adc_violations.is_empty(), "{:?} {:?}", s.uart_violations, s.adc_violations);
+    }
+}
