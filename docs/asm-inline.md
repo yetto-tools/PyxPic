@@ -42,8 +42,8 @@ Se adoptó lo útil de otros lenguajes y se descartó lo incómodo:
 - **Parámetros y retorno** de hasta 16 bits (`u8`, `i8`, `u16`, `i16`, `bool`). Cada parámetro es un símbolo con la dirección de su byte bajo; un `u16` ocupa `x` (bajo) y `x+1` (alto).
 - **Resultado**: el byte bajo en `W`; en un resultado de 16 bits, el alto se escribe antes en `RETV` (`0x7C`).
 - **Globales**: por su nombre (`hits`, `marker`...); las constantes `Final` valen su valor.
-- **Registros predefinidos** (desplazamiento de 7 bits, el banco lo eliges tú con `RP0`/`RP1`): `INDF TMR0 OPTION_REG PCL STATUS FSR PORTA..PORTE TRISA..TRISE ANSEL ANSELH PCLATH INTCON`
-  y los bits `C DC Z RP0 RP1 IRP`. Verificados con el DS40001291H; el mapa completo llegará con el Device Pack (#22). Un parámetro o global con uno de esos nombres da error `ASM005`.
+- **Registros y bits predefinidos**: todos los de `registers.json` del Device Pack (73 registros del PIC16F887 y sus bits con nombre: `STATUS`, `PORTD`, `TRISD`, `ADCON0`, `RP0`, `GO_DONE`...).
+  Cada registro vale su desplazamiento de 7 bits (el banco lo eliges tú con `RP0`/`RP1`) y cada bit su número. Un parámetro o global con uno de esos nombres da error `ASM005` solo si el bloque lo usa.
 - **Etiquetas** locales a la función, solo como destino de `CALL`/`GOTO` (con `$` y aritmética: `GOTO $+1`). `EQU` define constantes locales.
 
 ## Lo que el compilador comprueba

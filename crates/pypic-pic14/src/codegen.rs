@@ -32,36 +32,6 @@ const SCRATCH_ISR: u8 = 0x78; // 78h-7Bh
 const RETV_MAIN: u8 = 0x7C;
 const RETV_ISR: u8 = 0x7D;
 const PAGE_WORDS: usize = 2048;
-/// Registros y bits que el ensamblador en linea conoce por nombre (desplazamiento de 7 bits: el banco lo elige
-/// el codigo con RP0/RP1). PIC16F887, DS40001291H p.22-29. TODO: sacarlos del Device Pack (registers.json, #22).
-const SFR_SYMBOLS: &[(&str, u8)] = &[
-    ("INDF", 0x00),
-    ("TMR0", 0x01),
-    ("OPTION_REG", 0x01),
-    ("PCL", 0x02),
-    ("STATUS", 0x03),
-    ("FSR", 0x04),
-    ("PORTA", 0x05),
-    ("TRISA", 0x05),
-    ("PORTB", 0x06),
-    ("TRISB", 0x06),
-    ("PORTC", 0x07),
-    ("TRISC", 0x07),
-    ("PORTD", 0x08),
-    ("TRISD", 0x08),
-    ("ANSEL", 0x08),
-    ("PORTE", 0x09),
-    ("TRISE", 0x09),
-    ("ANSELH", 0x09),
-    ("PCLATH", 0x0A),
-    ("INTCON", 0x0B),
-    ("C", 0),
-    ("DC", 1),
-    ("Z", 2),
-    ("RP0", 5),
-    ("RP1", 6),
-    ("IRP", 7),
-];
 /// PORTA..PORTE estan en 05h-09h (banco 0) y TRISA..TRISE en 85h-89h (banco 1): mismo desplazamiento de 7 bits.
 /// ANSEL=188h y ANSELH=189h (banco 3). DS40001291H p.27-29. TODO: sacarlos del Device Pack (registers.json, #22).
 const ANSEL: u8 = 0x08;
@@ -127,6 +97,14 @@ pub struct Options {
     pub config: (u16, u16),
     /// Relojes del oscilador por ciclo de instruccion (4 en PIC16): convierte tiempo en ciclos.
     pub clocks_per_cycle: u32,
+    /// Registros y bits que el ensamblador en linea conoce por nombre (desplazamiento de 7 bits y numero de bit):
+    /// salen de `registers.json` del Device Pack.
+    pub sfr: Vec<(String, u8)>,
+}
+
+/// Registros del PIC16F887 (`devices/pic16f887/registers.json`, incluido en el binario) para los usos sin pack.
+fn builtin_sfr() -> Vec<(String, u8)> {
+    pypic_device::Registers::parse(include_str!("../../../devices/pic16f887/registers.json")).expect("registers.json incluido es valido").asm_symbols()
 }
 
 impl Default for Options {
@@ -141,6 +119,7 @@ impl Default for Options {
             config_addr: (CONFIG1, CONFIG2),
             config: (BLINK_CONFIG1, BLINK_CONFIG2),
             clocks_per_cycle: 4,
+            sfr: builtin_sfr(),
         }
     }
 }
@@ -344,6 +323,7 @@ struct Gen<'a> {
     clock_hz: Option<u32>,
     cpc: u32,
     timing: Vec<DelayReport>,
+    sfr: Vec<(String, u8)>,
 }
 
 impl<'a> Gen<'a> {
@@ -907,9 +887,9 @@ impl<'a> Gen<'a> {
         let m = self.m;
         let f = &m.functions[fi];
         let a = f.asm.as_ref().expect("funcion de ensamblador");
-        let mut ext: BTreeMap<String, i64> = SFR_SYMBOLS.iter().map(|(n, v)| (n.to_string(), *v as i64)).collect();
+        let mut ext: BTreeMap<String, i64> = self.sfr.iter().map(|(n, v)| (n.clone(), *v as i64)).collect();
         ext.insert("RETV".into(), RETV_MAIN as i64);
-        let reserved = |n: &str| n == "RETV" || SFR_SYMBOLS.iter().any(|(s, _)| *s == n);
+        let reserved = |n: &str| (n == "RETV" || self.sfr.iter().any(|(s, _)| s == n)) && a.text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).any(|w| w == n);
         let mut clashes = Vec::new();
         for (i, g) in m.globals.iter().enumerate() {
             if reserved(&g.name) {
@@ -930,7 +910,7 @@ impl<'a> Gen<'a> {
                 line: a.first_line,
                 col: 1,
                 code: "ASM005",
-                message: format!("en '{}': {} coincide(n) con registros que el ensamblador en linea predefine (INDF, STATUS, PORTA..PORTE, C, Z, RP0, RETV...): renombra el parametro o el global", f.name, clashes.join(", ")),
+                message: format!("en '{}': {} coincide(n) con nombres que el ensamblador en linea predefine (los registros y bits del pack, y RETV) y que el bloque usa: renombra el parametro o el global", f.name, clashes.join(", ")),
             }]));
         }
         let frag = assemble_fragment(&a.text, a.first_line, &ext).map_err(CodegenError::Asm)?;
@@ -1051,7 +1031,7 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
     let isr_ctx = reach(m, &isrs);
 
     let al = allocate(m, &live, opts)?;
-    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new() };
+    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new(), sfr: opts.sfr.clone() };
     for &fi in &live {
         let l = g.asm.label(m.functions[fi].name.clone());
         g.fn_labels.insert(fi, l);

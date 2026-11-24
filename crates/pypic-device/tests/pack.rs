@@ -197,3 +197,103 @@ fn unknown_fields_and_bad_numbers_fail_to_load() {
 
     assert!(DevicePack::load(&dir).is_err());
 }
+
+// ---- registers.json ------------------------------------------------------------------------------------
+
+fn reg<'a>(p: &'a DevicePack, name: &str) -> &'a pypic_device::Register {
+    p.registers.get(name).unwrap_or_else(|| panic!("falta {name}"))
+}
+
+fn addrs(r: &pypic_device::Register) -> Vec<u32> {
+    r.addresses.iter().map(|a| a.0).collect()
+}
+
+/// Direcciones, bits y valores de reset copiados de las Tablas 2-1 a 2-4 del DS40001291H (p.27-29).
+#[test]
+fn registers_match_datasheet_tables() {
+    let p = pack();
+    assert_eq!(p.registers.registers.len(), 73);
+    assert_eq!(addrs(reg(&p, "STATUS")), [0x003, 0x083, 0x103, 0x183]);
+    assert_eq!(reg(&p, "STATUS").bits.iter().map(|b| b.as_deref().unwrap()).collect::<Vec<_>>(), ["C", "DC", "Z", "PD", "TO", "RP0", "RP1", "IRP"]);
+    assert_eq!(reg(&p, "STATUS").por, "0001 1xxx");
+    assert_eq!(addrs(reg(&p, "PORTD")), [0x008]);
+    assert_eq!(addrs(reg(&p, "TRISD")), [0x088]);
+    assert_eq!(addrs(reg(&p, "PORTB")), [0x006, 0x106]);
+    assert_eq!(addrs(reg(&p, "TRISB")), [0x086, 0x186]);
+    assert_eq!(addrs(reg(&p, "ANSEL")), [0x188]);
+    assert_eq!(addrs(reg(&p, "ANSELH")), [0x189]);
+    assert_eq!(addrs(reg(&p, "OPTION_REG")), [0x081, 0x181]);
+    assert_eq!(addrs(reg(&p, "TMR0")), [0x001, 0x101]);
+    assert_eq!(addrs(reg(&p, "ADCON0")), [0x01F]);
+    assert_eq!(reg(&p, "ADCON0").bits[1].as_deref(), Some("GO_DONE"));
+    assert_eq!(addrs(reg(&p, "OSCCON")), [0x08F]);
+    assert_eq!(reg(&p, "OSCCON").por, "-110 q000"); // IRCF = 110 -> 4 MHz (p.64)
+    assert_eq!(addrs(reg(&p, "EECON1")), [0x18C]);
+    assert_eq!(addrs(reg(&p, "SPBRGH")), [0x09A]);
+    assert!(!reg(&p, "INDF").physical && !reg(&p, "EECON2").physical);
+    // SSPADD y SSPMSK comparten la direccion 93h: el segundo solo se ve con SSPM<3:0> = 1001
+    assert_eq!(addrs(reg(&p, "SSPADD")), addrs(reg(&p, "SSPMSK")));
+    assert!(reg(&p, "SSPMSK").selected_by.is_some() && reg(&p, "SSPADD").selected_by.is_none());
+    // las direcciones 18Eh y 18Fh no existen
+    assert_eq!(p.registers.unimplemented.iter().map(|n| n.0).collect::<Vec<_>>(), [0x18E, 0x18F]);
+}
+
+#[test]
+fn registers_give_assembler_symbols_as_seven_bit_offsets_and_bit_numbers() {
+    let syms: std::collections::BTreeMap<_, _> = pack().registers.asm_symbols().into_iter().collect();
+    assert_eq!(syms["STATUS"], 0x03);
+    assert_eq!(syms["TRISD"], 0x08); // 88h: el banco lo elige el codigo
+    assert_eq!(syms["ANSEL"], 0x08);
+    assert_eq!((syms["RP0"], syms["RP1"], syms["IRP"], syms["Z"], syms["C"]), (5, 6, 7, 2, 0));
+    assert_eq!(syms["GO_DONE"], 1);
+    assert_eq!(syms["RD0"], 0);
+}
+
+fn mutated(f: impl FnOnce(&mut DevicePack)) -> Vec<String> {
+    let mut p = pack();
+    f(&mut p);
+    p.validate()
+}
+
+#[test]
+fn registers_validation_catches_inconsistencies() {
+    // falta un registro: queda una direccion SFR sin cubrir
+    let e = mutated(|p| p.registers.registers.retain(|r| r.name != "ADCON0"));
+    assert!(has(&e, "0x01f no tiene registro"), "{e:?}");
+    // un registro fuera de la zona SFR de su banco
+    let e = mutated(|p| p.registers.registers.iter_mut().find(|r| r.name == "PIR1").unwrap().addresses = vec![Num(0x01F0)]);
+    assert!(has(&e, "no esta en la zona SFR"), "{e:?}");
+    // dos registros en la misma direccion sin condicion de seleccion
+    let e = mutated(|p| p.registers.registers.iter_mut().find(|r| r.name == "SSPMSK").unwrap().selected_by = None);
+    assert!(has(&e, "sin condicion de seleccion"), "{e:?}");
+    // bits mal contados, nombre repetido, bit con nombre de registro, reset invalido
+    let e = mutated(|p| p.registers.registers.iter_mut().find(|r| r.name == "INTCON").unwrap().bits.pop().map(|_| ()).unwrap());
+    assert!(has(&e, "8 entradas"), "{e:?}");
+    let e = mutated(|p| p.registers.registers.iter_mut().find(|r| r.name == "PIR1").unwrap().bits[0] = Some("GIE".into()));
+    assert!(has(&e, "'GIE' esta repetido"), "{e:?}");
+    let e = mutated(|p| p.registers.registers.iter_mut().find(|r| r.name == "PIR1").unwrap().bits[0] = Some("STATUS".into()));
+    assert!(has(&e, "tiene el nombre de un registro"), "{e:?}");
+    let e = mutated(|p| p.registers.registers.iter_mut().find(|r| r.name == "PIR1").unwrap().por = "2000 0000".into());
+    assert!(has(&e, "valor de reset"), "{e:?}");
+    // direcciones de un registro con distinto desplazamiento
+    let e = mutated(|p| p.registers.registers.iter_mut().find(|r| r.name == "TMR0").unwrap().addresses = vec![Num(0x001), Num(0x102)]);
+    assert!(has(&e, "mismo desplazamiento"), "{e:?}");
+}
+
+#[test]
+fn registers_must_support_every_pin_and_the_bank_select_bits() {
+    let e = mutated(|p| p.registers.registers.retain(|r| r.name != "TRISD"));
+    assert!(has(&e, "falta TRISD"), "{e:?}");
+    let e = mutated(|p| p.registers.registers.iter_mut().find(|r| r.name == "PORTD").unwrap().bits[0] = Some("PD0".into()));
+    assert!(has(&e, "el pin RD0 no tiene su bit"), "{e:?}");
+    let e = mutated(|p| p.registers.registers.iter_mut().find(|r| r.name == "ANSEL").unwrap().bits[3] = None);
+    assert!(has(&e, "ANSEL no tiene el bit ANS3"), "{e:?}");
+    let e = mutated(|p| p.registers.registers.iter_mut().find(|r| r.name == "STATUS").unwrap().bits[5] = None);
+    assert!(has(&e, "no tiene el bit de seleccion de banco RP0"), "{e:?}");
+}
+
+#[test]
+fn unknown_fields_in_registers_json_are_rejected() {
+    let r = pypic_device::Registers::parse(r#"{"schema_version":1,"source":"x","unimplemented":[],"registers":[],"extra":1}"#);
+    assert!(r.is_err());
+}

@@ -76,7 +76,7 @@ fn a_device_without_a_backend_is_refused_with_a_clear_error() {
     let dir = tmp("otherdev");
     let pack = dir.join("devices/pic16f886");
     std::fs::create_dir_all(&pack).unwrap();
-    for f in ["device.json", "memory.json", "pins.json", "config.json"] {
+    for f in ["device.json", "memory.json", "pins.json", "config.json", "registers.json"] {
         let s = std::fs::read_to_string(root().join("devices/pic16f887").join(f)).unwrap();
         std::fs::write(pack.join(f), s.replace("\"PIC16F887\"", "\"PIC16F886\"")).unwrap();
     }

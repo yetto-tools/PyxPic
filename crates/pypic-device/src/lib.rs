@@ -2,7 +2,7 @@
 //!
 //! Un pack describe un MCU con datos verificados contra su datasheet oficial.
 //! Directorio `devices/<mcu>/` con `device.json`, `memory.json`, `pins.json` y
-//! `config.json` (los registros SFR y perifericos llegaran en packs posteriores).
+//! `config.json` y `registers.json` (los perifericos llegaran en un pack posterior).
 //! Todo corre en el host; nada de esto va al MCU.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -219,6 +219,80 @@ pub struct ConfigField {
     pub values: BTreeMap<String, String>,
 }
 
+// ---------------------------------------------------------------- registers.json
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Registers {
+    pub schema_version: u32,
+    pub source: String,
+    /// Direcciones dentro de la zona SFR que no tienen registro.
+    pub unimplemented: Vec<Num>,
+    pub registers: Vec<Register>,
+}
+
+fn yes() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Register {
+    pub name: String,
+    /// Todas las direcciones donde aparece (un registro puede verse en varios bancos).
+    pub addresses: Vec<Num>,
+    /// Nombre de cada bit, del 0 al 7; `null` si no tiene nombre o no esta implementado.
+    pub bits: Vec<Option<String>>,
+    /// Valor tras POR/BOR tal como lo escribe el datasheet (`x` desconocido, `-` no implementado, `q` depende).
+    pub por: String,
+    pub page: u32,
+    /// `false` en INDF y EECON2: no son registros fisicos.
+    #[serde(default = "yes")]
+    pub physical: bool,
+    /// Condicion bajo la que esta direccion es este registro y no otro (SSPMSK frente a SSPADD).
+    pub selected_by: Option<String>,
+    pub note: Option<String>,
+}
+
+impl Register {
+    /// Desplazamiento de 7 bits de la primera direccion: lo que codifican las instrucciones `f`.
+    pub fn offset(&self) -> u8 {
+        (self.addresses[0].0 & 0x7F) as u8
+    }
+}
+
+impl Registers {
+    pub fn parse(json: &str) -> Result<Registers, LoadError> {
+        serde_json::from_str(json).map_err(|e| LoadError(format!("registers.json: {e}")))
+    }
+
+    pub fn get(&self, name: &str) -> Option<&Register> {
+        self.registers.iter().find(|r| r.name == name)
+    }
+
+    /// Simbolos del ensamblador: cada registro vale su desplazamiento de 7 bits (el banco lo elige el codigo
+    /// con RP0/RP1) y cada bit con nombre su numero de bit. Si un nombre de bit se repite o coincide con el
+    /// de un registro, se omite.
+    pub fn asm_symbols(&self) -> Vec<(String, u8)> {
+        let mut out: Vec<(String, u8)> = Vec::new();
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        for r in &self.registers {
+            if seen.insert(&r.name) {
+                out.push((r.name.clone(), r.offset()));
+            }
+        }
+        for r in &self.registers {
+            for (i, b) in r.bits.iter().enumerate() {
+                if let Some(b) = b {
+                    if seen.insert(b) {
+                        out.push((b.clone(), i as u8));
+                    }
+                }
+            }
+        }
+        out
+    }
+}
+
 // ------------------------------------------------------------------------ pack
 #[derive(Debug, Clone)]
 pub struct DevicePack {
@@ -226,6 +300,7 @@ pub struct DevicePack {
     pub memory: Memory,
     pub pins: Pins,
     pub config: Config,
+    pub registers: Registers,
 }
 
 #[derive(Debug)]
@@ -250,6 +325,7 @@ impl DevicePack {
             memory: read(dir, "memory.json")?,
             pins: read(dir, "pins.json")?,
             config: read(dir, "config.json")?,
+            registers: read(dir, "registers.json")?,
         })
     }
 
@@ -280,6 +356,7 @@ impl DevicePack {
         self.validate_memory(&mut e);
         self.validate_pins(&mut e);
         self.validate_config(&mut e);
+        self.validate_registers(&mut e);
         e
     }
 
@@ -289,6 +366,7 @@ impl DevicePack {
             ("memory.json", self.memory.schema_version),
             ("pins.json", self.pins.schema_version),
             ("config.json", self.config.schema_version),
+            ("registers.json", self.registers.schema_version),
         ] {
             if v != SCHEMA_VERSION {
                 e.push(format!("{file}: schema_version {v} no soportada (se espera {SCHEMA_VERSION})"));
@@ -452,6 +530,121 @@ impl DevicePack {
             for rail in ["VDD", "VSS"] {
                 if !pk.pins.iter().any(|p| p.name == rail) {
                     e.push(format!("{ctx}: falta {rail}"));
+                }
+            }
+        }
+    }
+
+    fn validate_registers(&self, e: &mut Vec<String>) {
+        let rg = &self.registers;
+        let ident = |s: &str| !s.is_empty() && !s.starts_with(|c: char| c.is_ascii_digit()) && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        let in_sfr = |a: u32| self.memory.data.sfr.iter().enumerate().any(|(b, r)| a >= r.start.0 && a <= r.end.0 && a / self.memory.data.bank_size == b as u32);
+        let mut names: BTreeSet<&str> = BTreeSet::new();
+        let mut by_addr: BTreeMap<u32, Vec<&Register>> = BTreeMap::new();
+        for r in &rg.registers {
+            let ctx = format!("registers.json: {}", r.name);
+            if !ident(&r.name) || !names.insert(&r.name) {
+                e.push(format!("{ctx}: nombre invalido o repetido"));
+            }
+            if r.addresses.is_empty() {
+                e.push(format!("{ctx}: sin direcciones"));
+            }
+            for a in &r.addresses {
+                if !in_sfr(a.0) {
+                    e.push(format!("{ctx}: la direccion {:#05x} no esta en la zona SFR de su banco (memory.json)", a.0));
+                }
+                by_addr.entry(a.0).or_default().push(r);
+            }
+            let mut sorted: Vec<u32> = r.addresses.iter().map(|a| a.0).collect();
+            sorted.sort_unstable();
+            sorted.dedup();
+            if sorted.len() != r.addresses.len() {
+                e.push(format!("{ctx}: direcciones repetidas"));
+            }
+            if r.addresses.iter().any(|a| (a.0 & 0x7F) != (r.addresses[0].0 & 0x7F)) {
+                e.push(format!("{ctx}: las direcciones de un mismo registro deben tener el mismo desplazamiento dentro del banco"));
+            }
+            if r.bits.len() != 8 {
+                e.push(format!("{ctx}: 'bits' debe tener 8 entradas (bit 0 a bit 7), tiene {}", r.bits.len()));
+            }
+            let ok_por = r.por.len() == 9 && r.por.char_indices().all(|(i, c)| if i == 4 { c == ' ' } else { "01xuq-".contains(c) });
+            if !ok_por {
+                e.push(format!("{ctx}: valor de reset '{}' invalido (se espera 'xxxx xxxx' con 0,1,x,u,q,-)", r.por));
+            }
+            if r.page == 0 {
+                e.push(format!("{ctx}: falta la pagina del datasheet"));
+            }
+        }
+        // un nombre de bit identifica a un solo bit y no puede ser el nombre de un registro
+        let mut bit_names: BTreeSet<&str> = BTreeSet::new();
+        for r in &rg.registers {
+            for (i, b) in r.bits.iter().enumerate() {
+                if let Some(b) = b {
+                    if !ident(b) {
+                        e.push(format!("registers.json: {}: bit {i} tiene un nombre invalido '{b}'", r.name));
+                    } else if names.contains(b.as_str()) {
+                        e.push(format!("registers.json: el bit {}.{b} tiene el nombre de un registro", r.name));
+                    } else if !bit_names.insert(b) {
+                        e.push(format!("registers.json: el nombre de bit '{b}' esta repetido"));
+                    }
+                }
+            }
+        }
+        // una direccion pertenece a un solo registro, salvo un par donde exactamente uno dice cuando se selecciona
+        for (a, rs) in &by_addr {
+            if rs.len() > 1 && rs.iter().filter(|r| r.selected_by.is_none()).count() != 1 {
+                e.push(format!("registers.json: la direccion {a:#05x} la usan {} registros sin condicion de seleccion", rs.len()));
+            }
+        }
+        // cobertura: cada direccion SFR tiene registro o esta declarada sin implementar
+        let unimpl: BTreeSet<u32> = rg.unimplemented.iter().map(|n| n.0).collect();
+        for a in &unimpl {
+            if !in_sfr(*a) {
+                e.push(format!("registers.json: sin implementar {a:#05x} esta fuera de la zona SFR"));
+            }
+            if by_addr.contains_key(a) {
+                e.push(format!("registers.json: {a:#05x} esta declarada sin implementar y tambien tiene registro"));
+            }
+        }
+        for r in &self.memory.data.sfr {
+            for a in r.start.0..=r.end.0 {
+                if !by_addr.contains_key(&a) && !unimpl.contains(&a) {
+                    e.push(format!("registers.json: la direccion SFR {a:#05x} no tiene registro ni esta declarada sin implementar"));
+                }
+            }
+        }
+        // referencias cruzadas con memory.json y pins.json
+        let bs = &self.memory.data.bank_select;
+        match rg.get(&bs.register) {
+            None => e.push(format!("registers.json: falta el registro de seleccion de banco {}", bs.register)),
+            Some(r) => {
+                for b in &bs.bits {
+                    if !r.bits.iter().any(|x| x.as_deref() == Some(b.as_str())) {
+                        e.push(format!("registers.json: {} no tiene el bit de seleccion de banco {b}", bs.register));
+                    }
+                }
+            }
+        }
+        for pk in &self.pins.packages {
+            for p in &pk.pins {
+                if let Some(port) = &p.port {
+                    for prefix in ["PORT", "TRIS"] {
+                        if rg.get(&format!("{prefix}{port}")).is_none() {
+                            e.push(format!("registers.json: falta {prefix}{port} (lo usa el pin {})", p.name));
+                        }
+                    }
+                    let bit_ok = |reg: &str| rg.get(&format!("{reg}{port}")).is_some_and(|r| p.bit.is_some_and(|b| r.bits.get(b as usize).is_some_and(|x| x.as_deref() == Some(format!("{reg}{port}{b}").as_str()) || reg == "PORT" && x.as_deref() == Some(p.name.as_str()))));
+                    if !bit_ok("PORT") || !bit_ok("TRIS") {
+                        e.push(format!("registers.json: el pin {} no tiene su bit con nombre en PORT{port}/TRIS{port}", p.name));
+                    }
+                }
+                for f in &p.functions {
+                    if let Some(n) = f.strip_prefix("AN").and_then(|n| n.parse::<u32>().ok()) {
+                        let reg = if n < 8 { "ANSEL" } else { "ANSELH" };
+                        if !rg.get(reg).is_some_and(|r| r.bits.iter().any(|x| x.as_deref() == Some(format!("ANS{n}").as_str()))) {
+                            e.push(format!("registers.json: el pin {} usa {f} pero {reg} no tiene el bit ANS{n}", p.name));
+                        }
+                    }
                 }
             }
         }

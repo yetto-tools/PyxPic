@@ -134,7 +134,7 @@ fn jumps_stay_inside_the_function_and_target_labels_only() {
 
 #[test]
 fn a_name_that_clashes_with_a_predefined_register_is_reported() {
-    let src = format!("{HEAD}@asm_function\ndef f(Z: u8) -> None:\n    \"\"\"\n    RETURN\n    \"\"\"\n\n\ndef main() -> None:\n    f(1)\n");
+    let src = format!("{HEAD}@asm_function\ndef f(Z: u8) -> None:\n    \"\"\"\n    BSF STATUS,Z\n    RETURN\n    \"\"\"\n\n\ndef main() -> None:\n    f(1)\n");
     match try_build(&src) {
         Err(CodegenError::Asm(e)) => assert!(e[0].message.contains("Z") && e[0].message.contains("renombra"), "{e:?}"),
         other => panic!("{:?}", other.map(|_| ())),
@@ -182,4 +182,17 @@ fn the_reference_interpreter_does_not_run_asm_functions() {
     let r = analyze(&src, &TargetProfile::generic());
     let m = lower(&r.program.unwrap());
     assert_eq!(Machine::new(&m).run_main().unwrap_err(), Trap::AsmFunction("f".into()));
+}
+
+#[test]
+fn a_global_with_a_predefined_name_is_fine_when_the_block_does_not_use_it() {
+    let src = format!("{HEAD}Z: u8 = 0\n\n\n@asm_function\ndef f() -> None:\n    \"\"\"\n    RETURN\n    \"\"\"\n\n\ndef main() -> None:\n    f()\n");
+    assert!(try_build(&src).is_ok());
+}
+
+#[test]
+fn bit_names_from_the_register_map_work_in_the_block() {
+    let src = format!("{HEAD}@asm_function\ndef start() -> None:\n    \"\"\"\n    BSF ADCON0,GO_DONE\n    RETURN\n    \"\"\"\n\n\ndef main() -> None:\n    start()\n");
+    let c = try_build(&src).unwrap();
+    assert!(c.listing.contains("BSF 0x1f,1"), "{}", c.listing);
 }
