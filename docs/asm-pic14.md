@@ -151,7 +151,7 @@ se usa `STATUS_Z_POSN`.
 ### `CONFIG`
 
 `CONFIG FOSC = INTRC_NOCLKOUT, WDTE = OFF` o entre comillas `CONFIG "WDTE = OFF"`. El valor es **primero un nombre** del dispositivo (`ON`, `OFF`,
-`XT`, `INTRC_NOCLKOUT`…) y solo si no lo es, una constante. Las palabras no mencionadas quedan en su valor por defecto (`0x3FFF`); `CONFIG CONFIG1 = 0x20D4`
+`XT`, `INTRC_NOCLKOUT`…) y solo si no lo es, una constante. Una palabra configurada parte de su valor por defecto (`0x3FFF`); las palabras no mencionadas no se emiten. `CONFIG CONFIG1 = 0x20D4`
 fija la palabra entera. Se repite un ajuste: error. Los nombres están en `devices/<pic>/config.json` (`names`) y se validan contra los valores del datasheet.
 
 > **A comprobar:** los nombres de valor del PIC16F887 (`INTRC_NOCLKOUT`, `BOR21V`, `1FOURTH`…) están tomados de las convenciones del DFP de Microchip; conviene
