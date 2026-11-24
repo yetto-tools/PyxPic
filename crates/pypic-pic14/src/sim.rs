@@ -129,6 +129,16 @@ impl Sim {
     }
 
     // ---- ejecucion ----------------------------------------------------------------------
+    /// Fuerza una interrupcion entre dos instrucciones (los perifericos no se modelan): empuja el PC,
+    /// salta a 0004h y desactiva GIE hasta el RETFIE. Despierta al nucleo si dormia.
+    pub fn interrupt(&mut self) {
+        self.push(self.pc);
+        self.pc = 4;
+        self.ram[0x0B] &= !0x80;
+        self.halted = false;
+        self.cycles += 3;
+    }
+
     fn set_flag(&mut self, mask: u8, on: bool) {
         if on { self.ram[STATUS] |= mask } else { self.ram[STATUS] &= !mask }
     }
@@ -281,8 +291,13 @@ impl Sim {
                 next = self.pop();
                 cyc = 2;
             }
-            Return | Retfie => {
+            Return => {
                 next = self.pop();
+                cyc = 2;
+            }
+            Retfie => {
+                next = self.pop();
+                self.ram[0x0B] |= 0x80; // RETFIE reactiva GIE (INTCON<7>)
                 cyc = 2;
             }
             Call(k) => {

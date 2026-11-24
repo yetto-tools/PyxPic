@@ -58,6 +58,8 @@ name = "pypic-pic14"
 version = "0.0.1"
 dependencies = [
  "pypic-device",
+ "pypic-frontend",
+ "pypic-ir",
 ]
 
 [[package]]

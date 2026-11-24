@@ -4,10 +4,12 @@
 //! palabras de 14 bits, desensamblador (verificado contra DS40001291H p.227) y
 //! escritor/lector de Intel HEX.
 
+pub mod codegen;
 pub mod hex;
 pub mod isa;
 pub mod samples;
 pub mod sim;
 
+pub use codegen::{compile, Compiled, CodegenError, Options};
 pub use hex::{HexError, Image};
 pub use isa::{disassemble, Cycles, Dest, EncodeError, Flag, Inst};

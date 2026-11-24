@@ -8,6 +8,7 @@ use pypic_pic14::{disassemble, Image};
 const USAGE: &str = "uso:
   pypic check <archivo.py> [opciones]
   pypic ir <archivo.py> [opciones]
+  pypic build <archivo.py> [-o salida.hex] [--listing] [opciones]
   pypic disasm <archivo.hex>
   pypic device validate <directorio-del-pack>
 
@@ -43,7 +44,7 @@ fn main() -> ExitCode {
     match args.first().map(String::as_str) {
         Some("device") => device(&args[1..]),
         Some("disasm") => disasm(&args[1..]),
-        Some(c @ ("check" | "ir")) => compile(c, &args[1..]),
+        Some(c @ ("check" | "ir" | "build")) => compile(c, &args[1..]),
         _ => usage(),
     }
 }
@@ -110,9 +111,13 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     let mut native = None;
     let mut max = None;
     let mut stack = None;
+    let mut out_path: Option<String> = None;
+    let mut listing = false;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
+            "-o" => out_path = it.next().cloned(),
+            "--listing" => listing = true,
             "--device" => device_dir = it.next().cloned(),
             "--native-bits" => native = it.next().and_then(|v| v.parse::<u32>().ok()),
             "--max-int-bits" => max = it.next().and_then(|v| v.parse::<u32>().ok()),
@@ -160,6 +165,33 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
         eprintln!("error interno: la IR generada no es valida:\n  {}", errs.join("\n  "));
         return ExitCode::from(70);
     }
-    print!("{}", pypic_ir::print(&module));
+    if cmd == "ir" {
+        print!("{}", pypic_ir::print(&module));
+        return ExitCode::SUCCESS;
+    }
+    // build: IR -> instrucciones PIC14 -> Intel HEX
+    let compiled = match pypic_pic14::compile(&module, &pypic_pic14::Options::default()) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{file}: error: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    if let Err(e) = compiled.image.check_bounds(8192, (0x2000, 0x3FFF)) {
+        eprintln!("{file}: error interno: {e}");
+        return ExitCode::from(70);
+    }
+    let out_path = out_path.unwrap_or_else(|| Path::new(&file).with_extension("hex").to_string_lossy().into_owned());
+    if let Err(e) = std::fs::write(&out_path, compiled.image.to_intel_hex(16)) {
+        eprintln!("no se pudo escribir '{out_path}': {e}");
+        return ExitCode::from(2);
+    }
+    if listing {
+        print!("{}", compiled.listing);
+    }
+    println!(
+        "{out_path}: {} palabras de programa, {} bytes de RAM (banco 0). Palabras de configuracion por defecto (INTOSCIO, WDT apagado, MCLR interno).",
+        compiled.flash_words, compiled.ram_bytes
+    );
     ExitCode::SUCCESS
 }

@@ -1,0 +1,47 @@
+# Generador de código PIC14 (`pypic-pic14::codegen`)
+
+**Estado: primer corte implementado.** IR tipada → instrucciones PIC14 nativas → Intel HEX. Todo corre en el host; el MCU solo
+ejecuta las instrucciones generadas (sin intérprete ni VM). Reglas de la ABI: `docs/abi-pic14.md`.
+
+```
+pypic build programa.py -o salida.hex [--listing] [--device devices/pic16f887]
+```
+
+## Qué soporta
+
+- Tipos `u8`, `i8`, `bool`, `u16`, `i16`. Little-endian, aritmética modular.
+- `+ - & | ^ ~`, negación, `not`, comparaciones (con y sin signo, 8 y 16 bits), desplazamientos por **constante**, conversiones.
+- `if/elif/else`, `while`, `for range`, `break/continue`, `and/or/not` con cortocircuito.
+- Funciones con argumentos y retorno (8/16 bits), globales inicializados en el arranque, `@interrupt` con guardado de contexto.
+- Programas con `main()`; solo se compilan las funciones alcanzables desde `main` o la ISR.
+
+## Cómo está generado
+
+| Aspecto | Decisión |
+|---|---|
+| Memoria | Todo en el banco 0 (`20h–6Fh`, 80 bytes): globales, parámetros, locales y temporales, sin solapamiento. Así se cumple la invariante de banco 0 |
+| Zona común `70h–7Fh` | `70h W_TEMP`, `71h STATUS_TEMP`, `72h PCLATH_TEMP`; `74h–77h` temporales del contexto principal, `78h–7Bh` de la ISR; `7Ch`/`7Dh` byte alto del retorno de 16 bits (principal/ISR) |
+| Llamada | Argumentos a las posiciones del llamado, `CALL`, retorno en W (byte bajo) y `RETV` (byte alto) |
+| Comparaciones | `SUBWF`/`SUBLW` y bit C; con signo se invierte el bit 7 (`XORLW 0x80`); 16 bits: primero el byte alto, y el bajo solo si empatan |
+| Arranque | `0000h: GOTO startup`; `startup` inicializa **todos** los globales (la RAM no está definida tras el reset), `CALL main`, `SLEEP` |
+| Interrupción | `0004h: GOTO isr` (o `RETFIE` si no hay ISR); prólogo/epílogo del ejemplo 14-1 del datasheet (p.219) |
+| Configuración | `CONFIG1 = 20D4h`, `CONFIG2 = 3FFFh` (INTOSCIO, WDT apagado, MCLR interno). TODO: tomarlos del Device Pack |
+
+## Límites actuales (el compilador los rechaza con un error claro)
+
+- `*`, `//`, `%` y desplazamientos por variable: necesitan rutinas de runtime (#27).
+- `u32` / `i32`.
+- Más de 80 bytes de datos: no hay otros bancos ni solapamiento de locales (#26).
+- Más de 2048 palabras: no se maneja PCLATH.
+- **Sin acceso a hardware desde el lenguaje todavía** (SDK, #9): hoy un programa `.py` no puede mover un pin.
+
+## Cómo se verifica
+
+`crates/pypic-pic14/tests/codegen.rs`: pruebas **diferenciales**. El mismo programa se ejecuta en el intérprete de referencia de la IR
+(el oráculo) y, ya compilado, en el simulador del núcleo PIC14; los globales finales deben coincidir.
+
+- Más de 3 000 casos de `+ - & | ^` y más de 4 000 de comparaciones, en `u8/i8/u16/i16`, con operandos límite y aleatorios (semilla fija).
+- Constantes en cualquier operando, desplazamientos, conversiones, bucles, llamadas anidadas, cortocircuito.
+- **Una interrupción inyectada tras cada instrucción posible de `main`** no altera su resultado (verifica el guardado de W, STATUS y PCLATH).
+
+El simulador es del host y no modela periféricos; **no sustituye a Proteus ni al hardware**.

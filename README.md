@@ -35,14 +35,15 @@ crates/
   pypic-frontend/   lexer, parser, tipos y constantes (src/, tests/)
   pypic-ir/         IR tipada, lowering, verificador, intérprete de referencia (src/, tests/)
   pypic-device/     Device Packs: esquema, cargador y validador (src/, tests/)
-  pypic-pic14/      backend PIC14: instrucciones, codificador/decodificador, desensamblador, Intel HEX, simulador del núcleo (src/, tests/)
-  pypic-cli/        binario `pypic` (check, ir, disasm, device validate)
+  pypic-pic14/      backend PIC14: instrucciones, generador de código, desensamblador, Intel HEX, simulador del núcleo (src/, tests/)
+  pypic-cli/        binario `pypic` (check, ir, build, disasm, device validate)
 devices/
   pic16f887/        Device Pack verificado contra DS40001291H
 docs/
   spec/             especificación (docx, ZIP y módulos 00–09)
   frontend.md       diseño y semántica del frontend
   device-packs.md   esquema y validación de Device Packs
+  backend-pic14.md  generador de código PIC14: alcance, límites y verificación
   proteus-blink.md  cómo probar el blink de muestra en Proteus
   abi-pic14.md      ABI de PIC14 (convención de llamada, banco, ISR, pila)
   ISSUES_BACKLOG.md backlog propuesto como issues
@@ -57,6 +58,7 @@ extensión de VS Code se añadirán como nuevos crates/carpetas.
 cargo test
 cargo run -p pypic-cli -- check examples/counter.py
 cargo run -p pypic-cli -- ir examples/counter.py
+cargo run -p pypic-cli -- build examples/counter.py -o counter.hex --listing
 cargo run -p pypic-cli -- device validate devices/pic16f887
 cargo run -p pypic-cli -- disasm archivo.hex    # inspecciona un .hex (programa y palabras de configuracion)
 cargo run -p pypic-cli -- check examples/counter.py --device devices/pic16f887

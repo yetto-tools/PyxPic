@@ -5,6 +5,8 @@ edition.workspace = true
 description = "PyPIC PIC14 (PIC16 classic) backend: instruction set model, encoder/decoder and disassembler"
 
 [dependencies]
+pypic-ir = { path = "../pypic-ir" }
 
 [dev-dependencies]
+pypic-frontend = { path = "../pypic-frontend" }
 pypic-device = { path = "../pypic-device" }
