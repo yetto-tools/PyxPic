@@ -323,7 +323,7 @@ impl<'a> Parser<'a> {
                 self.expect(Tok::LBracket, "'[' (Rom[tipo])")?;
                 let inner = self.type_expr(false)?;
                 let end = self.expect(Tok::RBracket, "']'")?;
-                Ok(TypeExpr { span: sp.to(end), kind: TypeExprKind::Table(Box::new(inner)) })
+                Ok(TypeExpr { span: sp.to(end), kind: TypeExprKind::Rom(Box::new(inner)) })
             }
             Tok::Ident(s) if !UNSUPPORTED_KEYWORDS.contains(&s.as_str()) => {
                 self.bump();

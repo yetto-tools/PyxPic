@@ -212,8 +212,8 @@ impl<'m> Machine<'m> {
                 let v = self.read(fr, src);
                 self.write(f, fr, *dst, v);
             }
-            Inst::TableGet { dst, table, index } => {
-                let t = &self.module.tables[*table].1;
+            Inst::RomGet { dst, rom, index } => {
+                let t = &self.module.roms[*rom].1;
                 let i = (self.read(fr, index) as usize).min(t.len() - 1);
                 self.write(f, fr, *dst, t[i] as i128);
             }

@@ -59,7 +59,7 @@ pub struct FuncInfo {
     pub is_asm: bool,
     pub calls: BTreeSet<String>,
     /// Lee alguna tabla con un indice variable: la consulta es un CALL (un nivel de pila).
-    pub uses_table: bool,
+    pub uses_rom: bool,
     pub span: Span,
 }
 
@@ -139,8 +139,8 @@ pub struct Program {
     /// Llamadas a `pypic.bits`, por id de expresion.
     pub bits_calls: BTreeMap<u32, BitsOp>,
     /// Tablas constantes (nombre y entradas) y las lecturas con indice variable, por id de expresion.
-    pub tables: Vec<(String, Vec<u8>)>,
-    pub table_gets: BTreeMap<u32, usize>,
+    pub roms: Vec<(String, Vec<u8>)>,
+    pub rom_gets: BTreeMap<u32, usize>,
 }
 
 pub struct Checked {
@@ -154,8 +154,8 @@ pub struct Checked {
     pub timer_calls: BTreeMap<u32, TimerCall>,
     pub reg_calls: BTreeMap<u32, RegCall>,
     pub bits_calls: BTreeMap<u32, BitsOp>,
-    pub tables: Vec<(String, Vec<u8>)>,
-    pub table_gets: BTreeMap<u32, usize>,
+    pub roms: Vec<(String, Vec<u8>)>,
+    pub rom_gets: BTreeMap<u32, usize>,
 }
 
 pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Checked {
@@ -191,9 +191,9 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         reg_calls: BTreeMap::new(),
         bits_fns: HashSet::new(),
         claims: Vec::new(),
-        tables: Vec::new(),
-        table_idx: HashMap::new(),
-        table_gets: BTreeMap::new(),
+        roms: Vec::new(),
+        rom_idx: HashMap::new(),
+        rom_gets: BTreeMap::new(),
         bits_calls: BTreeMap::new(),
         carry_ok: false,
         carry_prev: false,
@@ -201,7 +201,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         stmt_top: None,
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, tables: c.tables, table_gets: c.table_gets }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -269,9 +269,9 @@ struct Checker<'a> {
     /// Pines que un periferico toma al encender un bit (por registros o por el reloj externo de un timer).
     claims: Vec<Claim>,
     /// Tablas constantes declaradas, su indice por nombre y las lecturas variables.
-    tables: Vec<(String, Vec<u8>)>,
-    table_idx: HashMap<String, usize>,
-    table_gets: BTreeMap<u32, usize>,
+    roms: Vec<(String, Vec<u8>)>,
+    rom_idx: HashMap<String, usize>,
+    rom_gets: BTreeMap<u32, usize>,
     /// Funciones importadas de `pypic.bits` y sus llamadas por id de expresion.
     bits_fns: HashSet<String>,
     bits_calls: BTreeMap<u32, BitsOp>,
@@ -1376,7 +1376,7 @@ impl<'a> Checker<'a> {
             is_init,
             is_asm,
             calls: BTreeSet::new(),
-            uses_table: false,
+            uses_rom: false,
             span: f.name.span,
         });
     }
@@ -1384,11 +1384,11 @@ impl<'a> Checker<'a> {
     fn declare_variable(&mut self, v: &VarDecl, is_global: bool) {
         let name = &v.name.name;
         match &v.ann.kind {
-            TypeExprKind::Const(inner) if matches!(inner.kind, TypeExprKind::Table(_)) => {
-                let TypeExprKind::Table(elem) = &inner.kind else { unreachable!() };
-                return self.declare_table(v, elem, is_global, true);
+            TypeExprKind::Const(inner) if matches!(inner.kind, TypeExprKind::Rom(_)) => {
+                let TypeExprKind::Rom(elem) = &inner.kind else { unreachable!() };
+                return self.declare_rom(v, elem, is_global, true);
             }
-            TypeExprKind::Table(elem) => return self.declare_table(v, elem, is_global, false),
+            TypeExprKind::Rom(elem) => return self.declare_rom(v, elem, is_global, false),
             _ => {}
         }
         let (inner, is_final) = match &v.ann.kind {
@@ -1537,7 +1537,7 @@ impl<'a> Checker<'a> {
     /// Profundidad maxima de CALL anidados desde `f` (hoja = 0). Sin recursion es finita;
     /// el guardia de ciclos solo evita bucles si ya se reporto `PYP2013`.
     /// `NOMBRE: Rom[u8] = [..]`: datos constantes en la memoria de programa (`docs/sdk-tablas.md`).
-    fn declare_table(&mut self, v: &VarDecl, inner: &TypeExpr, is_global: bool, is_final: bool) {
+    fn declare_rom(&mut self, v: &VarDecl, inner: &TypeExpr, is_global: bool, is_final: bool) {
         let name = &v.name.name;
         // Rom ya es de solo lectura: `Const` no hace falta (se acepta `Const[Rom[u8]]`)
         let _ = is_final;
@@ -1548,7 +1548,7 @@ impl<'a> Checker<'a> {
             TypeExprKind::Name(n) if n == "u8" => {}
             _ => self.d.error("PYP2160", inner.span, "Rom solo admite u8 por ahora: cada entrada es un RETLW"),
         }
-        if self.globals.contains_key(name) || self.table_idx.contains_key(name) || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.reg_names.contains_key(name) || self.timer_names.contains_key(name) || self.bits_fns.contains(name) {
+        if self.globals.contains_key(name) || self.rom_idx.contains_key(name) || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.reg_names.contains_key(name) || self.timer_names.contains_key(name) || self.bits_fns.contains(name) {
             self.d.error("PYP2009", v.name.span, format!("'{name}' ya esta declarado"));
         }
         let Some(val) = &v.value else {
@@ -1573,25 +1573,25 @@ impl<'a> Checker<'a> {
                 (_, None) => self.d.error("PYP2160", it.span, "las entradas de una tabla son constantes: se escriben en la memoria de programa al compilar"),
             }
         }
-        self.table_idx.insert(name.clone(), self.tables.len());
-        self.tables.push((name.clone(), values));
+        self.rom_idx.insert(name.clone(), self.roms.len());
+        self.roms.push((name.clone(), values));
     }
 
     /// `TABLA[i]`: lectura de costo fijo; un indice constante se resuelve al compilar.
     fn index_expr(&mut self, e: &Expr, obj: &str, obj_span: Span, index: &Expr) -> Type {
-        let Some(&ti) = self.table_idx.get(obj) else {
+        let Some(&ti) = self.rom_idx.get(obj) else {
             self.expr(index);
             let msg = if self.lookup(obj).is_some() { format!("'{obj}' no es una tabla: solo se indexan las 'Rom[u8]'") } else { format!("'{obj}' no esta declarada como tabla") };
             self.d.error("PYP2162", obj_span, msg);
             return self.set(e, Type::Error, None);
         };
-        let len = self.tables[ti].1.len();
+        let len = self.roms[ti].1.len();
         let t = self.expr(index);
         match (t, self.konst(index)) {
             (Type::Error, _) => self.set(e, Type::Error, None),
             (_, Some(k)) if (0..len as i128).contains(&k) => {
                 self.coerce_literal(index, U8);
-                let v = self.tables[ti].1[k as usize] as i128;
+                let v = self.roms[ti].1[k as usize] as i128;
                 self.set(e, U8, Some(v))
             }
             (_, Some(k)) => {
@@ -1599,9 +1599,9 @@ impl<'a> Checker<'a> {
                 self.set(e, Type::Error, None)
             }
             (Type::Int { bits: 8, signed: false }, None) => {
-                self.table_gets.insert(e.id, ti);
+                self.rom_gets.insert(e.id, ti);
                 if let Some(cur) = self.cur {
-                    self.functions[cur].uses_table = true;
+                    self.functions[cur].uses_rom = true;
                 }
                 self.set(e, U8, None)
             }
@@ -1621,7 +1621,7 @@ impl<'a> Checker<'a> {
             return 0;
         }
         let calls: Vec<String> = self.functions[i].calls.iter().cloned().collect();
-        let own = self.functions[i].uses_table as u32;
+        let own = self.functions[i].uses_rom as u32;
         let d = calls.iter().map(|c| 1 + self.call_depth(c, visiting, memo)).max().unwrap_or(0).max(own);
         visiting.remove(f);
         memo.insert(f.to_string(), d);
@@ -1932,7 +1932,7 @@ impl<'a> Checker<'a> {
         }
         if self.timer_consts.contains(n) {
             self.d.error("PYP2128", e.span, format!("'{n}' es una constante de configuracion de temporizadores: solo se usa como argumento de TMRx.start(...)"));
-        } else if self.table_idx.contains_key(n) {
+        } else if self.rom_idx.contains_key(n) {
             self.d.error("PYP2164", e.span, format!("'{n}' es una tabla: se lee con {n}[indice] y su tamano con len({n})"));
         } else if self.reg_names.contains_key(n) {
             self.d.error("PYP2136", e.span, format!("'{n}' es un registro: usa sus metodos ({n}.read(), {n}.write(v), {n}.BIT.set()...)"));
@@ -2235,9 +2235,9 @@ impl<'a> Checker<'a> {
     fn call(&mut self, e: &Expr, func: &str, args: &[Expr]) -> Type {
         if func == "len" && !self.fidx.contains_key("len") {
             return match args {
-                [a] if matches!(&a.kind, ExprKind::Name(n) if self.table_idx.contains_key(n)) => {
+                [a] if matches!(&a.kind, ExprKind::Name(n) if self.rom_idx.contains_key(n)) => {
                     let ExprKind::Name(n) = &a.kind else { unreachable!() };
-                    let len = self.tables[self.table_idx[n]].1.len() as i128;
+                    let len = self.roms[self.rom_idx[n]].1.len() as i128;
                     self.set(e, Type::Literal, Some(len))
                 }
                 _ => {

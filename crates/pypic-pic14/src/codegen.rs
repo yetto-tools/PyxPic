@@ -192,7 +192,7 @@ enum Item {
     Org(u32),
     /// Relleno antes de una tabla de `n` entradas: la primera va en `pc + 1` y las `n` deben caber en un bloque de 256 palabras
     /// (`ADDWF PCL,F` no propaga el acarreo al byte alto del PC).
-    TablePad(u32),
+    RomPad(u32),
     /// `MOVLW` con PC<12:8> de la primera entrada de la tabla (la direccion de la etiqueta + 1).
     HighOf(Label),
 }
@@ -330,8 +330,8 @@ struct Gen<'a> {
     timing: Vec<DelayReport>,
     registers: pypic_device::Registers,
     /// Tablas constantes usadas: la etiqueta de cada una y el orden en que se emiten.
-    table_labels: HashMap<usize, Label>,
-    table_order: Vec<usize>,
+    rom_labels: HashMap<usize, Label>,
+    rom_order: Vec<usize>,
 }
 
 impl<'a> Gen<'a> {
@@ -849,7 +849,7 @@ impl<'a> Gen<'a> {
             I::Timer { call, dst, arg } => self.timer(call, *dst, arg.as_ref()),
             I::Reg { call, dst, arg } => self.reg(call, *dst, arg.as_ref()),
             I::Bits { op, dst, src } => self.bits(*op, *dst, src.as_ref()),
-            I::TableGet { dst, table, index } => self.table_get(*dst, *table, index),
+            I::RomGet { dst, rom, index } => self.rom_get(*dst, *rom, index),
             I::PinCfg { pin, output } => self.pin_cfg(*pin, *output),
             I::PinSet { pin, value } => self.pin_set(*pin, value),
             I::PinToggle { pin } => {
@@ -1046,7 +1046,7 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
     let isr_ctx = reach(m, &isrs);
 
     let al = allocate(m, &live, opts)?;
-    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new(), registers: opts.registers.clone(), table_labels: HashMap::new(), table_order: Vec::new() };
+    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new(), registers: opts.registers.clone(), rom_labels: HashMap::new(), rom_order: Vec::new() };
     for &fi in &live {
         let l = g.asm.label(m.functions[fi].name.clone());
         g.fn_labels.insert(fi, l);
@@ -1111,7 +1111,7 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
         let bb_labels: Vec<Label> = (0..f.blocks.len()).map(|b| g.asm.label(format!("{}.bb{b}", f.name))).collect();
         g.function(fi, &bb_labels)?;
     }
-    g.emit_tables();
+    g.emit_roms();
 
     // ---- ensamblado: direcciones y etiquetas ----
     let mut addr_of = vec![None::<u32>; g.asm.names.len()];
@@ -1120,7 +1120,7 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
     for it in &g.asm.items {
         match it {
             Item::Org(a) => pc = *a,
-            Item::TablePad(n) => {
+            Item::RomPad(n) => {
                 let first = pc + 1;
                 if (first & 0xFF) + n > 256 {
                     pc = first | 0xFF; // la primera entrada pasa al siguiente multiplo de 256
@@ -1245,15 +1245,15 @@ impl<'a> Gen<'a> {
     ///   CLRF  PCLATH                                      ; invariante de la ABI: PCLATH<4:3> = pagina 0
     /// tabla: ADDWF PCL,F / RETLW k0 / RETLW k1 ...        ; las n entradas no cruzan un limite de 256 palabras
     /// ```
-    fn table_get(&mut self, dst: Place, table: usize, index: &Operand) -> Result<(), CodegenError> {
-        let n = self.m.tables[table].1.len();
+    fn rom_get(&mut self, dst: Place, rom: usize, index: &Operand) -> Result<(), CodegenError> {
+        let n = self.m.roms[rom].1.len();
         let d = self.regs(dst)?[0];
-        let label = match self.table_labels.get(&table) {
+        let label = match self.rom_labels.get(&rom) {
             Some(&l) => l,
             None => {
-                let l = self.asm.label(format!("table.{}", self.m.tables[table].0));
-                self.table_labels.insert(table, l);
-                self.table_order.push(table);
+                let l = self.asm.label(format!("rom.{}", self.m.roms[rom].0));
+                self.rom_labels.insert(rom, l);
+                self.rom_order.push(rom);
                 l
             }
         };
@@ -1280,11 +1280,11 @@ impl<'a> Gen<'a> {
     }
 
     /// Las tablas usadas, cada una con `ADDWF PCL,F` y un `RETLW` por entrada.
-    fn emit_tables(&mut self) {
-        for t in self.table_order.clone() {
-            let values = self.m.tables[t].1.clone();
-            self.asm.items.push(Item::TablePad(values.len() as u32));
-            self.asm.place(self.table_labels[&t]);
+    fn emit_roms(&mut self) {
+        for t in self.rom_order.clone() {
+            let values = self.m.roms[t].1.clone();
+            self.asm.items.push(Item::RomPad(values.len() as u32));
+            self.asm.place(self.rom_labels[&t]);
             self.asm.i(Addwf(PCL, F));
             for v in values {
                 self.asm.i(Retlw(v));

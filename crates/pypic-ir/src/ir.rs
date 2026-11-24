@@ -62,7 +62,7 @@ pub enum Inst {
     Bits { op: BitsOp, dst: Option<Place>, src: Option<Operand> },
     /// `dst = TABLA[index]`: lectura de una tabla constante de la memoria de programa. Un indice mayor que el ultimo
     /// devuelve la ultima entrada (el backend lo comprueba; la consulta cuesta lo mismo con cualquier indice).
-    TableGet { dst: Place, table: usize, index: Operand },
+    RomGet { dst: Place, rom: usize, index: Operand },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -134,7 +134,7 @@ pub struct Pin {
 pub struct Module {
     pub globals: Vec<Global>,
     /// Tablas constantes: nombre y entradas (u8).
-    pub tables: Vec<(String, Vec<u8>)>,
+    pub roms: Vec<(String, Vec<u8>)>,
     pub functions: Vec<Function>,
     pub pins: Vec<Pin>,
     /// Dispositivo declarado en el programa (`from pypic.device import PIC16F887`).

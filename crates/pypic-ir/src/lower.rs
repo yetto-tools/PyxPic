@@ -14,12 +14,12 @@ pub fn lower(prog: &Program) -> Module {
     m.device = prog.device.clone();
     m.clock_hz = prog.clock_hz;
     m.clock_defaulted = prog.clock_defaulted;
-    m.tables = prog.tables.clone();
+    m.roms = prog.roms.clone();
     let mut gidx = HashMap::new();
     for it in &prog.module.items {
         if let Item::Var(v) = it {
             // las tablas viven en la memoria de programa, no son globales
-            if prog.tables.iter().any(|t| t.0 == v.name.name) {
+            if prog.roms.iter().any(|t| t.0 == v.name.name) {
                 continue;
             }
             let sym = &prog.globals[&v.name.name];
@@ -78,7 +78,7 @@ fn ann_type(te: &TypeExpr) -> Type {
         TypeExprKind::Name(n) => Type::from_name(n).unwrap_or(Type::Error),
         TypeExprKind::Const(inner) => ann_type(inner),
         TypeExprKind::None => Type::Void,
-        TypeExprKind::Table(_) => Type::Error,
+        TypeExprKind::Rom(_) => Type::Error,
     }
 }
 
@@ -196,9 +196,9 @@ impl<'a> FnLower<'a> {
                 self.cur = join;
             }
             ExprKind::Index { index, .. } => {
-                let table = self.prog.table_gets[&e.id];
+                let rom = self.prog.rom_gets[&e.id];
                 let index = self.value(index);
-                self.emit(Inst::TableGet { dst: dst.unwrap(), table, index });
+                self.emit(Inst::RomGet { dst: dst.unwrap(), rom, index });
             }
             ExprKind::List(_) => unreachable!("el frontend rechaza las listas fuera de una tabla"),
             ExprKind::Call { func, args, .. } => {

@@ -1,4 +1,4 @@
-# Tablas constantes en la memoria de programa
+# Tablas constantes en la memoria de programa (`Rom[u8]`)
 
 **Estado: implementado (#44).** El equivalente de las tablas de búsqueda del ensamblador (`ADDWF PCL,F` + `RETLW`) y de `DT`: datos que no gastan RAM, con una lectura de **costo fijo**
 y el manejo correcto de `PCLATH` y de los límites de 256 palabras.

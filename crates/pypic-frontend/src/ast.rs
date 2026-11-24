@@ -101,8 +101,8 @@ pub enum ExprKind {
 
 #[derive(Clone, Debug)]
 pub enum TypeExprKind {
-    /// `Rom[u8]`: datos constantes en la memoria de programa (el parser lo llama Table por dentro).
-    Table(Box<TypeExpr>),
+    /// `Rom[u8]`: datos constantes en la memoria de programa (nombre interno: Rom).
+    Rom(Box<TypeExpr>),
     Name(String),
     /// `Const[T]`
     Const(Box<TypeExpr>),

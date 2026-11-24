@@ -52,7 +52,7 @@ const HEAD: &str = "from pypic.device import PIC16F887\n";
 /// Direccion de la primera entrada de la tabla `name` segun el listado.
 fn first_entry(c: &Compiled, name: &str) -> u32 {
     let l = c.listing.lines().collect::<Vec<_>>();
-    let i = l.iter().position(|x| *x == format!("table.{name}:")).unwrap_or_else(|| panic!("no hay tabla {name}:\n{}", c.listing));
+    let i = l.iter().position(|x| *x == format!("rom.{name}:")).unwrap_or_else(|| panic!("no hay Rom {name}:\n{}", c.listing));
     u32::from_str_radix(&l[i + 1][..4], 16).unwrap() + 1
 }
 
@@ -85,7 +85,7 @@ fn a_constant_index_is_resolved_at_compile_time() {
     let src = format!("{HEAD}T: Rom[u8] = [7, 8, 9]\nv: u8 = 0\ndef main() -> None:\n    global v\n    v = T[1]\n");
     let (g, c, _) = differential(&src);
     assert_eq!(g["v"], 8);
-    assert!(!c.listing.contains("table."), "un indice constante no necesita la rutina\n{}", c.listing);
+    assert!(!c.listing.contains("rom."), "un indice constante no necesita la rutina\n{}", c.listing);
 }
 
 #[test]

@@ -68,6 +68,6 @@ fn verifier_rejects_ill_typed_ir() {
         }],
         asm: None,
     };
-    let m = Module { globals: vec![], tables: vec![], functions: vec![f], pins: vec![], device: None, clock_hz: None, clock_defaulted: false };
+    let m = Module { globals: vec![], roms: vec![], functions: vec![f], pins: vec![], device: None, clock_hz: None, clock_defaulted: false };
     assert_eq!(verify(&m).unwrap_err().len(), 2);
 }
