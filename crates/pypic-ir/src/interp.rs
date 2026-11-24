@@ -12,6 +12,8 @@ pub enum Trap {
     StepLimit,
     NoSuchFunction(String),
     BadArgs,
+    /// Las funciones `@asm_function` solo existen en el dispositivo: el interprete de referencia no las ejecuta.
+    AsmFunction(String),
 }
 
 pub struct Machine<'m> {
@@ -98,6 +100,9 @@ impl<'m> Machine<'m> {
 
     fn run(&mut self, fi: usize, args: &[i128]) -> Result<Option<i128>, Trap> {
         let f = &self.module.functions[fi];
+        if f.asm.is_some() {
+            return Err(Trap::AsmFunction(f.name.clone()));
+        }
         if args.len() != f.num_params {
             return Err(Trap::BadArgs);
         }

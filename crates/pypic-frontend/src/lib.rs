@@ -36,10 +36,17 @@ pub fn declared_device(source: &str) -> Option<String> {
 
 pub fn analyze(source: &str, target: &TargetProfile) -> Analysis {
     let mut d = Diagnostics::default();
-    let module = parser::parse(source, &mut d);
+    let mut module = parser::parse(source, &mut d);
     // Si hubo errores de sintaxis/subconjunto no se continua: el AST puede estar incompleto.
     if d.has_errors() {
         return Analysis { program: None, diagnostics: d };
+    }
+    for it in &mut module.items {
+        if let ast::Item::Func(f) = it {
+            if let Some(a) = &mut f.asm {
+                a.first_line = 1 + source[..a.offset.min(source.len())].matches('\n').count();
+            }
+        }
     }
     let c = check::check(&module, target, &mut d);
     let program = (!d.has_errors()).then_some(Program { module, info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted });

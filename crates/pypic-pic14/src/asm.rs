@@ -490,3 +490,205 @@ fn build(m: &str, ops: &[Vec<T>], ctx: &Ctx, col: usize) -> Result<Inst, AsmErro
         }
     })
 }
+
+// ---- fragmentos: el cuerpo de una funcion `@asm_function` -------------------------------------------
+
+/// Una palabra de un fragmento; los saltos llevan el indice (dentro del fragmento) de su destino.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FragItem {
+    Inst(Inst),
+    Goto(u32),
+    Call(u32),
+}
+
+#[derive(Clone, Debug)]
+pub struct Fragment {
+    pub items: Vec<FragItem>,
+    /// Indices de `items` a los que salta algun `GOTO`/`CALL` (el generador coloca ahi una etiqueta).
+    pub targets: std::collections::BTreeSet<u32>,
+    /// Linea del fuente de cada palabra, para ubicar mensajes y listados.
+    pub lines: Vec<usize>,
+}
+
+/// Ensambla el cuerpo de una funcion. `externals` son los simbolos de datos (parametros, globales, registros);
+/// las etiquetas son locales al fragmento y solo se usan como destino de `CALL`/`GOTO`. `first_line` es la
+/// linea del fuente donde empieza `src`.
+///
+/// Igual que en `assemble` hay una sola forma por operacion; ademas: no hay `ORG` ni `DW` (la funcion se coloca
+/// donde la ponga el compilador), no se usa `RETFIE` y la funcion debe terminar en `RETURN`, `RETLW` o `GOTO`.
+pub fn assemble_fragment(src: &str, first_line: usize, externals: &BTreeMap<String, i64>) -> Result<Fragment, Vec<AsmError>> {
+    let mut errors: Vec<AsmError> = Vec::new();
+    let mut syms = externals.clone();
+    let mut labels: BTreeMap<String, i64> = BTreeMap::new();
+    let mut stmts: Vec<Stmt> = Vec::new();
+    let mut pc: u32 = 0;
+
+    for (n, raw) in src.lines().enumerate() {
+        let line = first_line + n;
+        let code = raw.split(';').next().unwrap_or("");
+        let toks = match lex(code, line) {
+            Ok(t) => t,
+            Err(e) => {
+                errors.push(e);
+                continue;
+            }
+        };
+        if toks.is_empty() {
+            continue;
+        }
+        let mut i = 0;
+        if let (Some((Tok::Ident(name), col)), Some((Tok::Colon, _))) = (toks.first(), toks.get(1)) {
+            if is_reserved(name) {
+                errors.push(AsmError { line, col: *col, code: "ASM005", message: format!("'{name}' es una palabra reservada y no puede ser una etiqueta") });
+            } else if syms.contains_key(name) || labels.contains_key(name) {
+                errors.push(AsmError { line, col: *col, code: "ASM005", message: format!("el simbolo '{name}' ya esta definido (parametro, global, registro o etiqueta)") });
+            } else {
+                labels.insert(name.clone(), pc as i64);
+            }
+            i = 2;
+        }
+        let rest = &toks[i..];
+        let Some((Tok::Ident(head), hcol)) = rest.first() else {
+            if !rest.is_empty() {
+                errors.push(AsmError { line, col: rest[0].1, code: "ASM001", message: "se esperaba una instruccion, una directiva o una etiqueta".into() });
+            }
+            continue;
+        };
+        if matches!(rest.get(1), Some((Tok::Ident(e), _)) if e.eq_ignore_ascii_case("EQU")) {
+            let ctx = Ctx { syms: &syms, pc, line };
+            if is_reserved(head) {
+                errors.push(AsmError { line, col: *hcol, code: "ASM005", message: format!("'{head}' es una palabra reservada y no puede ser una constante") });
+            } else if syms.contains_key(head) || labels.contains_key(head) {
+                errors.push(AsmError { line, col: *hcol, code: "ASM005", message: format!("el simbolo '{head}' ya esta definido (parametro, global, registro o etiqueta)") });
+            } else {
+                match eval(&rest[2..], &ctx, rest[1].1) {
+                    Ok(v) => {
+                        syms.insert(head.clone(), v);
+                    }
+                    Err(e) => errors.push(e),
+                }
+            }
+            continue;
+        }
+        let upper = head.to_ascii_uppercase();
+        let ops: Vec<Vec<T>> = split_operands(&rest[1..]).into_iter().map(|s| s.to_vec()).collect();
+        match upper.as_str() {
+            "ORG" | "DW" => errors.push(AsmError {
+                line,
+                col: *hcol,
+                code: "ASM007",
+                message: format!("{upper} no se usa dentro de una funcion @asm_function: el compilador decide donde va (una tabla se escribe con RETLW)"),
+            }),
+            "RETFIE" => errors.push(AsmError {
+                line,
+                col: *hcol,
+                code: "ASM007",
+                message: "RETFIE solo vuelve de una interrupcion y una funcion @asm_function no lo es: usa RETURN o RETLW".into(),
+            }),
+            m if MNEMONICS.contains(&m) => {
+                stmts.push(Stmt::Inst { line, col: *hcol, pc, mnemonic: m.to_string(), ops });
+                pc += 1;
+            }
+            m if ENHANCED_ONLY.contains(&m) => errors.push(AsmError {
+                line,
+                col: *hcol,
+                code: "ASM002",
+                message: format!("'{m}' no existe en el PIC16 clasico (PIC14): es de otra familia (PIC16F1xxx); las 35 instrucciones de este dispositivo estan en docs/asm-pic14.md"),
+            }),
+            m if MPASM_PSEUDO.contains(&m) => errors.push(AsmError {
+                line,
+                col: *hcol,
+                code: "ASM002",
+                message: format!("'{m}' es una pseudoinstruccion de MPASM y no existe: escribe la instruccion real (p. ej. BSF STATUS,C en vez de SETC)"),
+            }),
+            _ => errors.push(AsmError { line, col: *hcol, code: "ASM002", message: format!("instruccion o directiva desconocida '{head}'") }),
+        }
+    }
+    let total = pc;
+
+    // las etiquetas valen su posicion dentro de la funcion y solo se evaluan como destino de salto: en un dato
+    // no tienen valor, porque su direccion final la decide el compilador
+    let mut jump_syms = syms.clone();
+    jump_syms.extend(labels.iter().map(|(k, v)| (k.clone(), *v)));
+    let mut items = Vec::new();
+    let mut lines = Vec::new();
+    let mut targets = std::collections::BTreeSet::new();
+    // estado estatico de RP0/RP1 en orden de texto, para exigir que se vuelva al banco 0 (invariante de la ABI)
+    let (mut rp0, mut rp1) = (false, false);
+    for st in &stmts {
+        let Stmt::Inst { line, col, pc, mnemonic, ops } = st else { continue };
+        if mnemonic == "CALL" || mnemonic == "GOTO" {
+            if ops.len() != 1 {
+                errors.push(AsmError { line: *line, col: *col, code: "ASM003", message: format!("{mnemonic} se escribe '{mnemonic} etiqueta' ({} operando(s) en lugar de 1)", ops.len()) });
+                continue;
+            }
+            if let [(Tok::Ident(name), c)] = ops[0].as_slice() {
+                if syms.contains_key(name) && !labels.contains_key(name) {
+                    errors.push(AsmError {
+                        line: *line,
+                        col: *c,
+                        code: "ASM005",
+                        message: format!("'{name}' es un dato, no una etiqueta de esta funcion: {mnemonic} solo salta a etiquetas locales (llamar a otras funciones desde ensamblador aun no esta soportado)"),
+                    });
+                    continue;
+                }
+            }
+            let ctx = Ctx { syms: &jump_syms, pc: *pc, line: *line };
+            match eval(&ops[0], &ctx, *col) {
+                Ok(t) if (0..total as i64).contains(&t) => {
+                    targets.insert(t as u32);
+                    items.push(if mnemonic == "CALL" { FragItem::Call(t as u32) } else { FragItem::Goto(t as u32) });
+                    lines.push(*line);
+                }
+                Ok(t) => errors.push(AsmError {
+                    line: *line,
+                    col: ops[0].first().map_or(*col, |x| x.1),
+                    code: "ASM006",
+                    message: format!("{mnemonic} a la palabra {t} de la funcion, fuera de ella (tiene {total}): una funcion @asm_function solo salta dentro de si misma"),
+                }),
+                Err(e) => errors.push(e),
+            }
+            continue;
+        }
+        let ctx = Ctx { syms: &syms, pc: *pc, line: *line };
+        match build(mnemonic, ops, &ctx, *col) {
+            Ok(inst) => {
+                match inst {
+                    Inst::Bsf(0x03, b @ (5 | 6)) => {
+                        if b == 5 { rp0 = true } else { rp1 = true }
+                    }
+                    Inst::Bcf(0x03, b @ (5 | 6)) => {
+                        if b == 5 { rp0 = false } else { rp1 = false }
+                    }
+                    Inst::Return | Inst::Retlw(_) if rp0 || rp1 => errors.push(AsmError {
+                        line: *line,
+                        col: *col,
+                        code: "ASM007",
+                        message: "vuelve con RP0/RP1 puestos: todo el codigo generado asume el banco 0 al volver; restablece los bits con BCF STATUS,RP0 y BCF STATUS,RP1 antes de RETURN/RETLW".into(),
+                    }),
+                    _ => {}
+                }
+                items.push(FragItem::Inst(inst));
+                lines.push(*line);
+            }
+            Err(e) => errors.push(e),
+        }
+    }
+    if errors.is_empty() {
+        match items.last() {
+            None => errors.push(AsmError { line: first_line, col: 1, code: "ASM007", message: "la funcion @asm_function no tiene instrucciones".into() }),
+            Some(FragItem::Goto(_)) | Some(FragItem::Inst(Inst::Return)) | Some(FragItem::Inst(Inst::Retlw(_))) => {}
+            Some(_) => errors.push(AsmError {
+                line: *lines.last().unwrap_or(&first_line),
+                col: 1,
+                code: "ASM007",
+                message: "la funcion termina sin RETURN, RETLW ni GOTO: seguiria ejecutando el codigo de la funcion siguiente".into(),
+            }),
+        }
+    }
+    if !errors.is_empty() {
+        errors.sort_by_key(|e| (e.line, e.col));
+        return Err(errors);
+    }
+    Ok(Fragment { items, targets, lines })
+}

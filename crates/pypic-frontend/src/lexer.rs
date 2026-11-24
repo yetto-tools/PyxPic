@@ -8,7 +8,7 @@ pub enum Tok {
     Ident(String),
     Int(i128),
     /// Contenido literal entre comillas (sin interpretar escapes).
-    Str(String),
+    Str(String, u8),
     Newline,
     Indent,
     Dedent,
@@ -213,7 +213,7 @@ impl<'a> Lexer<'a> {
         let raw = &self.src[start..self.i];
         let q = if triple { 3 } else { 1 };
         let inner = if raw.len() >= 2 * q { raw[q..raw.len() - q].to_string() } else { String::new() };
-        self.push(Tok::Str(inner), start);
+        self.push(Tok::Str(inner, q as u8), start);
     }
 
     fn number(&mut self) {

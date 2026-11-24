@@ -33,7 +33,7 @@ fn describe(t: &Tok) -> String {
     match t {
         Tok::Ident(s) => format!("'{s}'"),
         Tok::Int(_) => "un numero".into(),
-        Tok::Str(_) => "una cadena".into(),
+        Tok::Str(..) => "una cadena".into(),
         Tok::Newline => "fin de linea".into(),
         Tok::Indent => "una indentacion".into(),
         Tok::Dedent => "el fin del bloque".into(),
@@ -190,7 +190,7 @@ impl<'a> Parser<'a> {
                 let sp = self.span();
                 return self.err("PYP1002", sp, "'import' no soportado todavia; solo 'from pypic import <tipos>'");
             }
-            Tok::Str(_) if first => {
+            Tok::Str(..) if first => {
                 self.bump();
                 self.end_stmt()?;
             }
@@ -275,9 +275,31 @@ impl<'a> Parser<'a> {
         }
         self.expect(Tok::RParen, "')'")?;
         let ret = if self.eat(&Tok::Arrow) { Some(self.type_expr(true)?) } else { None };
-        let body = self.block(true)?;
+        let (body, asm) = if decorators.iter().any(|d| d.name == "asm_function") {
+            (Vec::new(), Some(self.asm_body()?))
+        } else {
+            (self.block(true)?, None)
+        };
         let span = start.to(self.prev_span());
-        Ok(FuncDef { span, name, decorators, params, ret, body })
+        Ok(FuncDef { span, name, decorators, params, ret, body, asm })
+    }
+
+    /// Cuerpo de una funcion `@asm_function`: una unica cadena con el ensamblador.
+    fn asm_body(&mut self) -> R<AsmSource> {
+        self.expect(Tok::Colon, "':'")?;
+        self.expect(Tok::Newline, "una linea nueva")?;
+        self.expect(Tok::Indent, "un bloque indentado")?;
+        let tok = self.bump();
+        let Tok::Str(text, quote) = tok.tok else {
+            return self.err("PYP2110", tok.span, "el cuerpo de una funcion @asm_function es una unica cadena con el ensamblador");
+        };
+        self.end_stmt()?;
+        if !self.at(&Tok::Dedent) {
+            let sp = self.span();
+            return self.err("PYP2110", sp, "una funcion @asm_function solo contiene la cadena de ensamblador");
+        }
+        self.bump();
+        Ok(AsmSource { text, offset: tok.span.start as usize + quote as usize, first_line: 0, span: tok.span })
     }
 
     fn type_expr(&mut self, allow_none: bool) -> R<TypeExpr> {
@@ -329,7 +351,7 @@ impl<'a> Parser<'a> {
         let mut first = allow_docstring;
         while !matches!(self.peek(), Tok::Dedent | Tok::Eof) {
             let before = self.pos;
-            if first && matches!(self.peek(), Tok::Str(_)) {
+            if first && matches!(self.peek(), Tok::Str(..)) {
                 self.bump();
                 if self.end_stmt().is_err() {
                     self.sync();
@@ -676,7 +698,7 @@ impl<'a> Parser<'a> {
                 self.expect(Tok::RParen, "')'")?;
                 e
             }
-            Tok::Str(_) => return self.err("PYP1021", sp, "las cadenas no estan soportadas"),
+            Tok::Str(..) => return self.err("PYP1021", sp, "las cadenas solo se admiten como cuerpo de una funcion @asm_function"),
             Tok::LBracket => return self.err("PYP1025", sp, "las listas no estan soportadas"),
             Tok::Ident(s) => match s.as_str() {
                 "True" | "False" => {

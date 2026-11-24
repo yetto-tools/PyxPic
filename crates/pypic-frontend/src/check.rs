@@ -18,7 +18,7 @@ use crate::types::{Type, INFERENCE_ORDER, U16, U32, U8};
 
 /// Nombres predeclarados (no requieren import; `from pypic import ...` es
 /// opcional para que el archivo siga siendo Python valido en otros editores).
-const PREDECLARED: &[&str] = &["u8", "i8", "u16", "i16", "u32", "i32", "bool", "Final", "interrupt", "init_device"];
+const PREDECLARED: &[&str] = &["u8", "i8", "u16", "i16", "u32", "i32", "bool", "Final", "interrupt", "init_device", "asm_function"];
 
 #[derive(Clone, Copy, Debug)]
 pub struct ExprInfo {
@@ -51,6 +51,8 @@ pub struct FuncInfo {
     pub is_interrupt: bool,
     /// Decorada con `@init_device`: la ejecuta el arranque antes de `main`.
     pub is_init: bool,
+    /// Decorada con `@asm_function`: el cuerpo es ensamblador (lo valida el backend).
+    pub is_asm: bool,
     pub calls: BTreeSet<String>,
     pub span: Span,
 }
@@ -244,6 +246,7 @@ impl<'a> Checker<'a> {
         self.check_stack_depth();
         self.check_pin_usage();
         self.check_time_usage();
+        self.check_asm_usage();
     }
 
     /// `from pypic.device import PIC16F887`: declara el dispositivo destino; debe ser la primera linea.
@@ -493,6 +496,29 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// Las funciones de ensamblador comparten memoria estatica con el contexto principal: no se llaman desde la interrupcion.
+    fn check_asm_usage(&mut self) {
+        let asm_fns: Vec<usize> = self.functions.iter().enumerate().filter(|(_, f)| f.is_asm).map(|(i, _)| i).collect();
+        if asm_fns.is_empty() {
+            return;
+        }
+        let mut reach: BTreeSet<String> = BTreeSet::new();
+        let mut stack: Vec<String> = self.functions.iter().filter(|f| f.is_interrupt).map(|f| f.name.clone()).collect();
+        while let Some(n) = stack.pop() {
+            if let Some(&i) = self.fidx.get(&n) {
+                if reach.insert(n) {
+                    stack.extend(self.functions[i].calls.iter().cloned());
+                }
+            }
+        }
+        for i in asm_fns {
+            let f = &self.functions[i];
+            if reach.contains(&f.name) {
+                self.d.error("PYP2111", f.span, format!("la funcion @asm_function '{}' se usa desde la interrupcion: por ahora solo se llama desde el contexto principal (comparte memoria estatica)", f.name));
+            }
+        }
+    }
+
     fn pin_info(&self, name: &str) -> Option<PinInfo> {
         match &self.target.pins {
             Some(map) => map.get(name).cloned(),
@@ -678,6 +704,7 @@ impl<'a> Checker<'a> {
         };
         let mut is_interrupt = false;
         let mut is_init = false;
+        let mut is_asm = false;
         for dec in &f.decorators {
             if dec.name == "interrupt" {
                 if self.functions.iter().any(|x| x.is_interrupt) {
@@ -686,6 +713,15 @@ impl<'a> Checker<'a> {
                 is_interrupt = true;
                 if !params.is_empty() || !matches!(ret, Type::Void | Type::Error) {
                     self.d.error("PYP2006", f.name.span, "una funcion @interrupt no recibe parametros ni devuelve valor");
+                }
+            } else if dec.name == "asm_function" {
+                is_asm = true;
+                let small = |t: &Type| matches!(t, Type::Error | Type::Bool) || (t.is_int() && t.bits() <= 16);
+                if f.asm.is_none() {
+                    self.d.error("PYP2110", f.name.span, "una funcion @asm_function lleva el ensamblador como unica cadena en su cuerpo");
+                }
+                if !params.iter().all(|(_, t)| small(t)) || !(ret == Type::Void || small(&ret)) {
+                    self.d.error("PYP2112", f.name.span, "una funcion @asm_function usa parametros y retorno de hasta 16 bits (u8, i8, u16, i16, bool)");
                 }
             } else if dec.name == "init_device" {
                 if self.functions.iter().any(|x| x.is_init) {
@@ -699,6 +735,9 @@ impl<'a> Checker<'a> {
                 self.d.error("PYP1004", dec.span, "decorador no soportado (solo @interrupt y @init_device)");
             }
         }
+        if is_asm && (is_interrupt || is_init) {
+            self.d.error("PYP2113", f.name.span, "una funcion @asm_function no puede ser a la vez @interrupt o @init_device");
+        }
         if is_interrupt && is_init {
             self.d.error("PYP2097", f.name.span, "una funcion no puede ser a la vez @interrupt y @init_device");
         }
@@ -709,6 +748,7 @@ impl<'a> Checker<'a> {
             ret,
             is_interrupt,
             is_init,
+            is_asm,
             calls: BTreeSet::new(),
             span: f.name.span,
         });
@@ -783,9 +823,11 @@ impl<'a> Checker<'a> {
             }
             self.locals.insert(name.clone(), Symbol { name, ty, kind: SymKind::Param, konst: None, is_final: false });
         }
-        self.block(&f.body);
+        if f.asm.is_none() {
+            self.block(&f.body);
+        }
         let ret = self.functions[idx].ret;
-        if !matches!(ret, Type::Void | Type::Error) && !terminates(&f.body) {
+        if f.asm.is_none() && !matches!(ret, Type::Void | Type::Error) && !terminates(&f.body) {
             self.d.error("PYP2012", f.name.span, format!("la funcion '{}' debe devolver {ret} en todos los caminos", f.name.name));
         }
         self.cur = None;

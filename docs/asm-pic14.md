@@ -1,6 +1,6 @@
 # Ensamblador PIC14 (`pypic asm`)
 
-**Estado: implementado.** Convierte texto ensamblador del PIC16 clásico en palabras de 14 bits y en Intel HEX, en dos pasadas. Es la base del ensamblador en línea (#42)
+**Estado: implementado.** Convierte texto ensamblador del PIC16 clásico en palabras de 14 bits y en Intel HEX, en dos pasadas. Es la base del ensamblador en línea ([asm-inline.md](asm-inline.md))
 y la herramienta para escribir a mano lo que el lenguaje todavía no cubre. Verificado: el blink escrito en ensamblador (`examples/asm/blink_rd0.asm`) produce **byte por byte** el mismo
 `.hex` que se probó en Proteus, y las 16 008 instrucciones válidas sobreviven a desensamblar y volver a ensamblar.
 

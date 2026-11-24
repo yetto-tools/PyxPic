@@ -6,7 +6,7 @@ use pypic_frontend::ast::*;
 use pypic_frontend::Program;
 
 use crate::ir::{Block, BlockId, Inst, Operand, Place, Terminator, UnaryOp};
-use crate::ir::{Function, Global, Local, Module, Pin, Type};
+use crate::ir::{AsmBlock, Function, Global, Local, Module, Pin, Type};
 
 pub fn lower(prog: &Program) -> Module {
     let mut m = Module::default();
@@ -47,7 +47,7 @@ pub fn lower(prog: &Program) -> Module {
                 fl.declare_local(name, *ty, true);
             }
             fl.block(&f.body);
-            m.functions.push(fl.finish(info.name.clone(), info.is_interrupt, info.is_init, info.params.len(), info.ret));
+            m.functions.push(fl.finish(info.name.clone(), info.is_interrupt, info.is_init, info.params.len(), info.ret, f.asm.as_ref().map(|a| AsmBlock { text: a.text.clone(), first_line: a.first_line })));
         }
     }
     m
@@ -76,7 +76,7 @@ fn ann_type(te: &TypeExpr) -> Type {
 }
 
 impl<'a> FnLower<'a> {
-    fn finish(self, name: String, is_interrupt: bool, is_init: bool, num_params: usize, ret: Type) -> Function {
+    fn finish(self, name: String, is_interrupt: bool, is_init: bool, num_params: usize, ret: Type, asm: Option<AsmBlock>) -> Function {
         let blocks = self
             .blocks
             .into_iter()
@@ -85,7 +85,7 @@ impl<'a> FnLower<'a> {
                 term: term.unwrap_or(if ret == Type::Void { Terminator::Return(None) } else { Terminator::Unreachable }),
             })
             .collect();
-        Function { name, is_interrupt, is_init, num_params, ret, locals: self.locals, temps: self.temps, blocks }
+        Function { name, is_interrupt, is_init, num_params, ret, locals: self.locals, temps: self.temps, blocks, asm }
     }
 
     // ------------------------------------------------------------ utilidades

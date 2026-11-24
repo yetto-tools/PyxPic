@@ -50,6 +50,7 @@ docs/
   catalogo-pic16f887.md    periféricos, protocolos y módulos del PIC16F887 (base de peripherals.json)
   sdk-modulos.md           árbol de módulos: pypic.periph / pypic.system / pypic.soft
   asm-pic14.md             ensamblador PIC14 (pypic asm): sintaxis, instrucciones y errores
+  asm-inline.md            @asm_function: ensamblador dentro del lenguaje
   proteus-blink.md  cómo probar el blink de muestra en Proteus
   abi-pic14.md      ABI de PIC14 (convención de llamada, banco, ISR, pila)
   ISSUES_BACKLOG.md backlog propuesto como issues

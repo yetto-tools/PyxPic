@@ -152,6 +152,17 @@ pub struct Param {
     pub ann: TypeExpr,
 }
 
+/// Cuerpo de una funcion `@asm_function`: el texto ensamblador.
+#[derive(Clone, Debug)]
+pub struct AsmSource {
+    pub text: String,
+    /// Posicion en bytes del primer caracter del contenido en el fuente.
+    pub offset: usize,
+    /// Linea (1-based) del fuente donde empieza el contenido; la rellena `analyze`.
+    pub first_line: usize,
+    pub span: Span,
+}
+
 #[derive(Clone, Debug)]
 pub struct FuncDef {
     pub span: Span,
@@ -160,6 +171,8 @@ pub struct FuncDef {
     pub params: Vec<Param>,
     pub ret: Option<TypeExpr>,
     pub body: Vec<Stmt>,
+    /// Solo en funciones `@asm_function`: el ensamblador (y `body` queda vacio).
+    pub asm: Option<AsmSource>,
 }
 
 #[derive(Clone, Debug)]

@@ -10,6 +10,7 @@ use std::fmt;
 
 use pypic_ir::ir::{BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, Terminator, Type, UnaryOp};
 
+use crate::asm::{assemble_fragment, AsmError, FragItem};
 use crate::hex::Image;
 use crate::isa::{disassemble, Dest::{F, W}, Inst, Inst::*};
 use crate::samples::{BLINK_CONFIG1, BLINK_CONFIG2, CONFIG1, CONFIG2};
@@ -31,6 +32,36 @@ const SCRATCH_ISR: u8 = 0x78; // 78h-7Bh
 const RETV_MAIN: u8 = 0x7C;
 const RETV_ISR: u8 = 0x7D;
 const PAGE_WORDS: usize = 2048;
+/// Registros y bits que el ensamblador en linea conoce por nombre (desplazamiento de 7 bits: el banco lo elige
+/// el codigo con RP0/RP1). PIC16F887, DS40001291H p.22-29. TODO: sacarlos del Device Pack (registers.json, #22).
+const SFR_SYMBOLS: &[(&str, u8)] = &[
+    ("INDF", 0x00),
+    ("TMR0", 0x01),
+    ("OPTION_REG", 0x01),
+    ("PCL", 0x02),
+    ("STATUS", 0x03),
+    ("FSR", 0x04),
+    ("PORTA", 0x05),
+    ("TRISA", 0x05),
+    ("PORTB", 0x06),
+    ("TRISB", 0x06),
+    ("PORTC", 0x07),
+    ("TRISC", 0x07),
+    ("PORTD", 0x08),
+    ("TRISD", 0x08),
+    ("ANSEL", 0x08),
+    ("PORTE", 0x09),
+    ("TRISE", 0x09),
+    ("ANSELH", 0x09),
+    ("PCLATH", 0x0A),
+    ("INTCON", 0x0B),
+    ("C", 0),
+    ("DC", 1),
+    ("Z", 2),
+    ("RP0", 5),
+    ("RP1", 6),
+    ("IRP", 7),
+];
 /// PORTA..PORTE estan en 05h-09h (banco 0) y TRISA..TRISE en 85h-89h (banco 1): mismo desplazamiento de 7 bits.
 /// ANSEL=188h y ANSELH=189h (banco 3). DS40001291H p.27-29. TODO: sacarlos del Device Pack (registers.json, #22).
 const ANSEL: u8 = 0x08;
@@ -52,6 +83,8 @@ pub enum CodegenError {
     TooLarge { words: usize },
     /// El dispositivo no es compatible con este backend o con el programa.
     Device(String),
+    /// Errores del ensamblador de una funcion `@asm_function` (con la linea del fuente).
+    Asm(Vec<AsmError>),
 }
 
 impl fmt::Display for CodegenError {
@@ -64,6 +97,10 @@ impl fmt::Display for CodegenError {
                 "la RAM del banco 0 no alcanza ({needed} bytes necesarios, {available} disponibles); el uso de otros bancos y el solapamiento de locales aun no estan implementados"
             ),
             CodegenError::Device(s) => f.write_str(s),
+            CodegenError::Asm(errs) => {
+                let lines: Vec<String> = errs.iter().map(|e| format!("linea {}:{}: error[{}]: {}", e.line, e.col, e.code, e.message)).collect();
+                write!(f, "ensamblador en linea:\n  {}", lines.join("\n  "))
+            }
             CodegenError::TooLarge { words } => write!(f, "el programa ocupa {words} palabras; el limite actual es una pagina de {PAGE_WORDS} (PCLATH no se maneja todavia)"),
         }
     }
@@ -865,11 +902,60 @@ impl<'a> Gen<'a> {
         Ok(())
     }
 
+    /// Cuerpo de una funcion `@asm_function`: se ensambla en su sitio con los parametros y los globales por nombre.
+    fn asm_function(&mut self, fi: usize) -> Result<(), CodegenError> {
+        let m = self.m;
+        let f = &m.functions[fi];
+        let a = f.asm.as_ref().expect("funcion de ensamblador");
+        let mut ext: BTreeMap<String, i64> = SFR_SYMBOLS.iter().map(|(n, v)| (n.to_string(), *v as i64)).collect();
+        ext.insert("RETV".into(), RETV_MAIN as i64);
+        let reserved = |n: &str| n == "RETV" || SFR_SYMBOLS.iter().any(|(s, _)| *s == n);
+        let mut clashes = Vec::new();
+        for (i, g) in m.globals.iter().enumerate() {
+            if reserved(&g.name) {
+                clashes.push(g.name.clone());
+            }
+            ext.insert(g.name.clone(), if g.is_const { g.init as i64 } else { self.al.globals[i] as i64 });
+        }
+        for (i, l) in f.locals.iter().enumerate() {
+            if reserved(&l.name) {
+                clashes.push(l.name.clone());
+            }
+            ext.insert(l.name.clone(), self.al.locals[&fi][i] as i64); // un parametro oculta a un global del mismo nombre
+        }
+        if !clashes.is_empty() {
+            clashes.sort();
+            clashes.dedup();
+            return Err(CodegenError::Asm(vec![AsmError {
+                line: a.first_line,
+                col: 1,
+                code: "ASM005",
+                message: format!("en '{}': {} coincide(n) con registros que el ensamblador en linea predefine (INDF, STATUS, PORTA..PORTE, C, Z, RP0, RETV...): renombra el parametro o el global", f.name, clashes.join(", ")),
+            }]));
+        }
+        let frag = assemble_fragment(&a.text, a.first_line, &ext).map_err(CodegenError::Asm)?;
+        let labels: BTreeMap<u32, Label> = frag.targets.iter().map(|&t| (t, self.asm.label(format!("{}.asm{t}", f.name)))).collect();
+        for (i, item) in frag.items.iter().enumerate() {
+            if let Some(&l) = labels.get(&(i as u32)) {
+                self.asm.place(l);
+            }
+            match item {
+                FragItem::Inst(x) => self.asm.i(*x),
+                FragItem::Goto(t) => self.asm.goto(labels[t]),
+                FragItem::Call(t) => self.asm.call(labels[t]),
+            }
+        }
+        Ok(())
+    }
+
     fn function(&mut self, fi: usize, bb_labels: &[Label]) -> Result<(), CodegenError> {
         self.cur = fi;
         let f = self.f();
         let entry = self.fn_labels[&fi];
         self.asm.place(entry);
+        if f.asm.is_some() {
+            return self.asm_function(fi);
+        }
         if f.is_interrupt {
             // prologo (p.219): W y STATUS a la RAM comun, PCLATH, y banco 0 / IRP = 0
             self.asm.i(Movwf(W_TEMP));

@@ -75,6 +75,14 @@ pub struct Local {
     pub is_param: bool,
 }
 
+/// Cuerpo de una funcion `@asm_function`: texto ensamblador que el backend ensambla en su sitio.
+#[derive(Clone, Debug)]
+pub struct AsmBlock {
+    pub text: String,
+    /// Linea del fuente donde empieza `text`, para ubicar los errores del ensamblador.
+    pub first_line: usize,
+}
+
 #[derive(Clone, Debug)]
 pub struct Function {
     pub name: String,
@@ -88,6 +96,8 @@ pub struct Function {
     pub temps: Vec<Type>,
     /// El bloque 0 es la entrada.
     pub blocks: Vec<Block>,
+    /// Funcion `@asm_function`: su cuerpo es ensamblador (y `blocks` solo tiene un bloque vacio).
+    pub asm: Option<AsmBlock>,
 }
 
 #[derive(Clone, Debug)]
