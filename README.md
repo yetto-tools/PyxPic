@@ -35,8 +35,8 @@ crates/
   pypic-frontend/   lexer, parser, tipos y constantes (src/, tests/)
   pypic-ir/         IR tipada, lowering, verificador, intérprete de referencia (src/, tests/)
   pypic-device/     Device Packs: esquema, cargador y validador (src/, tests/)
-  pypic-pic14/      backend PIC14: instrucciones, codificador/decodificador, desensamblador (src/, tests/)
-  pypic-cli/        binario `pypic` (check, ir, device validate)
+  pypic-pic14/      backend PIC14: instrucciones, codificador/decodificador, desensamblador, Intel HEX (src/, tests/)
+  pypic-cli/        binario `pypic` (check, ir, disasm, device validate)
 devices/
   pic16f887/        Device Pack verificado contra DS40001291H
 docs/
@@ -57,5 +57,6 @@ cargo test
 cargo run -p pypic-cli -- check examples/counter.py
 cargo run -p pypic-cli -- ir examples/counter.py
 cargo run -p pypic-cli -- device validate devices/pic16f887
+cargo run -p pypic-cli -- disasm archivo.hex    # inspecciona un .hex (programa y palabras de configuracion)
 cargo run -p pypic-cli -- check examples/counter.py --device devices/pic16f887
 ```

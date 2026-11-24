@@ -30,6 +30,7 @@ dependencies = [
  "pypic-device",
  "pypic-frontend",
  "pypic-ir",
+ "pypic-pic14",
 ]
 
 [[package]]

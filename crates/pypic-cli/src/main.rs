@@ -3,10 +3,12 @@ use std::process::ExitCode;
 
 use pypic_device::DevicePack;
 use pypic_frontend::{analyze, TargetProfile};
+use pypic_pic14::{disassemble, Image};
 
 const USAGE: &str = "uso:
   pypic check <archivo.py> [opciones]
   pypic ir <archivo.py> [opciones]
+  pypic disasm <archivo.hex>
   pypic device validate <directorio-del-pack>
 
 opciones:
@@ -40,9 +42,50 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("device") => device(&args[1..]),
+        Some("disasm") => disasm(&args[1..]),
         Some(c @ ("check" | "ir")) => compile(c, &args[1..]),
         _ => usage(),
     }
+}
+
+/// Desensambla un `.hex` (PIC14): util para inspeccionar lo que se carga en Proteus o en un programador.
+fn disasm(args: &[String]) -> ExitCode {
+    let [path] = args else { return usage() };
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("no se pudo leer '{path}': {e}");
+            return ExitCode::from(2);
+        }
+    };
+    let img = match Image::from_intel_hex(&text) {
+        Ok(i) => i,
+        Err(e) => {
+            eprintln!("{path}: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    // rachas de direcciones consecutivas
+    let mut runs: Vec<(u32, Vec<u16>)> = Vec::new();
+    for (addr, word) in img.iter() {
+        match runs.last_mut() {
+            Some((start, words)) if *start + words.len() as u32 == addr => words.push(word),
+            _ => runs.push((addr, vec![word])),
+        }
+    }
+    println!("; {} palabras en {} bloque(s)", img.len(), runs.len());
+    for (start, words) in runs {
+        let zone = if start >= 0x2000 { "configuracion (no son instrucciones)" } else { "programa" };
+        println!("; --- {zone}, desde {start:#06x} ---");
+        if start >= 0x2000 {
+            for (i, w) in words.iter().enumerate() {
+                println!("{:04X}: {:04X}  CONFIG", start + i as u32, w);
+            }
+        } else {
+            print!("{}", disassemble(&words, start));
+        }
+    }
+    ExitCode::SUCCESS
 }
 
 fn device(args: &[String]) -> ExitCode {
