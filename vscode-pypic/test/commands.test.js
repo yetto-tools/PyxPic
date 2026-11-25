@@ -56,6 +56,7 @@ test("los comandos comprueban y compilan con la CLI real y muestran sus errores"
       showOpenDialog: async () => selection,
       showErrorMessage: (s) => { messages.push(s); result(); },
       showInformationMessage: (s) => { messages.push(s); result(); },
+      showWarningMessage: async (s, _options, accept) => { messages.push(s); return accept; },
     },
     workspace: {
       isTrusted: true,
@@ -72,7 +73,8 @@ test("los comandos comprueban y compilan con la CLI real y muestran sus errores"
   const original = Module._load;
   Module._load = function(request, parent, main) { return request === "vscode" ? vscode : original.call(this, request, parent, main); };
   try {
-    require("../extension").activate({ subscriptions: [], workspaceState: { get: () => undefined, update: async () => {} } });
+    const state = new Map();
+    require("../extension").activate({ subscriptions: [], workspaceState: { get: (key) => state.get(key), update: async (key, value) => { state.set(key, value); } } });
   } finally {
     Module._load = original;
   }
@@ -80,7 +82,7 @@ test("los comandos comprueban y compilan con la CLI real y muestran sus errores"
   const sections = actionTree.getChildren();
   assert.deepEqual(sections.map((section) => section.label), ["Proyecto", "Construir", "Entorno"]);
   assert.deepEqual(actionTree.getChildren(sections[0]).map((action) => action.command), ["pypic.welcome", "pypic.newProject", "pypic.openProject", "pypic.openFile", "pypic.examples"]);
-  assert.deepEqual(actionTree.getChildren(sections[1]).map((action) => action.command), ["pypic.check", "pypic.build", "pypic.selectTarget", "pypic.projectCheck", "pypic.status"]);
+  assert.deepEqual(actionTree.getChildren(sections[1]).map((action) => action.command), ["pypic.check", "pypic.build", "pypic.clean", "pypic.selectTarget", "pypic.projectCheck", "pypic.status"]);
   assert.deepEqual(actionTree.getChildren(sections[2]).map((action) => action.command), ["pypic.selectCompiler", "pypic.selectDevices", "pypic.selectPicAs", "pypic.settings"]);
   assert.ok(webviews.has("pypic.pinout"));
   assert.ok(webviews.has("pypic.resources"));
@@ -93,6 +95,19 @@ test("los comandos comprueban y compilan con la CLI real y muestran sus errores"
   await done;
   assert.match(messages.pop(), /compilación terminada/);
   assert.match(fs.readFileSync(hex, "utf8"), /^:/);
+  // limpiar borra el .hex que la compilación dijo haber generado, y solo ese
+  const bystander = path.join(path.dirname(hex), "ajeno.hex");
+  fs.writeFileSync(bystander, ":00000001FF" + String.fromCharCode(10));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await commands.get("pypic.clean")();
+  assert.ok(!fs.existsSync(hex), "el .hex generado se borra");
+  assert.ok(fs.existsSync(bystander), "un .hex que PyPIC no generó no se toca");
+  fs.rmSync(bystander);
+  assert.match(messages.pop(), /limpieza terminada/);
+  done = completed();
+  await commands.get("pypic.clean")();
+  await done;
+  assert.match(messages.pop(), /no hay archivos \.hex/);
   fs.writeFileSync(source, "def main(\n");
   done = completed();
   await commands.get("pypic.check")();

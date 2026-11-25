@@ -1,8 +1,8 @@
 {
   "name": "pypic-ide",
   "displayName": "PyPIC IDE",
-  "description": "v0.1.16 · Comprueba y compila programas PyPIC desde VS Code.",
-  "version": "0.1.16",
+  "description": "v0.1.17 · Comprueba y compila programas PyPIC desde VS Code.",
+  "version": "0.1.17",
   "publisher": "pypic",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -28,6 +28,7 @@
     "commands": [
       { "command": "pypic.check", "title": "PyPIC: Verificar código", "icon": "$(check)" },
       { "command": "pypic.build", "title": "PyPIC: Compilar archivo a HEX", "icon": "$(tools)" },
+      { "command": "pypic.clean", "title": "PyPIC: Limpiar compilación", "icon": "$(trash)" },
       { "command": "pypic.examples", "title": "PyPIC: Abrir ejemplo" },
       { "command": "pypic.welcome", "title": "PyPIC: Abrir inicio" },
       { "command": "pypic.newProject", "title": "PyPIC: Crear proyecto" },
@@ -44,7 +45,13 @@
     ],
     "menus": { "editor/title": [
       { "command": "pypic.check", "when": "resourceLangId == python || resourceLangId == pypic", "group": "navigation" },
-      { "command": "pypic.build", "when": "resourceLangId == python || resourceLangId == pypic", "group": "navigation" }
+      { "command": "pypic.build", "when": "resourceLangId == python || resourceLangId == pypic", "group": "navigation" },
+      { "command": "pypic.clean", "when": "resourceLangId == python || resourceLangId == pypic", "group": "navigation" }
+    ],
+    "view/title": [
+      { "command": "pypic.check", "when": "view == pypic.actions", "group": "navigation@1" },
+      { "command": "pypic.build", "when": "view == pypic.actions", "group": "navigation@2" },
+      { "command": "pypic.clean", "when": "view == pypic.actions", "group": "navigation@3" }
     ] },
     "configuration": {
       "title": "PyPIC",

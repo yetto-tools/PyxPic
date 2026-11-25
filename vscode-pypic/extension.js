@@ -1,6 +1,7 @@
 "use strict";
 
 const vscode = require("vscode");
+const fs = require("node:fs");
 const path = require("node:path");
 const { execFile } = require("node:child_process");
 const language = require("./language");
@@ -34,7 +35,17 @@ function activate(context) {
   const standalone = new Set();
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBar.command = "pypic.mode";
-  context.subscriptions.push(statusBar);
+  // botones de la barra de estado: verificar, compilar y limpiar, visibles mientras hay un archivo PyPIC activo
+  const buttons = [
+    ["$(check) Verificar", "pypic.check", "PyPIC: verificar el código (pypic check)"],
+    ["$(tools) Compilar", "pypic.build", "PyPIC: compilar a HEX (pypic build)"],
+    ["$(trash) Limpiar", "pypic.clean", "PyPIC: borrar los .hex que PyPIC generó"],
+  ].map(([text, command, tooltip], index) => {
+    const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99 - index);
+    Object.assign(item, { text, command, tooltip });
+    return item;
+  });
+  context.subscriptions.push(statusBar, ...buttons);
   const targetKey = (projectFile) => `pypic.target:${projectFile}`;
 
   function contextFor(document) {
@@ -48,12 +59,14 @@ function activate(context) {
     const document = editor && editor.document;
     if (!document || document.uri.scheme !== "file" || !["python", "pypic"].includes(document.languageId)) {
       statusBar.hide();
+      buttons.forEach((button) => button.hide());
       return;
     }
     const ctx = contextFor(document);
     statusBar.text = modes.statusText(ctx, ctx.projectFile && path.basename(path.dirname(ctx.projectFile)));
     statusBar.tooltip = modes.statusTooltip(ctx);
     statusBar.show();
+    buttons.forEach((button) => button.show());
   }
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(refreshStatus));
 
@@ -133,6 +146,41 @@ function activate(context) {
   });
   refreshStatus();
 
+  // Limpiar solo borra los .hex que PyPIC dijo haber generado (el resumen de `pypic build`), nunca rutas adivinadas.
+  const BUILT = "pypic.builtFiles";
+  const builtFiles = () => (context.workspaceState.get(BUILT) || []).filter((file) => typeof file === "string" && file.toLowerCase().endsWith(".hex"));
+  async function rememberBuilt(file) {
+    const resolved = path.resolve(file);
+    await context.workspaceState.update(BUILT, [...new Set([...builtFiles(), resolved])]);
+  }
+
+  async function clean() {
+    const known = builtFiles();
+    const existing = known.filter((file) => fs.existsSync(file));
+    if (existing.length === 0) {
+      if (known.length) await context.workspaceState.update(BUILT, []);
+      void vscode.window.showInformationMessage("PyPIC: no hay archivos .hex generados que limpiar.");
+      return;
+    }
+    const names = existing.map((file) => path.basename(file)).join(", ");
+    const choice = await vscode.window.showWarningMessage(`PyPIC: se borrarán ${existing.length} archivo(s) .hex generados por la compilación: ${names}`, { modal: true, detail: existing.join(String.fromCharCode(10)) }, "Limpiar");
+    if (choice !== "Limpiar") return;
+    const failed = [];
+    for (const file of existing) {
+      try {
+        fs.unlinkSync(file);
+      } catch (error) {
+        failed.push(`${file}: ${error.message}`);
+      }
+    }
+    await context.workspaceState.update(BUILT, known.filter((file) => failed.some((line) => line.startsWith(`${file}:`))));
+    output.clear();
+    output.appendLine(`PyPIC clean: ${existing.length - failed.length} archivo(s) borrados${failed.length ? `, ${failed.length} con error` : ""}`);
+    existing.filter((file) => !failed.some((line) => line.startsWith(`${file}:`))).forEach((file) => output.appendLine(`  borrado ${file}`));
+    failed.forEach((line) => output.appendLine(`  no se pudo borrar ${line}`));
+    void vscode.window.showInformationMessage(failed.length ? "PyPIC: no se pudieron borrar todos los archivos. Consulta la salida PyPIC." : `PyPIC: limpieza terminada (${existing.length} archivo(s)).`);
+  }
+
   async function run(kind, targetDocument, quiet = false) {
     if (!vscode.workspace.isTrusted) {
       if (!quiet) void vscode.window.showErrorMessage("PyPIC necesita un espacio de trabajo de confianza para ejecutar el compilador.");
@@ -190,6 +238,7 @@ function activate(context) {
         if (!quiet) void vscode.window.showErrorMessage("PyPIC no pudo completar la operación. Consulta la salida PyPIC y la ruta del ejecutable.");
       } else if (!quiet) {
         const hex = kind === "build" ? modes.outputFile(stdout) : undefined;
+        if (hex) void rememberBuilt(hex);
         void vscode.window.showInformationMessage(kind === "build" ? `PyPIC: compilación terminada${hex ? `: ${hex}` : ""}.` : "PyPIC: comprobación terminada.");
       }
     });
@@ -448,6 +497,7 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand("pypic.check", () => run("check")),
     vscode.commands.registerCommand("pypic.build", () => run("build")),
+    vscode.commands.registerCommand("pypic.clean", clean),
     vscode.commands.registerCommand("pypic.examples", examples),
     vscode.commands.registerCommand("pypic.welcome", openWelcome),
     vscode.commands.registerCommand("pypic.newProject", newProject),

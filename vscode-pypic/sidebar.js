@@ -18,6 +18,7 @@ const sections = [
     actions: [
     { label: "Verificar código", command: "pypic.check", icon: "check" },
     { label: "Compilar a HEX", command: "pypic.build", icon: "tools" },
+    { label: "Limpiar compilación", command: "pypic.clean", icon: "trash" },
     { label: "Perfil de destino", command: "pypic.selectTarget", icon: "target" },
     { label: "Revisar proyecto", command: "pypic.projectCheck", icon: "checklist" },
     { label: "Estado y ayuda", command: "pypic.status", icon: "info" },

@@ -1,6 +1,6 @@
 # PyPIC IDE para VS Code
 
-**Versión de la extensión: 0.1.16.** VS Code muestra este número en el resumen y desde el manifiesto de la extensión en la vista Extensiones.
+**Versión de la extensión: 0.1.17.** VS Code muestra este número en el resumen y desde el manifiesto de la extensión en la vista Extensiones.
 
 Extensión para VS Code de escritorio. Usa el compilador PyPIC instalado en el host; no necesita GPASM ni XC8 para crear, comprobar y compilar proyectos.
 
