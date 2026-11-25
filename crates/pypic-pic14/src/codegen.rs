@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
-use pypic_ir::ir::{AdcCall, AdcOp, BitsOp, UartCall, UartOp, BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, RegCall, RegOp, Terminator, TimerCall, TimerId, TimerOp, TimerStart, Type, UnaryOp};
+use pypic_ir::ir::{PwmCall, PwmOp, AdcCall, AdcOp, BitsOp, UartCall, UartOp, BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, RegCall, RegOp, Terminator, TimerCall, TimerId, TimerOp, TimerStart, Type, UnaryOp};
 use pypic_frontend::timer::{GateSource, TimerSource};
 
 use crate::asm::{assemble_fragment, AsmError, FragItem};
@@ -954,6 +954,7 @@ impl<'a> Gen<'a> {
             I::Reg { call, dst, arg } => self.reg(call, *dst, arg.as_ref()),
             I::Bits { op, dst, src } => self.bits(*op, *dst, src.as_ref()),
             I::Adc { call, dst } => self.adc(call, *dst),
+            I::Pwm { call, hi, dc } => self.pwm(call, hi.as_ref(), dc.as_ref()),
             I::Uart { call, dst, arg } => self.uart(call, *dst, arg.as_ref()),
             I::RomGet { dst, rom, index } => self.rom_get(*dst, *rom, index),
             I::ArrGet { dst, arr, index } => self.arr_get(*dst, *arr, index),
@@ -1833,6 +1834,71 @@ impl<'a> Gen<'a> {
                 self.asm.goto(top);
                 self.adc_result(dst.expect("Read lleva destino"))?;
             }
+        }
+        Ok(())
+    }
+
+    // ---- PWM de los modulos CCP (pypic.periph.pwm, docs/sdk-pwm.md): registros y bits del Device Pack por nombre ----
+    fn pwm(&mut self, call: &PwmCall, hi: Option<&Operand>, dc: Option<&Operand>) -> Result<(), CodegenError> {
+        let n = call.pwm.ccp();
+        let (ccpcon, ccprl) = (self.reg_bank0(&format!("CCP{n}CON"))?, self.reg_bank0(&format!("CCPR{n}L"))?);
+        match call.op {
+            PwmOp::Start(timing, duty) => {
+                let t = timing.expect("el frontend resuelve el periodo del PWM");
+                let pin = call.pwm.pin();
+                let tris = self.reg_addr(&format!("TRIS{}", &pin[1..2]))?;
+                let pin_bit: u8 = pin[2..].parse().expect("el pin es RPn");
+                let (t2con, ton) = (self.reg_bank0("T2CON")?, self.bit_pos("TMR2ON")?);
+                let (pir1, tmr2if) = self.bit_loc("TMR2IF")?;
+                // DS40001291H 11.5.7: 1. el pin como entrada (sin salida mientras se configura)
+                self.banked(tris, |g, f| g.asm.i(Bsf(f, pin_bit)));
+                // 2. el periodo en PR2
+                let pr2 = self.reg_addr("PR2")?;
+                self.asm.i(Movlw(t.pr2));
+                self.banked(pr2, |g, f| g.asm.i(Movwf(f)));
+                // 3. y 4. modo PWM (CCPxM = 11xx, P1M = 00 en CCP1: una salida) con el ciclo de trabajo inicial
+                self.asm.i(Movlw((duty >> 2) as u8));
+                self.asm.i(Movwf(ccprl));
+                let mode = (1 << self.bit_pos(&format!("CCP{n}M3"))?) | (1 << self.bit_pos(&format!("CCP{n}M2"))?) | (((duty & 3) as u8) << self.bit_pos(&format!("DC{n}B0"))?);
+                self.asm.i(Movlw(mode));
+                self.asm.i(Movwf(ccpcon));
+                // 5. TMR2IF en 0 y Timer2 encendido con su prescaler; si ya corre (el otro modulo PWM) no se toca T2CON: escribirlo
+                //    borra el preescalador y alargaria un periodo del otro modulo
+                self.bit_op("TMR2IF", false)?;
+                let running = self.asm.label("pwm.corre");
+                self.asm.i(Btfsc(t2con, ton));
+                self.asm.goto(running);
+                self.asm.i(Movlw((t.t2ckps() << self.bit_pos("T2CKPS0")?) | (1 << ton)));
+                self.asm.i(Movwf(t2con));
+                self.asm.place(running);
+                // 6. esperar a que empiece un periodo nuevo (TMR2IF) y solo entonces habilitar la salida
+                let wait = self.asm.label("pwm.espera");
+                self.asm.place(wait);
+                self.asm.i(Btfss(pir1 as u8, tmr2if));
+                self.asm.goto(wait);
+                self.bit_op("TMR2IF", false)?;
+                self.banked(tris, |g, f| g.asm.i(Bcf(f, pin_bit)));
+            }
+            PwmOp::Duty => {
+                // CCPRxL = ocho bits altos; DCxB (CCPxCON<5:4>) = los dos bajos, sin tocar el modo
+                let hi = self.bytes(hi.expect("Duty lleva hi"))?[0];
+                self.ld(hi);
+                self.asm.i(Movwf(ccprl));
+                let dc0 = self.bit_pos(&format!("DC{n}B0"))?;
+                self.asm.i(Movlw(!(3 << dc0)));
+                self.asm.i(Andwf(ccpcon, F));
+                match self.bytes(dc.expect("Duty lleva dc"))?[0] {
+                    B::Imm(k) => self.asm.i(Movlw((k & 3) << dc0)),
+                    B::Reg(r) => {
+                        // 0..3 -> bits 5:4 (el nibble bajo pasa al alto)
+                        debug_assert_eq!(dc0, 4);
+                        self.asm.i(Swapf(r, W));
+                        self.asm.i(Andlw(3 << dc0));
+                    }
+                }
+                self.asm.i(Iorwf(ccpcon, F));
+            }
+            PwmOp::Stop => self.asm.i(Clrf(ccpcon)),
         }
         Ok(())
     }

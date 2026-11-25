@@ -5,7 +5,7 @@
 //! registros virtuales que el backend asigna.
 
 pub use pypic_frontend::ast::{BinOp, CmpOp};
-pub use pypic_frontend::{AdcCall, AdcOp, BitsOp, UartCall, UartOp, DelayUnit, RegCall, RegOp, TimerCall, TimerId, TimerOp, TimerStart, Type};
+pub use pypic_frontend::{PwmCall, PwmId, PwmOp, PwmTiming, AdcCall, AdcOp, BitsOp, UartCall, UartOp, DelayUnit, RegCall, RegOp, TimerCall, TimerId, TimerOp, TimerStart, Type};
 
 pub type BlockId = usize;
 
@@ -69,6 +69,9 @@ pub enum Inst {
     ArrSet { arr: usize, index: Operand, value: Operand },
     /// Operacion del ADC (`ADC.start()`, `ADC.read(AN0)`...). `dst` recibe el resultado de `Done` (bool), `Result` y `Read` (u16).
     Adc { call: AdcCall, dst: Option<Place> },
+    /// Operacion de un modulo PWM (`PWM1.start(...)`, `PWM1.duty(v)`, `PWM1.stop()`). En `Duty`, `hi` es `CCPRxL` (los ocho bits
+    /// altos del ciclo de trabajo) y `dc` es `DCxB` (los dos bajos, 0 a 3): el IR ya los separo, ambos u8.
+    Pwm { call: PwmCall, hi: Option<Operand>, dc: Option<Operand> },
     /// Operacion de la UART (`UART.start(baud=9600)`, `UART.write(x)`...). `arg` es el byte de `Write`/`Send`; `dst` recibe
     /// el resultado de `Read`/`Recv` (u8) y de las consultas de bandera (bool).
     Uart { call: UartCall, dst: Option<Place>, arg: Option<Operand> },

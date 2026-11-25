@@ -83,6 +83,10 @@ pub fn print(m: &Module) -> String {
                         let a = arg.as_ref().map(|a| format!(" {}", operand(m, f, a))).unwrap_or_default();
                         format!("{}uart {:?}{a}", dst.map(|d| format!("{} = ", place(m, f, d))).unwrap_or_default(), call.op)
                     }
+                    Inst::Pwm { call, hi, dc } => {
+                        let a: String = hi.iter().chain(dc.iter()).map(|a| format!(" {}", operand(m, f, a))).collect();
+                        format!("pwm {} {:?}{a}", call.pwm.name(), call.op)
+                    }
                     Inst::Adc { call, dst } => format!("{}adc {:?}", dst.map(|d| format!("{} = ", place(m, f, d))).unwrap_or_default(), call.op),
                     Inst::ArrGet { dst, arr, index } => format!("{} = array {}[{}]", place(m, f, *dst), m.arrays[*arr].0, operand(m, f, index)),
                     Inst::ArrSet { arr, index, value } => format!("array {}[{}] = {}", m.arrays[*arr].0, operand(m, f, index), operand(m, f, value)),

@@ -49,6 +49,10 @@ pub struct Machine<'m> {
     /// Los arreglos de RAM (todo en cero al empezar) y los accesos con un indice fuera de la capacidad (el indice se satura a la
     /// ultima posicion, igual que en el PIC): el intérprete los anota para que una prueba los vea; el simulador del PIC no puede.
     pub arrays: Vec<Vec<u8>>,
+    /// El ciclo de trabajo de 10 bits de cada modulo PWM (`PWM1`, `PWM2`) y si esta en marcha: el modelo de referencia no tiene
+    /// periodo ni pin; guarda lo que el programa escribio (`CCPRxL:DCxB`).
+    pub pwm_duty: [u16; 2],
+    pub pwm_on: [bool; 2],
     pub array_oob: Vec<String>,
 }
 
@@ -81,6 +85,8 @@ impl<'m> Machine<'m> {
             uart_rx9: Default::default(),
             arrays: module.arrays.iter().enumerate().map(|(i, (_, n))| module.array_inits.get(i).filter(|v| !v.is_empty()).cloned().unwrap_or_else(|| vec![0; *n])).collect(),
             array_oob: Vec::new(),
+            pwm_duty: [0; 2],
+            pwm_on: [false; 2],
         }
     }
 
@@ -242,6 +248,17 @@ impl<'m> Machine<'m> {
                 UartOp::RxReady => self.write(f, fr, dst.unwrap(), (!self.uart_rx.is_empty() || !self.uart_rx9.is_empty()) as i128),
                 UartOp::Sending | UartOp::Overrun | UartOp::FramingError => self.write(f, fr, dst.unwrap(), 0),
             },
+            Inst::Pwm { call, hi, dc } => {
+                let i = call.pwm.ccp() as usize - 1;
+                match call.op {
+                    PwmOp::Start(_, duty) => (self.pwm_on[i], self.pwm_duty[i]) = (true, duty),
+                    PwmOp::Stop => self.pwm_on[i] = false,
+                    PwmOp::Duty => {
+                        let (h, d) = (self.read(fr, hi.as_ref().unwrap()), self.read(fr, dc.as_ref().unwrap()));
+                        self.pwm_duty[i] = ((h as u16 & 0xFF) << 2) | (d as u16 & 3);
+                    }
+                }
+            }
             Inst::Adc { call, dst } => match call.op {
                 AdcOp::Start(_) => {}
                 AdcOp::Select(n) => self.adc_channel = n,

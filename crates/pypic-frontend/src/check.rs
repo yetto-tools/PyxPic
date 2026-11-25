@@ -10,6 +10,7 @@
 //!  * Sin recursion: la memoria es estatica y la pila de hardware es limitada.
 
 use crate::adc::{self, AdcCall, AdcOp};
+use crate::pwm::{self, PwmCall, PwmId, PwmOp, PwmTiming};
 use crate::uart::{self, FmtPart, UartCall, UartOp, UartStart};
 use crate::clock::{self, ClockKind, ClockSource};
 use crate::text::{TextCall, TextOp};
@@ -159,6 +160,8 @@ pub struct Program {
     pub adc_calls: BTreeMap<u32, AdcCall>,
     /// Condiciones electricas que asume el programa para el ADC (adquisicion y alimentacion).
     pub adc_config: adc::AdcConfig,
+    /// Llamadas a metodos de `pypic.periph.pwm`, por id de expresion.
+    pub pwm_calls: BTreeMap<u32, PwmCall>,
     /// Llamadas a metodos de `pypic.periph.uart`, por id de expresion.
     pub uart_calls: BTreeMap<u32, UartCall>,
     /// Las partes de cada `UART.write_text(f"...")`, por id de expresion.
@@ -187,6 +190,8 @@ pub struct Checked {
     pub text_calls: BTreeMap<u32, TextCall>,
     pub adc_calls: BTreeMap<u32, AdcCall>,
     pub adc_config: adc::AdcConfig,
+    /// Llamadas a metodos de `pypic.periph.pwm`, por id de expresion.
+    pub pwm_calls: BTreeMap<u32, PwmCall>,
     pub uart_calls: BTreeMap<u32, UartCall>,
     pub uart_fmt: BTreeMap<u32, Vec<FmtPart>>,
 }
@@ -235,6 +240,10 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         adc_needs: None,
         adc_pending: Vec::new(),
         adc_config: adc::AdcConfig::default(),
+        pwm_names: HashSet::new(),
+        pwm_calls: BTreeMap::new(),
+        pwm_pending: Vec::new(),
+        pwm_uses: Vec::new(),
         uart_name: false,
         uart_calls: BTreeMap::new(),
         uart_fmt: BTreeMap::new(),
@@ -258,7 +267,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         stmt_top: None,
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, clock_source: c.clock_source, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, arrays: c.arrays, array_inits: c.array_inits, array_gets: c.array_gets, text_calls: c.text_calls, adc_calls: c.adc_calls, adc_config: c.adc_config, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, clock_source: c.clock_source, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, arrays: c.arrays, array_inits: c.array_inits, array_gets: c.array_gets, text_calls: c.text_calls, adc_calls: c.adc_calls, adc_config: c.adc_config, pwm_calls: c.pwm_calls, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -339,6 +348,11 @@ struct Checker<'a> {
     adc_needs: Option<Span>,
     adc_pending: Vec<AdcStart>,
     adc_config: adc::AdcConfig,
+    /// PWM (CCP): modulos importados, llamadas, `start` por resolver (frecuencia) y todos los usos.
+    pwm_names: HashSet<String>,
+    pwm_calls: BTreeMap<u32, PwmCall>,
+    pwm_pending: Vec<PwmStart>,
+    pwm_uses: Vec<PwmUse>,
     /// UART: importada, llamadas, si se inicio y los `start` por resolver (necesitan el reloj).
     uart_name: bool,
     uart_calls: BTreeMap<u32, UartCall>,
@@ -377,6 +391,29 @@ struct Claim {
     span: Span,
     /// Viene de `TMRx.start(...)`: esos pines ya los comprueba `check_timer_usage` (PYP2125).
     via_timer: bool,
+}
+
+/// Como se pidio el periodo de un `PWMn.start(...)`: una frecuencia (se resuelve con el reloj) o prescaler y PR2 a mano.
+enum PwmSpec {
+    Frequency(u32),
+    Raw(PwmTiming),
+}
+
+/// Una llamada a `PWMn.start(...)` por resolver.
+struct PwmStart {
+    id: u32,
+    span: Span,
+    pwm: PwmId,
+    spec: Option<PwmSpec>,
+    duty: u16,
+    func: Option<usize>,
+}
+
+/// Un uso de un modulo PWM (`start`, `duty`, `stop`), con el ciclo de trabajo si es una constante.
+struct PwmUse {
+    pwm: PwmId,
+    span: Span,
+    duty: Option<i128>,
 }
 
 /// Una llamada a `ADC.start(...)` por resolver (reloj automatico) con las condiciones que pide.
@@ -450,6 +487,7 @@ impl<'a> Checker<'a> {
         self.check_timer_usage();
         self.check_pin_claims();
         self.check_adc_usage();
+        self.check_pwm_usage();
         self.check_uart_usage();
         self.check_time_usage();
         self.check_asm_usage();
@@ -590,6 +628,23 @@ impl<'a> Checker<'a> {
                 } else {
                     let all: Vec<String> = std::iter::once("ADC".to_string()).chain((0..adc::CHANNELS).map(|c| format!("AN{c}"))).chain(adc::CLOCKS.iter().map(|(c, _)| c.to_string())).collect();
                     self.d.error("PYP2170", n.span, format!("'pypic.periph.adc' no exporta '{}' (exporta: {})", n.name, all.join(", ")));
+                }
+            }
+            return;
+        }
+        if module == "pypic.periph.pwm" {
+            for n in names {
+                match PwmId::from_name(&n.name) {
+                    Some(id) => {
+                        if let Some(set) = &self.target.peripherals {
+                            if !set.contains(id.peripheral()) {
+                                self.d.error("PYP2200", n.span, format!("'{}' no tiene {}: el dispositivo no trae el modulo {}", self.target.name, id.name(), id.peripheral()));
+                                continue;
+                            }
+                        }
+                        self.pwm_names.insert(n.name.clone());
+                    }
+                    None => self.d.error("PYP2200", n.span, format!("'pypic.periph.pwm' no exporta '{}' (exporta: PWM1, PWM2)", n.name)),
                 }
             }
             return;
@@ -1826,12 +1881,174 @@ impl<'a> Checker<'a> {
         }
     }
 
+    // ------------------------------------------------------ PWM de los modulos CCP (pypic.periph.pwm)
+    fn pwm_method(&mut self, e: &Expr, id: PwmId, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
+        let name = id.name();
+        let void = |this: &mut Self| this.set(e, Type::Void, None);
+        if method != "start" {
+            if let Some(k) = kwargs.first() {
+                self.d.error("PYP2201", k.name_span, format!("{name}.{method} no acepta argumentos con nombre"));
+            }
+        }
+        match method {
+            "start" => {
+                if !args.is_empty() {
+                    self.d.error("PYP2201", args[0].span, format!("{name}.start se escribe con argumentos con nombre: {name}.start(frequency=1000), {name}.start(frequency=1000, duty=256) o {name}.start(prescaler=4, period=249)"));
+                }
+                let (mut freq, mut pre, mut period, mut duty) = (None, None, None, 0u16);
+                let int_arg = |this: &mut Self, k: &Kwarg, lo: i128, hi: i128, what: &str| -> Option<i128> {
+                    this.expr(&k.value);
+                    match this.konst(&k.value) {
+                        Some(v) if (lo..=hi).contains(&v) && this.ty(&k.value) != Type::Bool => Some(v),
+                        _ => {
+                            this.d.error("PYP2202", k.value.span, format!("{name}.start: {} es una constante {what}", k.name));
+                            None
+                        }
+                    }
+                };
+                for k in kwargs {
+                    match k.name.as_str() {
+                        "frequency" => freq = int_arg(self, k, 1, 4_000_000, "de 1 a 4 000 000 (Hz)"),
+                        "prescaler" => {
+                            self.expr(&k.value);
+                            match self.konst(&k.value) {
+                                Some(v) if pwm::PRESCALERS.iter().any(|&p| p as i128 == v) && self.ty(&k.value) != Type::Bool => pre = Some(v as u8),
+                                _ => self.d.error("PYP2202", k.value.span, format!("{name}.start: prescaler es 1, 4 o 16 (el prescaler de Timer2)")),
+                            }
+                        }
+                        "period" => period = int_arg(self, k, 0, 255, "de 0 a 255 (el valor de PR2)").map(|v| v as u8),
+                        "duty" => duty = int_arg(self, k, 0, 1023, "de 0 a 1023 (10 bits: CCPRxL y DCxB)").map_or(0, |v| v as u16),
+                        other => {
+                            self.expr(&k.value);
+                            self.d.error("PYP2201", k.name_span, format!("{name}.start no tiene el argumento '{other}' (admite: frequency, prescaler, period, duty)"));
+                        }
+                    }
+                }
+                let spec = match (freq, pre, period) {
+                    (Some(f), None, None) => Some(PwmSpec::Frequency(f as u32)),
+                    (None, Some(p), Some(r)) => Some(PwmSpec::Raw(PwmTiming { prescaler: p, pr2: r })),
+                    (None, None, None) if kwargs.iter().all(|k| k.name != "frequency" && k.name != "prescaler" && k.name != "period") => {
+                        self.d.error("PYP2201", e.span, format!("{name}.start necesita el periodo: frequency=1000, o prescaler=4 y period=249 (prescaler x (PR2+1) ciclos)"));
+                        None
+                    }
+                    (Some(_), _, _) if pre.is_some() || period.is_some() => {
+                        self.d.error("PYP2201", e.span, format!("{name}.start: o frequency, o prescaler y period (una sola forma de pedir el periodo)"));
+                        None
+                    }
+                    (None, Some(_), None) | (None, None, Some(_)) => {
+                        self.d.error("PYP2201", e.span, format!("{name}.start: prescaler y period van juntos (el periodo es prescaler x (PR2+1) ciclos)"));
+                        None
+                    }
+                    _ => None,
+                };
+                self.pwm_uses.push(PwmUse { pwm: id, span: e.span, duty: Some(duty as i128) });
+                self.pwm_pending.push(PwmStart { id: e.id, span: e.span, pwm: id, spec, duty, func: self.cur });
+                self.claims.push(Claim { pin: id.pin().into(), function: id.function().into(), peripheral: name.into(), span: e.span, via_timer: false });
+                void(self)
+            }
+            "duty" => {
+                if args.len() != 1 {
+                    self.d.error("PYP2055", e.span, format!("'{name}.duty' recibe el ciclo de trabajo (0 a 1023, en cuentas de TOSC x prescaler)"));
+                    for a in args {
+                        self.expr(a);
+                    }
+                    return self.set(e, Type::Error, None);
+                }
+                self.expect(&args[0], U16, Some(&format!("{name}.duty recibe un uint16 (0 a 1023)")));
+                let c = self.konst(&args[0]);
+                if let Some(v) = c {
+                    if !(0..=1023).contains(&v) {
+                        self.d.error("PYP2202", args[0].span, format!("{name}.duty: el ciclo de trabajo tiene 10 bits (0 a 1023), {v} no cabe"));
+                    }
+                }
+                self.pwm_uses.push(PwmUse { pwm: id, span: e.span, duty: c });
+                self.pwm_calls.insert(e.id, PwmCall { pwm: id, op: PwmOp::Duty });
+                void(self)
+            }
+            "stop" => {
+                if !args.is_empty() {
+                    self.d.error("PYP2055", e.span, format!("'{name}.stop' no recibe argumentos"));
+                    for a in args {
+                        self.expr(a);
+                    }
+                }
+                self.pwm_uses.push(PwmUse { pwm: id, span: e.span, duty: None });
+                self.pwm_calls.insert(e.id, PwmCall { pwm: id, op: PwmOp::Stop });
+                void(self)
+            }
+            other => {
+                self.d.error("PYP2203", e.span, format!("{name} no tiene el metodo '{other}' (disponibles: start, duty, stop)"));
+                for a in args {
+                    self.expr(a);
+                }
+                self.set(e, Type::Error, None)
+            }
+        }
+    }
+
+    /// PWM: un `start()` alcanzable por modulo usado, un solo periodo para los dos modulos (comparten Timer2), Timer2 no es de otro
+    /// uso y la frecuencia se resuelve con el reloj. Como con el ADC se comprueba que el `start()` **exista**, no el orden.
+    fn check_pwm_usage(&mut self) {
+        let pend = std::mem::take(&mut self.pwm_pending);
+        let uses = std::mem::take(&mut self.pwm_uses);
+        if uses.is_empty() {
+            return;
+        }
+        let reach = self.entry_reachable();
+        for id in [PwmId::Pwm1, PwmId::Pwm2] {
+            let Some(u) = uses.iter().find(|u| u.pwm == id) else { continue };
+            if !pend.iter().any(|p| p.pwm == id && p.func.is_none_or(|f| reach.contains(&f))) {
+                let why = if pend.iter().any(|p| p.pwm == id) { format!("las llamadas a {0}.start() estan en funciones que ni main ni @init_device pueden llamar", id.name()) } else { format!("nunca se llama a {}.start()", id.name()) };
+                self.d.error("PYP2204", u.span, format!("{} se usa pero {why}: inicialo con {}.start(...) en main o en una funcion que main llame (se comprueba que exista, no el orden)", id.name(), id.name()));
+            }
+        }
+        // el PWM es dueno de Timer2: T2CON y PR2 los fija el arranque
+        if let Some(c) = self.timer_calls.values().find(|c| c.timer == TimerId::T2) {
+            let _ = c;
+            self.d.error("PYP2206", uses[0].span, "el PWM usa Timer2 (su periodo es PR2 y el prescaler de T2CON) y el programa tambien usa TMR2: un solo uso de Timer2");
+        }
+        let cpc = self.target.clocks_per_cycle.unwrap_or(4);
+        let mut resolved: Vec<(Span, PwmTiming)> = Vec::new();
+        for p in pend {
+            let timing = match p.spec {
+                None => continue,
+                Some(PwmSpec::Raw(t)) => Some(t),
+                Some(PwmSpec::Frequency(f)) => match self.effective_clock(p.span, &format!("{}.start", p.pwm.name())) {
+                    Some(hz) => match pwm::resolve_frequency(hz, cpc, f) {
+                        Ok(t) => Some(t),
+                        Err(msg) => {
+                            self.d.error("PYP2207", p.span, msg);
+                            None
+                        }
+                    },
+                    None => None,
+                },
+            };
+            let Some(t) = timing else { continue };
+            resolved.push((p.span, t));
+            self.pwm_calls.insert(p.id, PwmCall { pwm: p.pwm, op: PwmOp::Start(Some(t), p.duty) });
+        }
+        if let Some((_, first)) = resolved.first().copied() {
+            if let Some((sp, other)) = resolved.iter().find(|(_, t)| *t != first) {
+                self.d.error("PYP2208", *sp, format!("los modulos PWM comparten Timer2: un solo periodo por programa (aqui prescaler {} y PR2 = {}, antes prescaler {} y PR2 = {})", other.prescaler, other.pr2, first.prescaler, first.pr2));
+            }
+            for u in &uses {
+                if let Some(v) = u.duty.filter(|v| (0..=1023).contains(v) && *v as u32 > first.full_scale()) {
+                    self.d.warning("PYP3015", u.span, format!("{}: el ciclo de trabajo {v} supera el periodo ({} cuentas con PR2 = {}): la salida queda siempre en alto (100 %); el maximo util es {}", u.pwm.name(), first.full_scale(), first.pr2, first.full_scale()));
+                }
+            }
+        }
+    }
+
     fn method_call(&mut self, e: &Expr, obj: &str, obj_span: Span, attr: Option<&Ident>, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
         if obj == "UART" && self.uart_name {
             return self.uart_method(e, method, args, kwargs);
         }
         if obj == "ADC" && self.adc_name {
             return self.adc_method(e, method, args, kwargs);
+        }
+        if let Some(id) = PwmId::from_name(obj).filter(|_| self.pwm_names.contains(obj)) {
+            return self.pwm_method(e, id, method, args, kwargs);
         }
         if self.reg_names.contains_key(obj) {
             return self.reg_method(e, obj, attr, method, args, kwargs);
@@ -2839,6 +3056,8 @@ impl<'a> Checker<'a> {
             self.d.error("PYP2175", e.span, "'ADC' es el convertidor: usa sus metodos (ADC.start(), ADC.read(AN0), ADC.result()...)");
         } else if self.adc_consts.contains(n) {
             self.d.error("PYP2175", e.span, format!("'{n}' es una constante del ADC: solo se usa como argumento de ADC.select/read o ADC.start(clock=...)"));
+        } else if self.pwm_names.contains(n) {
+            self.d.error("PYP2205", e.span, format!("'{n}' es un modulo PWM: usa sus metodos ({n}.start(frequency=1000), {n}.duty(v), {n}.stop())"));
         } else if self.array_idx.contains_key(n) {
             self.d.error("PYP2172", e.span, format!("'{n}' es un arreglo: se lee con {n}[indice], se escribe con {n}[indice] = valor y su tamano es len({n})"));
         } else if self.rom_idx.contains_key(n) {
@@ -3331,7 +3550,7 @@ const PERIPH_MODULES: &[&str] = &["gpio", "adc", "timer", "pwm", "ccp", "eccp", 
 const SYSTEM_MODULES: &[&str] = &["time", "irq", "wdt", "clock", "power", "flash"];
 /// `pypic.soft.*`: implementaciones por software sobre cualquier GPIO (cuestan ciclos de CPU).
 const SOFT_MODULES: &[&str] = &["spi", "i2c", "uart", "onewire"];
-const IMPLEMENTED_MODULES: &[&str] = &["pypic.periph.uart", "pypic.periph.adc", "pypic.periph.gpio", "pypic.periph.timer", "pypic.regs", "pypic.bits", "pypic.system.time"];
+const IMPLEMENTED_MODULES: &[&str] = &["pypic.periph.uart", "pypic.periph.adc", "pypic.periph.pwm", "pypic.periph.gpio", "pypic.periph.timer", "pypic.regs", "pypic.bits", "pypic.system.time"];
 
 /// Problema con la ruta de un modulo `pypic.*` (renombrado, categoria sin modulo, inexistente o aun no implementado).
 /// `None` si es un modulo implementado o no es del arbol de categorias.

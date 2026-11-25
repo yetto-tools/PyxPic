@@ -87,6 +87,7 @@ fn operands_mut(inst: &mut Inst) -> Vec<&mut Operand> {
         Inst::Timer { arg, .. } | Inst::Reg { arg, .. } | Inst::Uart { arg, .. } => {
             arg.iter_mut().collect()
         }
+        Inst::Pwm { hi, dc, .. } => hi.iter_mut().chain(dc.iter_mut()).collect(),
         Inst::Bits { src, .. } => src.iter_mut().collect(),
         Inst::RomGet { index, .. } | Inst::ArrGet { index, .. } => vec![index],
         Inst::ArrSet { index, value, .. } => vec![index, value],
@@ -117,6 +118,7 @@ fn dsts_mut(inst: &mut Inst) -> Vec<&mut Place> {
         | Inst::PinSet { .. }
         | Inst::PinToggle { .. }
         | Inst::Delay { .. }
+        | Inst::Pwm { .. }
         | Inst::ArrSet { .. } => vec![],
     }
 }

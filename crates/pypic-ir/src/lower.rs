@@ -256,6 +256,31 @@ impl<'a> FnLower<'a> {
                 };
                 self.emit(Inst::Uart { call, dst, arg });
             }
+            ExprKind::MethodCall { args, .. } if self.prog.pwm_calls.contains_key(&e.id) => {
+                let call = self.prog.pwm_calls[&e.id];
+                let u8_ty = Type::Int { bits: 8, signed: false };
+                let (hi, dc) = if call.op == pypic_frontend::PwmOp::Duty {
+                    // el ciclo de trabajo es de 10 bits: CCPRxL lleva los ocho altos y DCxB los dos bajos; los bits sobre el 10 se ignoran
+                    match self.value(&args[0]) {
+                        Operand::Const { value, .. } => (Some(Operand::Const { value: (value >> 2) & 0xFF, ty: u8_ty }), Some(Operand::Const { value: value & 3, ty: u8_ty })),
+                        v => {
+                            let u16_ty = Type::Int { bits: 16, signed: false };
+                            let shifted = self.new_temp(u16_ty);
+                            self.emit(Inst::Binary { dst: shifted, op: BinOp::Shr, lhs: v, rhs: Operand::Const { value: 2, ty: u16_ty } });
+                            let hi = self.new_temp(u8_ty);
+                            self.emit(Inst::Cast { dst: hi, src: Operand::Place(shifted) });
+                            let low = self.new_temp(u16_ty);
+                            self.emit(Inst::Binary { dst: low, op: BinOp::BitAnd, lhs: v, rhs: Operand::Const { value: 3, ty: u16_ty } });
+                            let dc = self.new_temp(u8_ty);
+                            self.emit(Inst::Cast { dst: dc, src: Operand::Place(low) });
+                            (Some(Operand::Place(hi)), Some(Operand::Place(dc)))
+                        }
+                    }
+                } else {
+                    (None, None)
+                };
+                self.emit(Inst::Pwm { call, hi, dc });
+            }
             ExprKind::MethodCall { .. } if self.prog.adc_calls.contains_key(&e.id) => {
                 let call = self.prog.adc_calls[&e.id];
                 // leer sin usar el resultado no tiene efecto: no se emite

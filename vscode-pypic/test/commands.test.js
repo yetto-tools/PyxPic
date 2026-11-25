@@ -127,6 +127,8 @@ test("identifica PyPIC y conserva ubicación y severidad de diagnósticos", () =
   assert.ok(language.completions("UART.").includes("write_text"));
   assert.ok(language.completions("ADC.re").includes("read"));
   assert.ok(!language.completions("ADC.").includes("write_text"));
+  assert.deepEqual(language.completions("PWM1."), ["start", "duty", "stop"]);
+  assert.ok(language.info.PWM1 && language.info.PWM2 && language.info.duty);
   assert.deepEqual(language.completions("otro."), []);
   const root = path.resolve(__dirname, "../..");
   const tools = language.projectTools(path.join(root, "examples", "uart", "adc_serial.py"), path.dirname(root), "pypic", "");

@@ -28,6 +28,14 @@ const RP0: u8 = 0x20;
 const RP1: u8 = 0x40;
 const IRP: u8 = 0x80;
 
+/// Un inicio de periodo del PWM: el modulo (1 o 2), el ciclo de instruccion y el ciclo de trabajo de 10 bits que quedo enganchado.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PwmEvent {
+    pub ccp: u8,
+    pub cycle: u64,
+    pub duty: u16,
+}
+
 #[derive(Clone, Debug)]
 pub struct Sim {
     flash: Vec<u16>,
@@ -51,6 +59,11 @@ pub struct Sim {
     t2_post: u32,
     /// Ciclo exacto en que cada temporizador activo su bandera ("T0IF", "TMR1IF", "TMR2IF"); se guardan los primeros 4096.
     pub timer_events: Vec<(&'static str, u64)>,
+    /// PWM de CCP1 y CCP2: el ciclo de trabajo de 10 bits que pasa a `CCPRxH` al terminar cada periodo (doble bufer) y el ciclo
+    /// exacto de cada inicio de periodo con su valor (`pwm_events`, los primeros 4096). No hay pin sub-ciclo: el nivel se calcula
+    /// una vez por ciclo de instruccion y se escribe en el pin (PORTC) si su TRIS lo habilita.
+    pwm_latch: [u16; 2],
+    pub pwm_events: Vec<PwmEvent>,
     /// El ADC: el valor de 10 bits que lee cada canal, la frecuencia del oscilador (da TAD y el ciclo de instruccion) y
     /// las reglas del datasheet que el programa incumplio (TAD fuera de 1,6..6,0 us, adquisicion menor de 5 us, GO con el ADC apagado).
     pub adc_inputs: [u16; 16],
@@ -88,7 +101,7 @@ impl Sim {
                 flash[a as usize] = w;
             }
         }
-        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None, t0_pre: 0, t0_inhibit: 0, t1_pre: 0, t2_pre: 0, t2_post: 0, timer_events: Vec::new(), adc_inputs: [0; 16], fosc_hz: 4_000_000, adc_violations: Vec::new(), adc_tacq_ns: 11_500.0, adc_low_voltage: false, uart_tx: Vec::new(), uart_tx9: Vec::new(), uart_txreg9: false, uart_violations: Vec::new(), uart_rx_pending: Default::default(), uart_fifo: Default::default(), uart_txreg: None, uart_tsr_left: 0, uart_prev_cren: false, osc_ready_at: 0, adc_prev_go: false, adc_prev_on: false, adc_prev_chs: 0, adc_acq_from: 0, adc_remaining: 0 };
+        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None, t0_pre: 0, t0_inhibit: 0, t1_pre: 0, t2_pre: 0, t2_post: 0, timer_events: Vec::new(), adc_inputs: [0; 16], fosc_hz: 4_000_000, adc_violations: Vec::new(), adc_tacq_ns: 11_500.0, adc_low_voltage: false, uart_tx: Vec::new(), uart_tx9: Vec::new(), uart_txreg9: false, uart_violations: Vec::new(), uart_rx_pending: Default::default(), uart_fifo: Default::default(), uart_txreg: None, uart_tsr_left: 0, uart_prev_cren: false, osc_ready_at: 0, adc_prev_go: false, adc_prev_on: false, adc_prev_chs: 0, adc_acq_from: 0, adc_remaining: 0, pwm_latch: [0; 2], pwm_events: Vec::new() };
         s.reset();
         s
     }
@@ -105,6 +118,7 @@ impl Sim {
         self.ram[0x92] = 0xFF; // PR2
         (self.t0_pre, self.t0_inhibit, self.t1_pre, self.t2_pre, self.t2_post) = (0, 0, 0, 0, 0);
         (self.adc_prev_go, self.adc_prev_on, self.adc_prev_chs, self.adc_remaining) = (false, false, 0, 0);
+        self.pwm_latch = [0; 2];
         (self.uart_txreg, self.uart_tsr_left, self.uart_prev_cren) = (None, 0, false);
         self.uart_fifo.clear();
         self.ram[0x98] = 0x02; // TXSTA: TRMT = 1 tras el reset
@@ -488,6 +502,7 @@ impl Sim {
                 self.t2_pre = 0;
                 if self.ram[0x11] == self.ram[0x92] {
                     self.ram[0x11] = 0;
+                    self.pwm_period_start(now);
                     self.t2_post += 1;
                     if self.t2_post > u32::from(t2con >> 3 & 0xF) {
                         self.t2_post = 0;
@@ -496,6 +511,41 @@ impl Sim {
                     }
                 } else {
                     self.ram[0x11] = self.ram[0x11].wrapping_add(1);
+                }
+            }
+        }
+        self.pwm_drive_pins();
+    }
+
+    /// CCPxCON (modo PWM: CCPxM<3:2> = 11): al empezar el periodo (TMR2 == PR2) `CCPRxL:DCxB` pasa al registro esclavo.
+    fn pwm_period_start(&mut self, now: u64) {
+        for (i, (con, rl)) in [(0x17usize, 0x15usize), (0x1D, 0x1B)].into_iter().enumerate() {
+            if self.ram[con] & 0x0C == 0x0C {
+                self.pwm_latch[i] = (u16::from(self.ram[rl]) << 2) | u16::from((self.ram[con] >> 4) & 3);
+                if self.pwm_events.len() < 4096 {
+                    self.pwm_events.push(PwmEvent { ccp: i as u8 + 1, cycle: now, duty: self.pwm_latch[i] });
+                }
+            }
+        }
+    }
+
+    /// El nivel del pin de cada modulo PWM en este ciclo: alto mientras la posicion en el periodo (en cuentas de TOSC x prescaler,
+    /// `ciclos x 4 / prescaler`) sea menor que el ciclo de trabajo enganchado; con 0 nunca sube y con un ancho mayor que el periodo
+    /// no cambia (queda en alto). Solo se escribe en PORTC si el TRIS del pin lo deja como salida.
+    fn pwm_drive_pins(&mut self) {
+        let t2con = self.ram[0x12];
+        if t2con & 0x04 == 0 {
+            return;
+        }
+        let pre = [1u32, 4, 16][(t2con & 3).min(2) as usize];
+        let pos = f64::from(u32::from(self.ram[0x11]) * pre + self.t2_pre) * 4.0 / f64::from(pre);
+        for (i, (con, bit)) in [(0x17usize, 2u8), (0x1D, 1)].into_iter().enumerate() {
+            if self.ram[con] & 0x0C == 0x0C && self.ram[0x87] & (1 << bit) == 0 {
+                let high = pos < f64::from(self.pwm_latch[i]);
+                if high {
+                    self.ram[0x07] |= 1 << bit;
+                } else {
+                    self.ram[0x07] &= !(1 << bit);
                 }
             }
         }
