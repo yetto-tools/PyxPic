@@ -28,6 +28,20 @@ pypic build --project otro/pypic.toml
 pypic check | pypic ir            # también leen el proyecto
 ```
 
+## Limpiar la salida: `pypic clean`
+
+`pypic build` escribe un solo archivo, el `.hex` (en `-o`, en la `output` del perfil o junto al programa con la extensión `.hex`). `pypic clean` calcula **la misma ruta** y borra ese archivo, nada más:
+
+```
+pypic clean                       # todos los perfiles del proyecto
+pypic clean --target cristal      # solo la salida de ese perfil
+pypic clean programa.py           # programa suelto: programa.hex
+pypic clean -o build/fw.hex       # una ruta concreta (como -o en build)
+pypic clean --dry-run             # lista lo que borraría, sin borrar
+```
+
+No recorre carpetas ni borra por patrón: un `.hex` que `build` no escribiría no se toca. Se niega (código 2, sin borrar nada) a tocar un `.py`, un `.toml`, un `.s`, el `pypic.toml` o un directorio, aunque una `output` mal escrita apunte ahí. Una carpeta de salida (`build/`) que queda vacía se quita; la carpeta del proyecto y la actual, nunca. Un archivo que ya no existe se avisa y no es un error. Lo que `clean` no sabe es lo que `build` escribió con una ruta distinta de la actual (por ejemplo, antes de cambiar la `output` de un perfil).
+
 Se busca el `pypic.toml` **más cercano** al programa (en su carpeta o en las de arriba) o a la carpeta actual si no se da programa. Las rutas del archivo son relativas **a él**. Un ejemplo completo está en `examples/proyecto/`.
 
 ## Crear y revisar: `pypic init` y `pypic project check`
