@@ -256,6 +256,18 @@ impl<'a> FnLower<'a> {
                 };
                 self.emit(Inst::Uart { call, dst, arg });
             }
+            ExprKind::MethodCall { args, .. } if self.prog.eeprom_calls.contains_key(&e.id) => {
+                let call = self.prog.eeprom_calls[&e.id];
+                use pypic_frontend::EepromOp as E;
+                let reads = matches!(call.op, E::Read | E::Busy | E::Failed);
+                // leer sin usar el resultado no tiene efecto: no se emite
+                if reads && dst.is_none() {
+                    return;
+                }
+                let addr = matches!(call.op, E::Read | E::Write | E::StartWrite).then(|| self.value(&args[0]));
+                let val = matches!(call.op, E::Write | E::StartWrite).then(|| self.value(&args[1]));
+                self.emit(Inst::Eeprom { call, dst: if reads { dst } else { None }, addr, val });
+            }
             ExprKind::MethodCall { args, .. } if self.prog.pwm_calls.contains_key(&e.id) => {
                 let call = self.prog.pwm_calls[&e.id];
                 let u8_ty = Type::Int { bits: 8, signed: false };

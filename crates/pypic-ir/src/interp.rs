@@ -53,6 +53,8 @@ pub struct Machine<'m> {
     /// periodo ni pin; guarda lo que el programa escribio (`CCPRxL:DCxB`).
     pub pwm_duty: [u16; 2],
     pub pwm_on: [bool; 2],
+    /// La EEPROM de datos (256 bytes, borrada = 0xFF): el modelo de referencia escribe al instante y nunca esta ocupada.
+    pub eeprom: [u8; 256],
     pub array_oob: Vec<String>,
 }
 
@@ -87,6 +89,7 @@ impl<'m> Machine<'m> {
             array_oob: Vec::new(),
             pwm_duty: [0; 2],
             pwm_on: [false; 2],
+            eeprom: [0xFF; 256],
         }
     }
 
@@ -247,6 +250,17 @@ impl<'m> Machine<'m> {
                 }
                 UartOp::RxReady => self.write(f, fr, dst.unwrap(), (!self.uart_rx.is_empty() || !self.uart_rx9.is_empty()) as i128),
                 UartOp::Sending | UartOp::Overrun | UartOp::FramingError => self.write(f, fr, dst.unwrap(), 0),
+            },
+            Inst::Eeprom { call, dst, addr, val } => match call.op {
+                EepromOp::Read => {
+                    let a = self.read(fr, addr.as_ref().unwrap()) as usize & 0xFF;
+                    self.write(f, fr, dst.unwrap(), self.eeprom[a] as i128);
+                }
+                EepromOp::Write | EepromOp::StartWrite => {
+                    let (a, v) = (self.read(fr, addr.as_ref().unwrap()) as usize & 0xFF, self.read(fr, val.as_ref().unwrap()));
+                    self.eeprom[a] = v as u8;
+                }
+                EepromOp::Busy | EepromOp::Failed => self.write(f, fr, dst.unwrap(), 0),
             },
             Inst::Pwm { call, hi, dc } => {
                 let i = call.pwm.ccp() as usize - 1;

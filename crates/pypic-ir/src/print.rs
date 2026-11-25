@@ -83,6 +83,10 @@ pub fn print(m: &Module) -> String {
                         let a = arg.as_ref().map(|a| format!(" {}", operand(m, f, a))).unwrap_or_default();
                         format!("{}uart {:?}{a}", dst.map(|d| format!("{} = ", place(m, f, d))).unwrap_or_default(), call.op)
                     }
+                    Inst::Eeprom { call, dst, addr, val } => {
+                        let a: String = addr.iter().chain(val.iter()).map(|a| format!(" {}", operand(m, f, a))).collect();
+                        format!("{}eeprom {:?}{a}", dst.map(|d| format!("{} = ", place(m, f, d))).unwrap_or_default(), call.op)
+                    }
                     Inst::Pwm { call, hi, dc } => {
                         let a: String = hi.iter().chain(dc.iter()).map(|a| format!(" {}", operand(m, f, a))).collect();
                         format!("pwm {} {:?}{a}", call.pwm.name(), call.op)

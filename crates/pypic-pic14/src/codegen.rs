@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
-use pypic_ir::ir::{PwmCall, PwmOp, AdcCall, AdcOp, BitsOp, UartCall, UartOp, BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, RegCall, RegOp, Terminator, TimerCall, TimerId, TimerOp, TimerStart, Type, UnaryOp};
+use pypic_ir::ir::{EepromCall, EepromOp, PwmCall, PwmOp, AdcCall, AdcOp, BitsOp, UartCall, UartOp, BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, RegCall, RegOp, Terminator, TimerCall, TimerId, TimerOp, TimerStart, Type, UnaryOp};
 use pypic_frontend::timer::{GateSource, TimerSource};
 
 use crate::asm::{assemble_fragment, AsmError, FragItem};
@@ -955,6 +955,7 @@ impl<'a> Gen<'a> {
             I::Bits { op, dst, src } => self.bits(*op, *dst, src.as_ref()),
             I::Adc { call, dst } => self.adc(call, *dst),
             I::Pwm { call, hi, dc } => self.pwm(call, hi.as_ref(), dc.as_ref()),
+            I::Eeprom { call, dst, addr, val } => self.eeprom(call, *dst, addr.as_ref(), val.as_ref()),
             I::Uart { call, dst, arg } => self.uart(call, *dst, arg.as_ref()),
             I::RomGet { dst, rom, index } => self.rom_get(*dst, *rom, index),
             I::ArrGet { dst, arr, index } => self.arr_get(*dst, *arr, index),
@@ -1833,6 +1834,91 @@ impl<'a> Gen<'a> {
                 self.asm.i(Btfsc(go_addr as u8, go_bit));
                 self.asm.goto(top);
                 self.adc_result(dst.expect("Read lleva destino"))?;
+            }
+        }
+        Ok(())
+    }
+
+    // ---- EEPROM de datos (pypic.periph.eeprom, docs/sdk-eeprom.md): registros y bits del Device Pack por nombre ----
+    fn eeprom(&mut self, call: &EepromCall, dst: Option<Place>, addr: Option<&Operand>, val: Option<&Operand>) -> Result<(), CodegenError> {
+        let (eeadr, eedat, eecon1, eecon2) = (self.reg_addr("EEADR")?, self.reg_addr("EEDAT")?, self.reg_addr("EECON1")?, self.reg_addr("EECON2")?);
+        let (eepgd, rd, wr, wren, wrerr) = (self.bit_pos("EEPGD")?, self.bit_pos("RD")?, self.bit_pos("WR")?, self.bit_pos("WREN")?, self.bit_pos("WRERR")?);
+        match call.op {
+            EepromOp::Read => {
+                // DS40001291H 10.1.2: direccion en EEADR, EEPGD = 0 (memoria de datos), RD = 1 y el dato esta en EEDAT al ciclo siguiente
+                let a = self.bytes(addr.expect("Read lleva direccion"))?[0];
+                self.ld(a);
+                self.banked(eeadr, |g, f| g.asm.i(Movwf(f)));
+                self.banked(eecon1, |g, f| {
+                    g.asm.i(Bcf(f, eepgd));
+                    g.asm.i(Bsf(f, rd));
+                });
+                self.banked(eedat, |g, f| g.asm.i(Movf(f, W)));
+                let d = self.regs(dst.expect("Read lleva destino"))?[0];
+                self.st(d);
+            }
+            EepromOp::Write | EepromOp::StartWrite => {
+                // 10.1.3: EEADR y EEDAT, EEPGD = 0, WREN = 1, interrupciones fuera, 55h y AAh a EECON2, WR = 1
+                let a = self.bytes(addr.expect("Write lleva direccion"))?[0];
+                self.ld(a);
+                self.banked(eeadr, |g, f| g.asm.i(Movwf(f)));
+                let v = self.bytes(val.expect("Write lleva valor"))?[0];
+                self.ld(v);
+                self.banked(eedat, |g, f| g.asm.i(Movwf(f)));
+                // EEIF en 0 (sube al terminar la escritura) y WRERR en 0 (la escritura anterior ya se reviso)
+                self.bit_op("EEIF", false)?;
+                self.banked(eecon1, |g, f| {
+                    g.asm.i(Bcf(f, eepgd));
+                    g.asm.i(Bcf(f, wrerr));
+                    g.asm.i(Bsf(f, wren));
+                });
+                let (_, gie) = self.bit_loc("GIE")?;
+                let intcon = self.reg_bank0("INTCON")?;
+                let (con1, con2) = ((eecon1 & 0x7F) as u8, (eecon2 & 0x7F) as u8);
+                let seq = |g: &mut Self| {
+                    g.asm.i(Movlw(0x55));
+                    g.asm.i(Movwf(con2));
+                    g.asm.i(Movlw(0xAA));
+                    g.asm.i(Movwf(con2));
+                    g.asm.i(Bsf(con1, wr));
+                };
+                // banco 3 (EECON1 y EECON2); las interrupciones solo se inhabilitan, y se vuelven a habilitar, si estaban habilitadas:
+                // dentro de una interrupcion GIE ya esta en 0 y no se debe activar (AN576: se comprueba que GIE quede en 0)
+                self.asm.i(Bsf(STATUS, BIT_RP0));
+                self.asm.i(Bsf(STATUS, BIT_RP1));
+                let plain = self.asm.label("ee.sin_irq");
+                let done = self.asm.label("ee.fin");
+                let recheck = self.asm.label("ee.gie");
+                self.asm.i(Btfss(intcon, gie));
+                self.asm.goto(plain);
+                self.asm.i(Bcf(intcon, gie));
+                self.asm.place(recheck);
+                self.asm.i(Btfsc(intcon, gie));
+                self.asm.goto(recheck);
+                seq(self);
+                self.asm.i(Bsf(intcon, gie));
+                self.asm.goto(done);
+                self.asm.place(plain);
+                seq(self);
+                self.asm.place(done);
+                // WREN se baja ya: no afecta a la escritura en curso (10.1.3) y deja la proteccion contra escrituras accidentales puesta
+                self.asm.i(Bcf(con1, wren));
+                if call.op == EepromOp::Write {
+                    let wait = self.asm.label("ee.espera");
+                    self.asm.place(wait);
+                    self.asm.i(Btfsc(con1, wr));
+                    self.asm.goto(wait);
+                }
+                self.asm.i(Bcf(STATUS, BIT_RP0));
+                self.asm.i(Bcf(STATUS, BIT_RP1));
+            }
+            EepromOp::Busy | EepromOp::Failed => {
+                let (bit, d) = (if call.op == EepromOp::Busy { wr } else { wrerr }, self.regs(dst.expect("la consulta lleva destino"))?[0]);
+                self.asm.i(Clrf(d));
+                self.banked(eecon1, |g, f| g.asm.i(Movf(f, W)));
+                self.asm.i(Andlw(1 << bit));
+                self.asm.i(Btfss(STATUS, BIT_Z));
+                self.asm.i(Incf(d, F));
             }
         }
         Ok(())

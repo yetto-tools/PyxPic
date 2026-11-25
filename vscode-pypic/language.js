@@ -49,6 +49,7 @@ const info = {
   PWM1: "PWM del módulo CCP1 (pin RC2). `PWM1.start(frequency=1000)` fija el periodo exacto; `PWM1.duty(v)` toma cuentas de 10 bits (0 a 1023), no un porcentaje.",
   PWM2: "PWM del módulo CCP2 (pin RC1). Comparte Timer2 con PWM1: un solo periodo por programa.",
   duty: "`PWM1.duty(v)` escribe el ciclo de trabajo en cuentas de TOSC x prescaler (10 bits); el periodo completo tiene 4 x (PR2 + 1) cuentas.",
+  EEPROM: "EEPROM de datos de 256 bytes. `EEPROM.read(a)` lee un byte; `EEPROM.write(a, v)` escribe y espera hasta 6 ms; `EEPROM.start_write(a, v)` no espera.",
   UART: "EUSART asíncrono: `UART.start(baud=9600)` configura transmisión y recepción.",
   pause: "`pause(ms)` espera una cantidad de milisegundos; consulta el costo y los límites de `pypic.system.time`.",
   read: "Lectura del periférico. `ADC.read(AN0)` devuelve uint16; `UART.read()` recibe un byte y espera si es necesario.",
@@ -59,13 +60,14 @@ const info = {
 
 const members = {
   ADC: ["start", "select", "go", "done", "result", "read"],
+  EEPROM: ["read", "write", "start_write", "busy", "failed"],
   PWM1: ["start", "duty", "stop"],
   PWM2: ["start", "duty", "stop"],
   UART: ["start", "write", "read", "send", "recv", "tx_ready", "rx_ready", "sending", "overrun", "framing_error", "clear_overrun", "write_text", "write9", "send9", "read9", "recv9"],
 };
 
 function completions(prefix) {
-  const match = /\b(ADC|UART|PWM[12])\.\w*$/.exec(prefix);
+  const match = /\b(ADC|UART|EEPROM|PWM[12])\.\w*$/.exec(prefix);
   if (match) return members[match[1]];
   if (/\.\w*$/.test(prefix)) return [];
   return ["uint8", "uint16", "uint32", "int8", "int16", "int32", "Const", "CLOCK", "Internal", "Crystal", "ExternalClock", "MHz", "kHz", "Hz", "CLOCK_HZ"];

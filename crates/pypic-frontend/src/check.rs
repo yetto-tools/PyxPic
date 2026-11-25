@@ -10,6 +10,7 @@
 //!  * Sin recursion: la memoria es estatica y la pila de hardware es limitada.
 
 use crate::adc::{self, AdcCall, AdcOp};
+use crate::eeprom::{EepromCall, EepromOp};
 use crate::pwm::{self, PwmCall, PwmId, PwmOp, PwmTiming};
 use crate::uart::{self, FmtPart, UartCall, UartOp, UartStart};
 use crate::clock::{self, ClockKind, ClockSource};
@@ -162,6 +163,8 @@ pub struct Program {
     pub adc_config: adc::AdcConfig,
     /// Llamadas a metodos de `pypic.periph.pwm`, por id de expresion.
     pub pwm_calls: BTreeMap<u32, PwmCall>,
+    /// Llamadas a metodos de `pypic.periph.eeprom`, por id de expresion.
+    pub eeprom_calls: BTreeMap<u32, EepromCall>,
     /// Llamadas a metodos de `pypic.periph.uart`, por id de expresion.
     pub uart_calls: BTreeMap<u32, UartCall>,
     /// Las partes de cada `UART.write_text(f"...")`, por id de expresion.
@@ -192,6 +195,8 @@ pub struct Checked {
     pub adc_config: adc::AdcConfig,
     /// Llamadas a metodos de `pypic.periph.pwm`, por id de expresion.
     pub pwm_calls: BTreeMap<u32, PwmCall>,
+    /// Llamadas a metodos de `pypic.periph.eeprom`, por id de expresion.
+    pub eeprom_calls: BTreeMap<u32, EepromCall>,
     pub uart_calls: BTreeMap<u32, UartCall>,
     pub uart_fmt: BTreeMap<u32, Vec<FmtPart>>,
 }
@@ -241,6 +246,8 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         adc_pending: Vec::new(),
         adc_config: adc::AdcConfig::default(),
         pwm_names: HashSet::new(),
+        eeprom_name: false,
+        eeprom_calls: BTreeMap::new(),
         pwm_calls: BTreeMap::new(),
         pwm_pending: Vec::new(),
         pwm_uses: Vec::new(),
@@ -267,7 +274,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         stmt_top: None,
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, clock_source: c.clock_source, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, arrays: c.arrays, array_inits: c.array_inits, array_gets: c.array_gets, text_calls: c.text_calls, adc_calls: c.adc_calls, adc_config: c.adc_config, pwm_calls: c.pwm_calls, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, clock_source: c.clock_source, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, arrays: c.arrays, array_inits: c.array_inits, array_gets: c.array_gets, text_calls: c.text_calls, adc_calls: c.adc_calls, adc_config: c.adc_config, pwm_calls: c.pwm_calls, eeprom_calls: c.eeprom_calls, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -350,6 +357,9 @@ struct Checker<'a> {
     adc_config: adc::AdcConfig,
     /// PWM (CCP): modulos importados, llamadas, `start` por resolver (frecuencia) y todos los usos.
     pwm_names: HashSet<String>,
+    /// EEPROM de datos: importada y sus llamadas.
+    eeprom_name: bool,
+    eeprom_calls: BTreeMap<u32, EepromCall>,
     pwm_calls: BTreeMap<u32, PwmCall>,
     pwm_pending: Vec<PwmStart>,
     pwm_uses: Vec<PwmUse>,
@@ -628,6 +638,22 @@ impl<'a> Checker<'a> {
                 } else {
                     let all: Vec<String> = std::iter::once("ADC".to_string()).chain((0..adc::CHANNELS).map(|c| format!("AN{c}"))).chain(adc::CLOCKS.iter().map(|(c, _)| c.to_string())).collect();
                     self.d.error("PYP2170", n.span, format!("'pypic.periph.adc' no exporta '{}' (exporta: {})", n.name, all.join(", ")));
+                }
+            }
+            return;
+        }
+        if module == "pypic.periph.eeprom" {
+            for n in names {
+                if n.name == "EEPROM" {
+                    if let Some(set) = &self.target.peripherals {
+                        if !set.contains("EEPROM") {
+                            self.d.error("PYP2210", n.span, format!("'{}' no tiene EEPROM de datos: el dispositivo no trae el modulo EEPROM", self.target.name));
+                            continue;
+                        }
+                    }
+                    self.eeprom_name = true;
+                } else {
+                    self.d.error("PYP2210", n.span, format!("'pypic.periph.eeprom' no exporta '{}' (exporta: EEPROM)", n.name));
                 }
             }
             return;
@@ -1881,6 +1907,45 @@ impl<'a> Checker<'a> {
         }
     }
 
+    // ------------------------------------------------------ EEPROM de datos (pypic.periph.eeprom)
+    fn eeprom_method(&mut self, e: &Expr, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
+        if let Some(k) = kwargs.first() {
+            self.d.error("PYP2211", k.name_span, format!("EEPROM.{method} no acepta argumentos con nombre"));
+        }
+        let (op, arity, ret) = match method {
+            "read" => (EepromOp::Read, 1, U8),
+            "write" => (EepromOp::Write, 2, Type::Void),
+            "start_write" => (EepromOp::StartWrite, 2, Type::Void),
+            "busy" => (EepromOp::Busy, 0, Type::Bool),
+            "failed" => (EepromOp::Failed, 0, Type::Bool),
+            other => {
+                self.d.error("PYP2212", e.span, format!("EEPROM no tiene el metodo '{other}' (disponibles: read, write, start_write, busy, failed)"));
+                for a in args {
+                    self.expr(a);
+                }
+                return self.set(e, Type::Error, None);
+            }
+        };
+        if args.len() != arity {
+            let want = match method {
+                "read" => "una direccion (0 a 255)",
+                "write" | "start_write" => "la direccion (0 a 255) y el valor (0 a 255)",
+                _ => "ningun argumento",
+            };
+            self.d.error("PYP2055", e.span, format!("'EEPROM.{method}' recibe {want}"));
+            for a in args {
+                self.expr(a);
+            }
+            return self.set(e, Type::Error, None);
+        }
+        for (i, a) in args.iter().enumerate() {
+            let what = if i == 0 { "la direccion" } else { "el valor" };
+            self.expect(a, U8, Some(&format!("EEPROM.{method} recibe {what} como uint8 (0 a 255)")));
+        }
+        self.eeprom_calls.insert(e.id, EepromCall { op });
+        self.set(e, ret, None)
+    }
+
     // ------------------------------------------------------ PWM de los modulos CCP (pypic.periph.pwm)
     fn pwm_method(&mut self, e: &Expr, id: PwmId, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
         let name = id.name();
@@ -2046,6 +2111,9 @@ impl<'a> Checker<'a> {
         }
         if obj == "ADC" && self.adc_name {
             return self.adc_method(e, method, args, kwargs);
+        }
+        if obj == "EEPROM" && self.eeprom_name {
+            return self.eeprom_method(e, method, args, kwargs);
         }
         if let Some(id) = PwmId::from_name(obj).filter(|_| self.pwm_names.contains(obj)) {
             return self.pwm_method(e, id, method, args, kwargs);
@@ -3056,6 +3124,8 @@ impl<'a> Checker<'a> {
             self.d.error("PYP2175", e.span, "'ADC' es el convertidor: usa sus metodos (ADC.start(), ADC.read(AN0), ADC.result()...)");
         } else if self.adc_consts.contains(n) {
             self.d.error("PYP2175", e.span, format!("'{n}' es una constante del ADC: solo se usa como argumento de ADC.select/read o ADC.start(clock=...)"));
+        } else if self.eeprom_name && n == "EEPROM" {
+            self.d.error("PYP2213", e.span, "'EEPROM' es la memoria de datos: usa sus metodos (EEPROM.read(a), EEPROM.write(a, v), EEPROM.busy()...)");
         } else if self.pwm_names.contains(n) {
             self.d.error("PYP2205", e.span, format!("'{n}' es un modulo PWM: usa sus metodos ({n}.start(frequency=1000), {n}.duty(v), {n}.stop())"));
         } else if self.array_idx.contains_key(n) {
@@ -3550,7 +3620,7 @@ const PERIPH_MODULES: &[&str] = &["gpio", "adc", "timer", "pwm", "ccp", "eccp", 
 const SYSTEM_MODULES: &[&str] = &["time", "irq", "wdt", "clock", "power", "flash"];
 /// `pypic.soft.*`: implementaciones por software sobre cualquier GPIO (cuestan ciclos de CPU).
 const SOFT_MODULES: &[&str] = &["spi", "i2c", "uart", "onewire"];
-const IMPLEMENTED_MODULES: &[&str] = &["pypic.periph.uart", "pypic.periph.adc", "pypic.periph.pwm", "pypic.periph.gpio", "pypic.periph.timer", "pypic.regs", "pypic.bits", "pypic.system.time"];
+const IMPLEMENTED_MODULES: &[&str] = &["pypic.periph.uart", "pypic.periph.adc", "pypic.periph.pwm", "pypic.periph.eeprom", "pypic.periph.gpio", "pypic.periph.timer", "pypic.regs", "pypic.bits", "pypic.system.time"];
 
 /// Problema con la ruta de un modulo `pypic.*` (renombrado, categoria sin modulo, inexistente o aun no implementado).
 /// `None` si es un modulo implementado o no es del arbol de categorias.

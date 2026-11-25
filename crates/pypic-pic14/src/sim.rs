@@ -64,6 +64,15 @@ pub struct Sim {
     /// una vez por ciclo de instruccion y se escribe en el pin (PORTC) si su TRIS lo habilita.
     pwm_latch: [u16; 2],
     pub pwm_events: Vec<PwmEvent>,
+    /// La EEPROM de datos (256 bytes, borrada = 0xFF; sobrevive a los reinicios), el tiempo que tarda una escritura (D122: 6 ms maximo)
+    /// y las reglas del datasheet que el programa incumplio (WR sin la secuencia 55h/AAh o con WREN = 0, interrupcion a mitad de la
+    /// secuencia, lectura de la memoria de programa). Una escritura termina `eeprom_write_ns` despues de `WR = 1`: baja `WR` y sube `EEIF`.
+    pub eeprom: [u8; 256],
+    pub eeprom_write_ns: f64,
+    pub eeprom_violations: Vec<String>,
+    ee_stage: u8,
+    ee_done_at: Option<u64>,
+    ee_pending: (u8, u8),
     /// El ADC: el valor de 10 bits que lee cada canal, la frecuencia del oscilador (da TAD y el ciclo de instruccion) y
     /// las reglas del datasheet que el programa incumplio (TAD fuera de 1,6..6,0 us, adquisicion menor de 5 us, GO con el ADC apagado).
     pub adc_inputs: [u16; 16],
@@ -101,7 +110,7 @@ impl Sim {
                 flash[a as usize] = w;
             }
         }
-        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None, t0_pre: 0, t0_inhibit: 0, t1_pre: 0, t2_pre: 0, t2_post: 0, timer_events: Vec::new(), adc_inputs: [0; 16], fosc_hz: 4_000_000, adc_violations: Vec::new(), adc_tacq_ns: 11_500.0, adc_low_voltage: false, uart_tx: Vec::new(), uart_tx9: Vec::new(), uart_txreg9: false, uart_violations: Vec::new(), uart_rx_pending: Default::default(), uart_fifo: Default::default(), uart_txreg: None, uart_tsr_left: 0, uart_prev_cren: false, osc_ready_at: 0, adc_prev_go: false, adc_prev_on: false, adc_prev_chs: 0, adc_acq_from: 0, adc_remaining: 0, pwm_latch: [0; 2], pwm_events: Vec::new() };
+        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None, t0_pre: 0, t0_inhibit: 0, t1_pre: 0, t2_pre: 0, t2_post: 0, timer_events: Vec::new(), adc_inputs: [0; 16], fosc_hz: 4_000_000, adc_violations: Vec::new(), adc_tacq_ns: 11_500.0, adc_low_voltage: false, uart_tx: Vec::new(), uart_tx9: Vec::new(), uart_txreg9: false, uart_violations: Vec::new(), uart_rx_pending: Default::default(), uart_fifo: Default::default(), uart_txreg: None, uart_tsr_left: 0, uart_prev_cren: false, osc_ready_at: 0, adc_prev_go: false, adc_prev_on: false, adc_prev_chs: 0, adc_acq_from: 0, adc_remaining: 0, pwm_latch: [0; 2], pwm_events: Vec::new(), eeprom: [0xFF; 256], eeprom_write_ns: 6_000_000.0, eeprom_violations: Vec::new(), ee_stage: 0, ee_done_at: None, ee_pending: (0, 0) };
         s.reset();
         s
     }
@@ -119,6 +128,11 @@ impl Sim {
         (self.t0_pre, self.t0_inhibit, self.t1_pre, self.t2_pre, self.t2_post) = (0, 0, 0, 0, 0);
         (self.adc_prev_go, self.adc_prev_on, self.adc_prev_chs, self.adc_remaining) = (false, false, 0, 0);
         self.pwm_latch = [0; 2];
+        // un reinicio en medio de una escritura la interrumpe: WRERR = 1 (10.1.1); el contenido de la EEPROM no cambia
+        self.ee_stage = 0;
+        if self.ee_done_at.take().is_some() {
+            self.ram[0x18C] |= 0x08;
+        }
         (self.uart_txreg, self.uart_tsr_left, self.uart_prev_cren) = (None, 0, false);
         self.uart_fifo.clear();
         self.ram[0x98] = 0x02; // TXSTA: TRMT = 1 tras el reset
@@ -180,6 +194,7 @@ impl Sim {
             0x0A => self.pclath = v & 0x1F,
             _ => {
                 let a = Self::phys(self.bank_base() | f as usize);
+                let old = self.ram[a];
                 self.ram[a] = v;
                 match a & 0xFF {
                     // escribir TMR0 pone a cero su preescalador e inhibe el incremento durante 2 ciclos (p.76)
@@ -196,6 +211,12 @@ impl Sim {
                 }
                 if a == 0x8F {
                     self.osc_write(v);
+                }
+                if a == 0x18C {
+                    self.eecon1_write(old, v);
+                }
+                if a == 0x18D {
+                    self.eecon2_write(v);
                 }
             }
         }
@@ -221,6 +242,10 @@ impl Sim {
     /// Fuerza una interrupcion entre dos instrucciones (los perifericos no se modelan): empuja el PC,
     /// salta a 0004h y desactiva GIE hasta el RETFIE. Despierta al nucleo si dormia.
     pub fn interrupt(&mut self) {
+        if self.ee_stage > 0 {
+            self.eeprom_violations.push("interrupcion a mitad de la secuencia de escritura de la EEPROM (55h/AAh/WR): GIE debia estar en 0 (10.1.3)".into());
+            self.ee_stage = 0;
+        }
         self.push(self.pc);
         self.pc = 4;
         self.ram[0x0B] &= !0x80;
@@ -455,6 +480,7 @@ impl Sim {
             self.ram[0x8F] |= if (self.ram[0x8F] >> 4) & 7 == 0 { 0x02 } else { 0x04 };
         }
         self.tick_adc(now);
+        self.tick_eeprom(now);
         self.tick_uart(now);
         let (option, intcon) = (self.ram[0x81], 0x0B);
         // Timer0: T0CS = 0 (reloj interno); PSA = 0 asigna el preescalador a Timer0
@@ -548,6 +574,57 @@ impl Sim {
                     self.ram[0x07] &= !(1 << bit);
                 }
             }
+        }
+    }
+
+    /// EECON2 (18Dh) no es un registro fisico: lee 0 y solo sirve para la secuencia 55h, AAh (10.1.3).
+    fn eecon2_write(&mut self, v: u8) {
+        self.ram[0x18D] = 0;
+        self.ee_stage = match (v, self.ee_stage) {
+            (0x55, _) => 1,
+            (0xAA, 1) => 2,
+            _ => 0,
+        };
+    }
+
+    /// EECON1 (18Ch): RD lee EEDAT desde la direccion de EEADR al instante y se baja solo; WR inicia la escritura solo si EEPGD = 0, WREN = 1 y
+    /// se hizo la secuencia 55h, AAh; WR no se baja por programa y mientras escribe un nuevo WR no hace nada (10.1.1 y 10.1.3).
+    fn eecon1_write(&mut self, old: u8, v: u8) {
+        let (rd, wr, wren, eepgd) = (v & 0x01 != 0, v & 0x02 != 0, v & 0x04 != 0, v & 0x80 != 0);
+        let busy = self.ee_done_at.is_some();
+        if busy {
+            self.ram[0x18C] |= 0x02; // WR no se baja por programa
+        }
+        if rd {
+            if eepgd {
+                self.eeprom_violations.push("lectura de la memoria de programa (EEPGD = 1): el simulador no la modela".into());
+            } else {
+                self.ram[0x10C] = self.eeprom[self.ram[0x10D] as usize];
+            }
+            self.ram[0x18C] &= !0x01; // RD se baja por hardware
+        }
+        if wr && old & 0x02 == 0 {
+            let ok = !eepgd && wren && self.ee_stage == 2 && !busy;
+            if ok {
+                self.ee_pending = (self.ram[0x10D], self.ram[0x10C]);
+                let cycle_ns = 4e9 / f64::from(self.fosc_hz);
+                self.ee_done_at = Some(self.cycles + (self.eeprom_write_ns / cycle_ns).ceil() as u64);
+            } else {
+                let why = if eepgd { "EEPGD = 1 (escritura de la memoria de programa: no se modela)" } else if !wren { "WREN = 0" } else if busy { "ya hay una escritura en curso" } else { "falta la secuencia 55h, AAh en EECON2" };
+                self.eeprom_violations.push(format!("WR = 1 sin iniciar la escritura: {why}"));
+                self.ram[0x18C] &= !0x02; // la escritura no se inicia y WR queda en 0
+            }
+            self.ee_stage = 0;
+        }
+    }
+
+    /// Al cumplirse el tiempo de escritura (D122): el byte queda en la EEPROM, `WR` baja y `EEIF` (PIR2<4>) sube.
+    fn tick_eeprom(&mut self, now: u64) {
+        if self.ee_done_at.is_some_and(|t| now >= t) {
+            self.ee_done_at = None;
+            self.eeprom[self.ee_pending.0 as usize] = self.ee_pending.1;
+            self.ram[0x18C] &= !0x02;
+            self.ram[0x0D] |= 0x10;
         }
     }
 

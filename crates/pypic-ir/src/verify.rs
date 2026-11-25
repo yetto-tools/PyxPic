@@ -115,6 +115,19 @@ fn verify_fn(m: &Module, f: &Function, errs: &mut Vec<String>) {
                         e(format!("{}: Uart {:?} mal formado", at(i), call.op));
                     }
                 }
+                Inst::Eeprom { call, dst, addr, val } => {
+                    let u8_ty = Type::Int { bits: 8, signed: false };
+                    let dst_is = |t: Type| dst.is_some_and(|d| valid(d) && m.place_ty(f, d) == t);
+                    let arg_ok = |a: &Option<Operand>| a.as_ref().is_some_and(|a| ty(a) == u8_ty);
+                    let bad = match call.op {
+                        EepromOp::Read => !(dst_is(u8_ty) && arg_ok(addr) && val.is_none()),
+                        EepromOp::Write | EepromOp::StartWrite => !(dst.is_none() && arg_ok(addr) && arg_ok(val)),
+                        EepromOp::Busy | EepromOp::Failed => !(dst_is(Type::Bool) && addr.is_none() && val.is_none()),
+                    };
+                    if bad {
+                        e(format!("{}: Eeprom {:?} mal formado", at(i), call.op));
+                    }
+                }
                 Inst::Pwm { call, hi, dc } => {
                     let u8_ty = Type::Int { bits: 8, signed: false };
                     let bad = match call.op {
