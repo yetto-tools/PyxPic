@@ -298,7 +298,9 @@
           "functions": [
             "AN12",
             "INT"
-          ]
+          ],
+          "weak_pullup": "WPUB0",
+          "interrupt_on_change": "IOCB0"
         },
         {
           "number": 34,
@@ -308,7 +310,9 @@
           "functions": [
             "AN10",
             "C12IN3-"
-          ]
+          ],
+          "weak_pullup": "WPUB1",
+          "interrupt_on_change": "IOCB1"
         },
         {
           "number": 35,
@@ -317,7 +321,9 @@
           "bit": 2,
           "functions": [
             "AN8"
-          ]
+          ],
+          "weak_pullup": "WPUB2",
+          "interrupt_on_change": "IOCB2"
         },
         {
           "number": 36,
@@ -328,7 +334,9 @@
             "AN9",
             "PGM",
             "C12IN2-"
-          ]
+          ],
+          "weak_pullup": "WPUB3",
+          "interrupt_on_change": "IOCB3"
         },
         {
           "number": 37,
@@ -337,7 +345,9 @@
           "bit": 4,
           "functions": [
             "AN11"
-          ]
+          ],
+          "weak_pullup": "WPUB4",
+          "interrupt_on_change": "IOCB4"
         },
         {
           "number": 38,
@@ -347,7 +357,9 @@
           "functions": [
             "AN13",
             "T1G"
-          ]
+          ],
+          "weak_pullup": "WPUB5",
+          "interrupt_on_change": "IOCB5"
         },
         {
           "number": 39,
@@ -356,7 +368,9 @@
           "bit": 6,
           "functions": [
             "ICSPCLK"
-          ]
+          ],
+          "weak_pullup": "WPUB6",
+          "interrupt_on_change": "IOCB6"
         },
         {
           "number": 40,
@@ -365,9 +379,36 @@
           "bit": 7,
           "functions": [
             "ICSPDAT"
-          ]
+          ],
+          "weak_pullup": "WPUB7",
+          "interrupt_on_change": "IOCB7"
         }
-      ]
+      ],
+      "electrical": {
+        "source": "DS40001291H p.239 (Absolute Maximum Ratings), p.245 (17.5 DC Characteristics: D060, D070, D080, D090), p.246 (D101A); pull-ups p.50 (registro 3-7)",
+        "io": {
+          "max_sink_ma": 25,
+          "max_source_ma": 25,
+          "vol_v": 0.6,
+          "vol_at_ma": 8.5,
+          "voh_below_vdd_v": 0.7,
+          "voh_at_ma": 3.0,
+          "test_vdd_v": 4.5,
+          "leakage_ua": 1,
+          "capacitance_pf": 50,
+          "clamp_ma": 20
+        },
+        "supply": {
+          "max_vss_out_ma": 95,
+          "max_vdd_in_ma": 95
+        },
+        "weak_pullup": {
+          "min_ua": 50,
+          "typ_ua": 250,
+          "max_ua": 400,
+          "global_disable": "RBPU"
+        }
+      }
     }
   ]
 }

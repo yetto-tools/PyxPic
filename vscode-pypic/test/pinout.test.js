@@ -100,3 +100,20 @@ test("el nonce de la CSP es base64 válido: con un punto el script se bloquea y 
   assert.match(nonce, /^[A-Za-z0-9+/]+=*$/);
   assert.ok(output.includes(`<script nonce="${nonce}">`));
 });
+
+test("muestra límites eléctricos, pull-up y registros desde el Device Pack, no desde una tabla propia", () => {
+  const catalog = pinout.catalogDevices(path.resolve(__dirname, "../../devices"));
+  const model = pinout.resolveModel({ catalog, detected: { name: "PIC16F887", source: "x" } });
+  const output = pinout.html({ cspSource: "vscode-webview:", asWebviewUri: (value) => value }, "extension", model);
+  const pin = (number) => new RegExp(`data-number="${number}"[^>]*data-registers="([^"]*)" data-current="([^"]*)" data-levels="([^"]*)" data-pullup="([^"]*)" data-snippet="([^"]*)"`).exec(output).slice(1);
+  const [registers, current, levels, pullup, snippet] = pin(33); // RB0
+  assert.match(registers, /WPUB&lt;0&gt;.*IOCB&lt;0&gt;/);
+  assert.match(current, /25 mA/);
+  assert.match(levels, /0,6 V a 8,5 mA/);
+  assert.match(pullup, /^Sí: WPUB&lt;0&gt; = 1 con RBPU = 0 · 50 a 400 µA/);
+  assert.equal(snippet, "from pypic.periph.gpio import RB0");
+  assert.match(pin(19)[3], /^Sin pull-up interno/); // RD0
+  assert.match(pin(12)[1], /95 mA saliendo por VSS/);
+  assert.equal(pin(12)[3], "");
+  assert.match(output, /id="detail-pullup-row" hidden/); // el pin 1 (MCLR) abre la vista sin pull-up
+});

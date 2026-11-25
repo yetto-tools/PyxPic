@@ -1,8 +1,8 @@
 {
   "name": "pypic-ide",
   "displayName": "PyPIC IDE",
-  "description": "v0.1.14 · Comprueba y compila programas PyPIC desde VS Code.",
-  "version": "0.1.15",
+  "description": "v0.1.16 · Comprueba y compila programas PyPIC desde VS Code.",
+  "version": "0.1.16",
   "publisher": "pypic",
   "license": "MIT",
   "icon": "media/icon.png",

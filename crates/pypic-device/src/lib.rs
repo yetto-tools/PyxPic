@@ -164,6 +164,53 @@ pub struct Package {
     pub pin_count: u32,
     pub source: String,
     pub pins: Vec<Pin>,
+    /// Limites electricos de los pines (opcional): lo muestra la extension de VS Code junto a cada pin.
+    #[serde(default)]
+    pub electrical: Option<Electrical>,
+}
+
+/// Limites electricos del encapsulado, de las tablas de caracteristicas del datasheet (con su fuente).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Electrical {
+    pub source: String,
+    pub io: IoLimits,
+    pub supply: SupplyLimits,
+    /// Pull-up debil interno de los pines que lo tienen (`Pin::weak_pullup`).
+    pub weak_pullup: Option<WeakPullup>,
+}
+
+/// Pines de E/S: corrientes maximas absolutas, niveles de salida de la tabla de caracteristicas y fuga de entrada.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IoLimits {
+    pub max_sink_ma: f64,
+    pub max_source_ma: f64,
+    pub vol_v: f64,
+    pub vol_at_ma: f64,
+    pub voh_below_vdd_v: f64,
+    pub voh_at_ma: f64,
+    pub test_vdd_v: f64,
+    pub leakage_ua: f64,
+    pub capacitance_pf: f64,
+    pub clamp_ma: f64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SupplyLimits {
+    pub max_vss_out_ma: f64,
+    pub max_vdd_in_ma: f64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WeakPullup {
+    pub min_ua: f64,
+    pub typ_ua: f64,
+    pub max_ua: f64,
+    /// Bit que apaga todos los pull-ups (activo en 0), p. ej. `RBPU`.
+    pub global_disable: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -179,6 +226,12 @@ pub struct Pin {
     pub input_only: bool,
     #[serde(default)]
     pub functions: Vec<String>,
+    /// Bit de registro que enciende el pull-up debil de este pin (p. ej. `WPUB0`); sin el campo, el pin no tiene pull-up interno.
+    #[serde(default)]
+    pub weak_pullup: Option<String>,
+    /// Bit de registro que habilita la interrupcion por cambio de este pin (p. ej. `IOCB0`).
+    #[serde(default)]
+    pub interrupt_on_change: Option<String>,
 }
 
 // ------------------------------------------------------------------ config.json
@@ -677,6 +730,29 @@ impl DevicePack {
             }
             if io != self.device.io_pins {
                 e.push(format!("{ctx}: {io} pines de E/S pero device.json declara {}", self.device.io_pins));
+            }
+            // los bits de pull-up e interrupcion por cambio, y el que apaga todos los pull-ups, deben existir en registers.json
+            let bit_exists = |bit: &str| self.registers.registers.iter().any(|r| r.bits.iter().any(|b| b.as_deref() == Some(bit)));
+            for p in &pk.pins {
+                for (what, bit) in [("weak_pullup", &p.weak_pullup), ("interrupt_on_change", &p.interrupt_on_change)] {
+                    if let Some(bit) = bit {
+                        if !bit_exists(bit) {
+                            e.push(format!("{ctx}: pin {} {what} '{bit}' no es un bit de registers.json", p.number));
+                        }
+                        if p.power || p.input_only {
+                            e.push(format!("{ctx}: pin {} {what} solo se declara en pines de E/S", p.number));
+                        }
+                    }
+                }
+            }
+            if let Some(el) = &pk.electrical {
+                if let Some(wp) = &el.weak_pullup {
+                    if !bit_exists(&wp.global_disable) {
+                        e.push(format!("{ctx}: electrical.weak_pullup.global_disable '{}' no es un bit de registers.json", wp.global_disable));
+                    }
+                } else if pk.pins.iter().any(|p| p.weak_pullup.is_some()) {
+                    e.push(format!("{ctx}: hay pines con weak_pullup pero falta electrical.weak_pullup (corriente y bit global)"));
+                }
             }
             for rail in ["VDD", "VSS"] {
                 if !pk.pins.iter().any(|p| p.name == rail) {

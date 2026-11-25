@@ -453,3 +453,18 @@ fn a_claimed_by_bit_that_does_not_exist_is_a_pack_error() {
     let e = mutated(|p| p.peripherals.peripherals.iter_mut().find(|x| x.name == "EUSART").unwrap().pins[0].claimed_by = vec!["NOPEBIT".into()]);
     assert!(e.iter().any(|m| m.contains("NOPEBIT")), "{e:?}");
 }
+
+#[test]
+fn pic16f887_declares_pin_electrical_limits_and_portb_pullups() {
+    let pack = DevicePack::load(&std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../devices/pic16f887")).unwrap();
+    assert!(pack.validate().is_empty(), "{:?}", pack.validate());
+    let pk = &pack.pins.packages[0];
+    let el = pk.electrical.as_ref().expect("el PIC16F887 declara sus limites electricos");
+    assert_eq!((el.io.max_sink_ma, el.io.max_source_ma, el.supply.max_vss_out_ma), (25.0, 25.0, 95.0));
+    // solo PORTB tiene pull-up debil (WPUB) e interrupcion por cambio (IOCB)
+    for p in &pk.pins {
+        assert_eq!(p.weak_pullup.is_some(), p.port.as_deref() == Some("B"), "{}", p.name);
+        assert_eq!(p.interrupt_on_change.is_some(), p.port.as_deref() == Some("B"), "{}", p.name);
+    }
+    assert_eq!(pk.pins.iter().find(|p| p.name == "RB3").unwrap().weak_pullup.as_deref(), Some("WPUB3"));
+}
