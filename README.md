@@ -33,6 +33,7 @@ crates/
   pypic-device/     Device Packs: esquema, cargador y validador
   pypic-pic14/      backend PIC14: generador, ensamblador (pic-as), desensamblador, Intel HEX, simulador del núcleo
   pypic-cli/        binario `pypic` (check, ir, build, asm, disasm, device validate)
+vscode-pypic/       extensión inicial de VS Code
 devices/pic16f887/  Device Pack verificado contra DS40001291H
 examples/           programas de ejemplo (.py y .s); hex/ = .hex de muestra
 docs/               diseño, SDK y guías (ver abajo)
@@ -44,9 +45,32 @@ Guías del SDK y del compilador (`docs/`): [frontend](docs/frontend.md) · [Devi
 
 Las pruebas de cada crate viven en su propio `tests/` (convención de Cargo).
 
-## Compilar y probar
+## Compilar el proyecto
+
+Para instrucciones detalladas, consulta la [guía de compilación de PyPIC](docs/compilar-pypic.md).
+
+Requisitos: [Rust y Cargo](https://www.rust-lang.org/tools/install) instalados. La primera compilación necesita acceso a las dependencias de Cargo. Abre una terminal en la raíz del repositorio, donde está `Cargo.toml`:
+
+```powershell
+cargo build --workspace
+cargo test --workspace
 ```
-cargo test
+
+El primer comando compila todos los paquetes Rust; el segundo ejecuta las pruebas del workspace. El ejecutable de la CLI queda en `target/debug/pypic.exe` en Windows y en `target/debug/pypic` en Linux o macOS. Para una versión optimizada, ejecuta `cargo build --workspace --release`; el ejecutable queda en `target/release/`.
+
+La extensión de VS Code es un componente aparte: requiere VS Code de escritorio y Node.js para sus pruebas; consulta [su guía](vscode-pypic/README.md) para configurarla y ejecutarla. Desde la raíz, tras compilar la CLI, sus pruebas se ejecutan con:
+
+```powershell
+node --test vscode-pypic/test/*.test.js
+```
+
+XC8 y PIC-AS son opcionales: solo se necesitan para las pruebas diferenciales con el ensamblador de Microchip. Si no se configuran, esas comparaciones se omiten; ver [comparación con PIC-AS](docs/asm-pic14.md#comparación-con-xc8-pic-as). No se necesita GPASM para compilar PyPIC.
+
+## Usar la CLI
+
+Desde la raíz del repositorio, `cargo run` compila la CLI si hace falta y ejecuta el comando solicitado. Por ejemplo:
+
+```powershell
 cargo run -p pypic-cli -- check examples/counter.py
 cargo run -p pypic-cli -- ir examples/counter.py
 cargo run -p pypic-cli -- build examples/counter.py -o counter.hex --listing
