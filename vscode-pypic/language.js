@@ -1,0 +1,86 @@
+"use strict";
+
+const fs = require("node:fs");
+const path = require("node:path");
+
+function projectTools(file, workspace, configured, devicesDir) {
+  const root = path.resolve(workspace);
+  const candidate = path.resolve(file);
+  // Inicio de PyPIC puede llamar esta función sin un editor activo y pasar la
+  // carpeta del proyecto. No debemos subir al padre en ese caso: allí no están
+  // Cargo.toml ni los Device Packs.
+  let dir = fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()
+    ? candidate
+    : path.dirname(candidate);
+  while (dir === root || (!path.relative(root, dir).startsWith("..") && !path.isAbsolute(path.relative(root, dir)))) {
+    const devices = path.join(dir, "devices");
+    if (fs.existsSync(path.join(dir, "Cargo.toml")) && fs.existsSync(devices)) {
+      const name = process.platform === "win32" ? "pypic.exe" : "pypic";
+      const debug = path.join(dir, "target", "debug", name);
+      const release = path.join(dir, "target", "release", name);
+      const executable = configured === "pypic" ? [debug, release].find((candidate) => fs.existsSync(candidate)) || configured : configured;
+      return { executable, devices: devicesDir || devices };
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return { executable: configured, devices: devicesDir };
+}
+
+const info = {
+  uint8: "Entero sin signo de 8 bits: 0 a 255; ocupa 1 byte de RAM cuando es variable.",
+  uint16: "Entero sin signo de 16 bits: 0 a 65535; ocupa 2 bytes de RAM cuando es variable y se emula en PIC16F887.",
+  uint32: "Entero sin signo de 32 bits. Puede utilizarse como constante; consulta los límites del backend para variables.",
+  int8: "Entero con signo de 8 bits: -128 a 127.",
+  int16: "Entero con signo de 16 bits: -32768 a 32767.",
+  Const: "Constante resuelta en compilación, por ejemplo `CLOCK_HZ: Const[uint32] = 4_000_000`.",
+  CLOCK_HZ: "Frecuencia del sistema en Hz utilizada para cálculos de tiempo. Declararla no configura el oscilador.",
+  CLOCK: "Declara la fuente y frecuencia de reloj en compilación: `CLOCK: Internal[4 * MHz]`. No combinar con CLOCK_HZ.",
+  Internal: "Oscilador interno del PIC16F887: frecuencias nominales de 31 kHz a 8 MHz, en pasos compatibles con OSCCON.",
+  Crystal: "Cristal o resonador en OSC1/OSC2; PyPIC selecciona LP, XT o HS según la frecuencia y reserva RA7 y RA6.",
+  ExternalClock: "Señal de reloj externa en CLKIN/RA7: modo EC; admite hasta 20 MHz en PIC16F887.",
+  MHz: "Unidad de frecuencia para CLOCK: un MHz equivale a 1 000 000 Hz, resuelto en compilación.",
+  kHz: "Unidad de frecuencia para CLOCK: un kHz equivale a 1000 Hz, resuelto en compilación.",
+  Hz: "Unidad de frecuencia para CLOCK en hercios, resuelta en compilación.",
+  PIC16F887: "Dispositivo de destino: se declara con `from pypic.device import PIC16F887`.",
+  ADC: "ADC de 10 bits. `ADC.start()` configura el periférico y `ADC.read(AN0)` lee un canal.",
+  AN0: "Canal analógico AN0, asociado a RA0 en PIC16F887.",
+  UART: "EUSART asíncrono: `UART.start(baud=9600)` configura transmisión y recepción.",
+  pause: "`pause(ms)` espera una cantidad de milisegundos; consulta el costo y los límites de `pypic.system.time`.",
+  read: "Lectura del periférico. `ADC.read(AN0)` devuelve uint16; `UART.read()` recibe un byte y espera si es necesario.",
+  start: "Configura e inicia el periférico. Los parámetros dependen de si se usa ADC o UART.",
+  write_text: "`UART.write_text(texto)` transmite texto ASCII y f-strings soportados sin reservar un búfer de texto completo en RAM.",
+  sending: "`UART.sending()` indica si el registro de desplazamiento de transmisión sigue ocupado.",
+};
+
+const members = {
+  ADC: ["start", "select", "go", "done", "result", "read"],
+  UART: ["start", "write", "read", "send", "recv", "tx_ready", "rx_ready", "sending", "overrun", "framing_error", "clear_overrun", "write_text", "write9", "send9", "read9", "recv9"],
+};
+
+function completions(prefix) {
+  const match = /\b(ADC|UART)\.\w*$/.exec(prefix);
+  if (match) return members[match[1]];
+  if (/\.\w*$/.test(prefix)) return [];
+  return ["uint8", "uint16", "uint32", "int8", "int16", "int32", "Const", "CLOCK", "Internal", "Crystal", "ExternalClock", "MHz", "kHz", "Hz", "CLOCK_HZ"];
+}
+
+function isPyPic(text) {
+  return /^\s*from\s+pypic(?:\.[A-Za-z_]\w*)+\s+import\s+/m.test(text);
+}
+
+function declaredDevice(text) {
+  const match = /^\s*from\s+pypic\.device\s+import\s+(PIC\d+[A-Z]\d+)\s*$/m.exec(text);
+  return match ? match[1] : undefined;
+}
+
+function diagnostics(text, file) {
+  const prefix = `${file}:`;
+  return text.split(/\r?\n/).filter((line) => line.startsWith(prefix)).flatMap((line) => {
+    const match = /^(\d+):(\d+): (error|warning)\[([^\]]+)\]: (.+)$/.exec(line.slice(prefix.length));
+    return match ? [{ line: Number(match[1]) - 1, column: Number(match[2]) - 1, severity: match[3], code: match[4], message: match[5] }] : [];
+  });
+}
+
+module.exports = { info, isPyPic, diagnostics, completions, projectTools, declaredDevice };

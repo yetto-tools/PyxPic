@@ -2,36 +2,53 @@
   "name": "pypic-ide",
   "displayName": "PyPIC IDE",
   "description": "Comprueba y compila programas PyPIC desde VS Code.",
-  "version": "0.0.2",
+  "version": "0.1.4",
   "publisher": "pypic",
+  "icon": "media/icon.png",
   "repository": { "type": "git", "url": "https://github.com/yetto-tools/PyPic.git" },
-  "files": ["extension.js", "README.md", "media"],
+  "files": ["extension.js", "language.js", "project.js", "projectmode.js", "sidebar.js", "welcome.js", "README.md", "media", "syntaxes"],
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Programming Languages"],
   "main": "./extension.js",
-  "activationEvents": ["onView:pypic.actions"],
+  "scripts": { "test": "node --test test/commands.test.js test/projectmode.test.js" },
+  "activationEvents": ["onView:pypic.actions", "onLanguage:python", "onLanguage:pypic", "workspaceContains:pypic.toml"],
   "capabilities": { "untrustedWorkspaces": { "supported": false } },
   "contributes": {
+    "languages": [{ "id": "pypic", "aliases": ["PyPIC"] }],
+    "grammars": [{ "language": "pypic", "scopeName": "source.pypic", "path": "./syntaxes/pypic.tmLanguage.json" }],
     "viewsContainers": { "activitybar": [
       { "id": "pypic", "title": "PyPIC", "icon": "media/pypic.svg" }
     ] },
     "views": { "pypic": [
-      { "id": "pypic.actions", "name": "Herramientas" }
+      { "id": "pypic.actions", "name": "PyPIC" }
     ] },
     "commands": [
       { "command": "pypic.check", "title": "PyPIC: Comprobar archivo" },
       { "command": "pypic.build", "title": "PyPIC: Compilar archivo a HEX" },
-      { "command": "pypic.examples", "title": "PyPIC: Abrir ejemplo" }
+      { "command": "pypic.examples", "title": "PyPIC: Abrir ejemplo" },
+      { "command": "pypic.welcome", "title": "PyPIC: Abrir inicio" },
+      { "command": "pypic.newProject", "title": "PyPIC: Crear proyecto" },
+      { "command": "pypic.openProject", "title": "PyPIC: Abrir proyecto" },
+      { "command": "pypic.openFile", "title": "PyPIC: Abrir archivo" },
+      { "command": "pypic.selectTarget", "title": "PyPIC: Perfil de destino" },
+      { "command": "pypic.projectCheck", "title": "PyPIC: Revisar proyecto" },
+      { "command": "pypic.mode", "title": "PyPIC: Archivo suelto o proyecto" },
+      { "command": "pypic.status", "title": "PyPIC: Estado y ayuda" },
+      { "command": "pypic.selectCompiler", "title": "PyPIC: Seleccionar compilador" },
+      { "command": "pypic.selectDevices", "title": "PyPIC: Seleccionar Device Packs" },
+      { "command": "pypic.selectPicAs", "title": "PyPIC: Seleccionar PIC-AS (opcional)" }
     ],
     "menus": { "editor/title": [
-      { "command": "pypic.check", "when": "resourceLangId == python", "group": "navigation" },
-      { "command": "pypic.build", "when": "resourceLangId == python", "group": "navigation" }
+      { "command": "pypic.check", "when": "resourceLangId == python || resourceLangId == pypic", "group": "navigation" },
+      { "command": "pypic.build", "when": "resourceLangId == python || resourceLangId == pypic", "group": "navigation" }
     ] },
     "configuration": {
       "title": "PyPIC",
       "properties": {
         "pypic.executable": { "type": "string", "default": "pypic", "description": "Ruta al ejecutable de PyPIC." },
-        "pypic.devicesDir": { "type": "string", "default": "", "description": "Directorio de Device Packs; vacío usa la búsqueda de PyPIC." }
+        "pypic.devicesDir": { "type": "string", "default": "", "description": "Directorio de Device Packs; vacío usa la búsqueda de PyPIC." },
+        "pypic.picAsPath": { "type": "string", "default": "", "description": "Ruta opcional a PIC-AS. Informativa: la extensión todavía no ejecuta PIC-AS." },
+        "pypic.checkOnSave": { "type": "boolean", "default": true, "description": "Comprueba archivos PyPIC guardados y actualiza Problemas." }
       }
     }
   }
