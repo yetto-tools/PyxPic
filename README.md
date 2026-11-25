@@ -81,3 +81,7 @@ cargo run -p pypic-cli -- asm examples/asm/blink_rd0.s -Wl,-presetVec=0h,-pinten
 cargo run -p pypic-cli -- device validate devices/pic16f887
 cargo run -p pypic-cli -- disasm archivo.hex     # inspecciona un .hex (programa y palabras de configuración)
 ```
+
+## Licencia
+
+PyPIC se distribuye bajo la **licencia MIT** (ver [`LICENSE`](LICENSE)). Para contribuir, lee [`CONTRIBUTING.md`](CONTRIBUTING.md). Los datasheets de Microchip de `docs/` son de Microchip y no están bajo esta licencia.

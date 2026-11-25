@@ -2,6 +2,7 @@
 name = "pypic-pic14"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 description = "PyPIC PIC14 (PIC16 classic) backend: instruction set model, encoder/decoder and disassembler"
 
 [dependencies]

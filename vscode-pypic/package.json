@@ -4,6 +4,7 @@
   "description": "Comprueba y compila programas PyPIC desde VS Code.",
   "version": "0.1.4",
   "publisher": "pypic",
+  "license": "MIT",
   "icon": "media/icon.png",
   "repository": { "type": "git", "url": "https://github.com/yetto-tools/PyPic.git" },
   "files": ["extension.js", "language.js", "project.js", "projectmode.js", "sidebar.js", "welcome.js", "README.md", "media", "syntaxes"],

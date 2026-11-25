@@ -9,7 +9,7 @@ Los issues abiertos están en <https://github.com/yetto-tools/PyPic/issues>.
 - [x] Gramática del subconjunto Python y sistema de tipos (`docs/frontend.md`)
 - [x] IR y ABI PIC14 (`docs/abi-pic14.md`); [~] el overlay de memoria (#26)
 - [x] Esquema y validación del Device Pack (`docs/device-packs.md`, `pypic device validate`)
-- [~] Licencia, estructura monorepo y políticas de contribución: monorepo hecho; **licencia y CONTRIBUTING pendientes** (#18)
+- [x] Licencia (MIT), estructura monorepo y políticas de contribución (`LICENSE`, `CONTRIBUTING.md`, #18)
 
 ## Fase 1 — Compilador nativo
 - [x] Parser y errores con ubicación (`crates/pypic-frontend`)
