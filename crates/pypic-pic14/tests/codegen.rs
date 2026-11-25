@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use pypic_frontend::{analyze, TargetProfile};
-use pypic_ir::{lower, verify, Machine, Module};
+use pypic_ir::{lower_unoptimized, lower, verify, Machine, Module};
 use pypic_pic14::codegen::{CodegenError, Compiled, GlobalSym, Options};
 use pypic_pic14::sim::Sim;
 use pypic_pic14::{compile, Inst};
@@ -48,8 +48,11 @@ fn ir_globals(m: &Module) -> BTreeMap<String, i128> {
 
 /// Compila y exige que PIC14 e IR den los mismos globales. Devuelve los globales.
 fn same(src: &str) -> BTreeMap<String, i128> {
-    let (m, c) = build(src);
-    let want = ir_globals(&m);
+    let (_, c) = build(src);
+    // el oraculo es el interprete sobre la IR sin optimizar: asi el PIC (con IR optimizada) y las optimizaciones se comprueban a la vez
+    let r = analyze(src, &TargetProfile::generic());
+    let raw = lower_unoptimized(&r.program.expect("el frontend lo acepta"));
+    let want = ir_globals(&raw);
     let got = pic_globals(&c, &run_pic(&c));
     assert_eq!(got, want, "PIC14 distinto del oraculo de IR en:\n{src}\n--- listado ---\n{}", c.listing);
     got

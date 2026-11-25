@@ -183,5 +183,5 @@ fn cycles(func: &str, text: &[u8]) -> u64 {
 fn the_cost_is_measured_and_grows_with_the_length_of_the_text() {
     let (d1, d5, h1, h4) = (cycles("parse_dec", b"7"), cycles("parse_dec", b"65535"), cycles("parse_hex", b"F"), cycles("parse_hex", b"FFFF"));
     // ciclos de instruccion exactos (el tiempo depende del largo del texto; unos 100 por cifra)
-    assert_eq!((d1, d5, h1, h4), (150, 564, 154, 450));
+    assert_eq!((d1, d5, h1, h4), (135, 549, 130, 433));
 }

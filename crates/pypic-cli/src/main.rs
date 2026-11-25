@@ -22,6 +22,7 @@ const USAGE: &str = "uso:
 opciones:
   --project <pypic.toml>  archivo de proyecto (por defecto se busca el mas cercano al programa; sin archivo, usa su 'main')
   --target <perfil>       perfil de destino del proyecto ([target.perfil]); por defecto default_target o el unico
+  --no-opt                no optimiza la IR (para depurar o comparar tamanos; ver docs/ir-optimizaciones.md)
   --device <directorio>   usa este Device Pack (por defecto se busca el que declara el programa)
   --devices-dir <dir>     donde buscar los Device Packs (tambien $PYPIC_DEVICES y ./devices)
   --config AJUSTE=VALOR   palabra de configuracion por nombre, p. ej. --config WDTE=ON,FOSC=XT (repetible)
@@ -359,6 +360,7 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     let mut out_path: Option<String> = None;
     let mut listing = false;
     let mut timing = false;
+    let mut optimize = true;
     let mut settings: Vec<(String, String)> = Vec::new();
     let mut project_arg: Option<String> = None;
     let mut target_arg: Option<String> = None;
@@ -370,6 +372,7 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
             "--target" => target_arg = it.next().cloned(),
             "--listing" => listing = true,
             "--timing" => timing = true,
+            "--no-opt" => optimize = false,
             "--device" => device_dir = it.next().cloned(),
             "--devices-dir" => devices_dir = it.next().cloned(),
             "--native-bits" => native = it.next().and_then(|v| v.parse::<u32>().ok()),
@@ -508,7 +511,7 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
         eprintln!("{file}: error: falta el dispositivo: declaralo en la primera linea del programa ('from pypic.device import PIC16F887') o en el perfil de un pypic.toml ([target.NOMBRE] device = \"PIC16F887\")");
         return ExitCode::from(1);
     }
-    let module = pypic_ir::lower(&program);
+    let module = if optimize { pypic_ir::lower(&program) } else { pypic_ir::lower_unoptimized(&program) };
     if let Err(errs) = pypic_ir::verify(&module) {
         eprintln!("error interno: la IR generada no es valida:\n  {}", errs.join("\n  "));
         return ExitCode::from(70);

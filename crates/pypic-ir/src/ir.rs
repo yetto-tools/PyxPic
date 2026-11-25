@@ -16,7 +16,7 @@ pub enum UnaryOp {
     Not,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Place {
     Temp(u32),
     Local(u32),

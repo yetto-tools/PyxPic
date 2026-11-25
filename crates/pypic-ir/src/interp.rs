@@ -189,8 +189,7 @@ impl<'m> Machine<'m> {
     }
 
     fn write(&mut self, f: &Function, fr: &mut Frame, p: Place, v: i128) {
-        let ty = self.module.place_ty(f, p);
-        let v = if ty == Type::Bool { (v != 0) as i128 } else { ty.wrap(v) };
+        let v = crate::eval::stored(self.module.place_ty(f, p), v);
         match p {
             Place::Temp(i) => fr.temps[i as usize] = v,
             Place::Local(i) => fr.locals[i as usize] = v,
@@ -206,43 +205,15 @@ impl<'m> Machine<'m> {
             }
             Inst::Unary { dst, op, src } => {
                 let v = self.read(fr, src);
-                let r = match op {
-                    UnaryOp::Neg => -v,
-                    UnaryOp::Invert => !v,
-                    UnaryOp::Not => (v == 0) as i128,
-                };
-                self.write(f, fr, *dst, r);
+                self.write(f, fr, *dst, crate::eval::unary(*op, v));
             }
             Inst::Binary { dst, op, lhs, rhs } => {
                 let (a, b) = (self.read(fr, lhs), self.read(fr, rhs));
-                let r = match op {
-                    BinOp::Add => a + b,
-                    BinOp::Sub => a - b,
-                    BinOp::Mul => a * b,
-                    // un divisor cero en ejecucion no tiene trampa en un PIC: a // 0 es todo unos y a % 0 es a (docs/sdk-runtime.md)
-                    BinOp::Div if b == 0 => -1,
-                    BinOp::Mod if b == 0 => a,
-                    BinOp::Div => a / b, // trunca hacia cero
-                    BinOp::Mod => a % b,
-                    BinOp::BitAnd => a & b,
-                    BinOp::BitOr => a | b,
-                    BinOp::BitXor => a ^ b,
-                    BinOp::Shl => if b >= 128 { 0 } else { a << b },
-                    BinOp::Shr => a >> b.min(127),
-                };
-                self.write(f, fr, *dst, r);
+                self.write(f, fr, *dst, crate::eval::binary(*op, a, b));
             }
             Inst::Compare { dst, op, lhs, rhs } => {
                 let (a, b) = (self.read(fr, lhs), self.read(fr, rhs));
-                let r = match op {
-                    CmpOp::Eq => a == b,
-                    CmpOp::Ne => a != b,
-                    CmpOp::Lt => a < b,
-                    CmpOp::Le => a <= b,
-                    CmpOp::Gt => a > b,
-                    CmpOp::Ge => a >= b,
-                };
-                self.write(f, fr, *dst, r as i128);
+                self.write(f, fr, *dst, crate::eval::compare(*op, a, b) as i128);
             }
             Inst::Cast { dst, src } => {
                 let v = self.read(fr, src);

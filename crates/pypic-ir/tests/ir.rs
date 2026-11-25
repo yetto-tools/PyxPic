@@ -1,10 +1,11 @@
 use pypic_frontend::{analyze, TargetProfile};
-use pypic_ir::{lower, print, verify};
+use pypic_ir::{lower_unoptimized, print, verify};
 
 fn ir(src: &str) -> String {
     let r = analyze(src, &TargetProfile::generic());
     let p = r.program.unwrap_or_else(|| panic!("frontend:\n{}", r.diagnostics.render(src, "t.py")));
-    let m = lower(&p);
+    // estas pruebas comprueban la forma de lo que genera el frontend; las optimizaciones tienen las suyas en opt.rs
+    let m = lower_unoptimized(&p);
     verify(&m).unwrap_or_else(|e| panic!("IR invalida: {e:?}\n{}", print(&m)));
     print(&m)
 }

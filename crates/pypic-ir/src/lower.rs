@@ -9,7 +9,15 @@ use crate::ir::{Block, BlockId, Inst, Operand, Place, Terminator, UnaryOp};
 use crate::ir::{AsmBlock, Function, Global, Local, Module, Pin, RegOp, TimerOp, Type};
 use pypic_frontend::BitsOp;
 
+/// El programa tipado a IR, **con las optimizaciones** de `opt` (docs/ir-optimizaciones.md). Es lo que usa el compilador.
 pub fn lower(prog: &Program) -> Module {
+    let mut m = lower_unoptimized(prog);
+    crate::opt::optimize(&mut m);
+    m
+}
+
+/// El programa tipado a IR tal como sale del frontend, sin optimizar: el oraculo con el que se comprueban las optimizaciones.
+pub fn lower_unoptimized(prog: &Program) -> Module {
     let mut m = Module::default();
     m.device = prog.device.clone();
     m.clock_hz = prog.clock_hz;
