@@ -219,6 +219,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         read_names: HashSet::new(),
         global_decls: HashSet::new(),
         loop_depth: 0,
+        fn_labels: HashSet::new(),
         warned: HashSet::new(),
         pins: Vec::new(),
         pin_names: HashMap::new(),
@@ -322,6 +323,8 @@ struct Checker<'a> {
     read_names: HashSet<String>,
     global_decls: HashSet<String>,
     loop_depth: u32,
+    /// Etiquetas de la funcion en curso (`GOTO`, solo BASIC).
+    fn_labels: HashSet<String>,
     /// Tipos emulados ya avisados (un aviso por tipo).
     warned: HashSet<Type>,
     /// Pines importados de `pypic.periph.gpio`, en orden de importacion.
@@ -2707,6 +2710,8 @@ impl<'a> Checker<'a> {
         self.read_names.clear();
         self.global_decls.clear();
         self.loop_depth = 0;
+        self.fn_labels.clear();
+        collect_labels(&f.body, &mut self.fn_labels, &mut self.d);
         let params = self.functions[idx].params.clone();
         for (name, ty) in params {
             if self.globals.contains_key(&name) {
@@ -3110,6 +3115,10 @@ impl<'a> Checker<'a> {
         // ejecuta nunca: se avisa una vez por bloque en la primera sentencia inalcanzable (un `pass` suelto no cuenta) y se sigue comprobando
         let (mut why, mut warned) = (None, false);
         for s in stmts {
+            // una etiqueta es un destino de GOTO: lo que sigue vuelve a ser alcanzable
+            if matches!(s.kind, StmtKind::Label(_)) {
+                (why, warned) = (None, false);
+            }
             if let (Some(w), false) = (why, warned) {
                 if !matches!(s.kind, StmtKind::Pass) {
                     self.d.warning("PYP3020", s.span, format!("codigo inalcanzable: {w}"));
@@ -3148,7 +3157,12 @@ impl<'a> Checker<'a> {
 
     fn stmt_inner(&mut self, s: &Stmt) {
         match &s.kind {
-            StmtKind::Pass => {}
+            StmtKind::Pass | StmtKind::Label(_) => {}
+            StmtKind::Goto(target) => {
+                if !self.fn_labels.contains(&target.name) {
+                    self.d.error("PYP2230", target.span, format!("no hay una etiqueta '{}:' en esta funcion (un GOTO solo salta dentro de la funcion donde esta)", target.name));
+                }
+            }
             StmtKind::Decl(v) => self.declare_variable(v, false),
             StmtKind::Global(names) => {
                 for n in names {
@@ -3955,10 +3969,29 @@ fn parse_pin_name(s: &str) -> Option<(char, u8)> {
     None
 }
 
+/// Reune las etiquetas de una funcion (en cualquier bloque anidado); una repetida es PYP2231.
+fn collect_labels(stmts: &[Stmt], out: &mut HashSet<String>, d: &mut Diagnostics) {
+    for s in stmts {
+        match &s.kind {
+            StmtKind::Label(l) => {
+                if !out.insert(l.name.clone()) {
+                    d.error("PYP2231", l.span, format!("la etiqueta '{}:' ya existe en esta funcion", l.name));
+                }
+            }
+            StmtKind::If { body, orelse, .. } => {
+                collect_labels(body, out, d);
+                collect_labels(orelse, out, d);
+            }
+            StmtKind::While { body, .. } | StmtKind::For { body, .. } => collect_labels(body, out, d),
+            _ => {}
+        }
+    }
+}
+
 /// Analisis simple de "todos los caminos terminan en return".
 fn terminates(stmts: &[Stmt]) -> bool {
     stmts.iter().any(|s| match &s.kind {
-        StmtKind::Return(_) => true,
+        StmtKind::Return(_) | StmtKind::Goto(_) => true,
         StmtKind::If { body, orelse, .. } => !orelse.is_empty() && terminates(body) && terminates(orelse),
         StmtKind::While { test, body } => matches!(test.kind, ExprKind::Bool(true)) && !has_break(body),
         _ => false,
@@ -3971,6 +4004,7 @@ fn diverges(s: &Stmt) -> Option<&'static str> {
         StmtKind::Return(_) => Some("sigue a un return"),
         StmtKind::Break => Some("sigue a un break"),
         StmtKind::Continue => Some("sigue a un continue"),
+        StmtKind::Goto(_) => Some("sigue a un goto"),
         StmtKind::If { body, orelse, .. } if !orelse.is_empty() && body.iter().any(|b| diverges(b).is_some()) && orelse.iter().any(|b| diverges(b).is_some()) => {
             Some("las dos ramas del if terminan (return, break o continue)")
         }

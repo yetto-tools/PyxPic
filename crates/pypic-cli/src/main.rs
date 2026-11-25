@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use pypic_device::DevicePack;
-use pypic_frontend::{analyze, TargetProfile};
+use pypic_frontend::TargetProfile;
 use pypic_pic14::{disassemble, Image};
 
 mod clean;
@@ -459,7 +459,8 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
 
     // El dispositivo lo declara el propio programa (`from pypic.device import PIC16F887`);
     // `--device` solo fuerza un pack concreto y el analisis comprueba que coincida con la declaracion.
-    let declared = pypic_frontend::declared_device(&src);
+    let lang = pypic_frontend::Language::from_path(&file);
+    let declared = pypic_frontend::declared_device_in(lang, &src);
     // el fuente manda: si declara un dispositivo y el perfil pide otro, es un error; si no declara ninguno, vale el del perfil
     let profile_device = profile.as_ref().and_then(|(_, t)| t.device.clone());
     if let (Some(d), Some(pd), Some((tn, _)), Some(pj)) = (&declared, &profile_device, &profile, &project) {
@@ -504,12 +505,12 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
             }
         }
     }
-    let source_clock = pypic_frontend::declares_clock(&src);
+    let source_clock = pypic_frontend::declares_clock_in(lang, &src);
     if let (Some(c), false) = (&profile_clock, source_clock) {
         target.project_clock = Some(c.clone());
     }
 
-    let mut res = analyze(&src, &target);
+    let mut res = pypic_frontend::analyze_in(lang, &src, &target);
     // sin dispositivo el analisis es generico: no se sabe que pines, perifericos, registros ni limites tiene el PIC, y el mismo codigo puede
     // compilar para otro PIC que no tenga lo que el programa espera. Que falte tiene que verse en la salida, no pasar como un `ok` mudo.
     if device_name.is_none() {

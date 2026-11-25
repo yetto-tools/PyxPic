@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use pypic_device::DevicePack;
-use pypic_frontend::{analyze, TargetProfile};
+use pypic_frontend::{analyze, analyze_in, declared_device_in, declares_clock_in, Language, TargetProfile};
 
 use crate::project::{self, Project, Target};
 
@@ -189,7 +189,9 @@ pub fn check_target(project: &Project, name: &str, t: &Target) -> TargetReport {
             None
         }
     };
-    let declared = src.as_deref().and_then(pypic_frontend::declared_device);
+    // el lenguaje del programa principal: .bas es PyPIC BASIC, lo demas Python
+    let lang = project.main.as_ref().map_or(Language::Python, |m| Language::from_path(&m.to_string_lossy()));
+    let declared = src.as_deref().and_then(|s| declared_device_in(lang, s));
     if let (Some(d), Some(p)) = (&declared, &t.device) {
         if !d.eq_ignore_ascii_case(p) {
             r.errors.push(format!("el programa declara 'from pypic.device import {d}' y el perfil '{name}' pide {p}"));
@@ -226,16 +228,16 @@ pub fn check_target(project: &Project, name: &str, t: &Target) -> TargetReport {
     }
     if let Some(src) = &src {
         let mut tp = target;
-        if !pypic_frontend::declares_clock(src) {
+        if !declares_clock_in(lang, src) {
             tp.project_clock = project_clock.clone();
         } else if let Some(c) = &project_clock {
-            if let Some(p) = analyze(src, &tp).program {
+            if let Some(p) = analyze_in(lang, src, &tp).program {
                 if p.clock_source.as_ref() != Some(c) {
                     r.warnings.push(format!("el perfil '{name}' pide el reloj {} pero el programa declara el suyo: manda el programa", c.describe()));
                 }
             }
         }
-        let res = analyze(src, &tp);
+        let res = analyze_in(lang, src, &tp);
         let file = project.main.as_ref().map(|m| m.display().to_string()).unwrap_or_default();
         for d in &res.diagnostics.items {
             let (line, col) = pypic_frontend::diag::line_col(src, d.span.start as usize);

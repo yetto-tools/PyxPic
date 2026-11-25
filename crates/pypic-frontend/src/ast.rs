@@ -188,6 +188,10 @@ pub enum StmtKind {
     Break,
     Continue,
     Pass,
+    /// `etiqueta:` (solo la produce el frontend BASIC): destino de un `Goto` dentro de la misma funcion.
+    Label(Ident),
+    /// `GOTO etiqueta` (solo el frontend BASIC): salta a una etiqueta de la misma funcion.
+    Goto(Ident),
     Global(Vec<Ident>),
     Expr(Expr),
 }

@@ -6,6 +6,7 @@
 
 pub mod adc;
 pub mod ast;
+pub mod basic;
 pub mod text;
 pub mod clock;
 pub mod comparator;
@@ -83,9 +84,53 @@ pub fn parse_clock(text: &str, target: &TargetProfile) -> Result<ClockSource, St
 /// funcion no definidos, asignar a lo no declarado, `global` de lo no declarado y el inicio (`start`) del ADC o la UART que estaba en codigo descartado.
 const DEPEND_ON_DROPPED_CODE: &[&str] = &["PYP2043", "PYP2022", "PYP2020", "PYP2023", "PYP2171", "PYP2181"];
 
+/// El lenguaje de un programa: Python (`.py`) o PyPIC BASIC (`.bas`). Los dos producen el mismo AST y comparten todo lo demas.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Language {
+    Python,
+    Basic,
+}
+
+impl Language {
+    /// Por la extension del archivo: `.bas` es BASIC; cualquier otra cosa, Python.
+    pub fn from_path(path: &str) -> Language {
+        if std::path::Path::new(path).extension().is_some_and(|e| e.eq_ignore_ascii_case("bas")) { Language::Basic } else { Language::Python }
+    }
+}
+
+pub fn declared_device_in(lang: Language, source: &str) -> Option<String> {
+    match lang {
+        Language::Python => declared_device(source),
+        Language::Basic => basic::declared_device(source),
+    }
+}
+
+pub fn declares_clock_in(lang: Language, source: &str) -> bool {
+    match lang {
+        Language::Python => declares_clock(source),
+        Language::Basic => basic::declares_clock(source),
+    }
+}
+
+pub fn analyze_in(lang: Language, source: &str, target: &TargetProfile) -> Analysis {
+    match lang {
+        Language::Python => analyze(source, target),
+        Language::Basic => {
+            let mut d = Diagnostics::default();
+            let module = basic::to_module(source, &mut d);
+            analyze_parsed(source, module, d, target)
+        }
+    }
+}
+
 pub fn analyze(source: &str, target: &TargetProfile) -> Analysis {
     let mut d = Diagnostics::default();
-    let mut module = parser::parse(source, &mut d);
+    let module = parser::parse(source, &mut d);
+    analyze_parsed(source, module, d, target)
+}
+
+/// Lo que sigue al parser, comun a los dos lenguajes: la comprobacion de tipos y la construccion del `Program`.
+fn analyze_parsed(source: &str, mut module: ast::Module, mut d: Diagnostics, target: &TargetProfile) -> Analysis {
     for it in &mut module.items {
         if let ast::Item::Func(f) = it {
             if let Some(a) = &mut f.asm {

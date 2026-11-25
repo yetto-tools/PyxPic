@@ -61,6 +61,7 @@ pub fn lower_unoptimized(prog: &Program) -> Module {
                 blocks: vec![(Vec::new(), None)],
                 cur: 0,
                 loops: Vec::new(),
+                labels: HashMap::new(),
             };
             for (name, ty) in &info.params {
                 fl.declare_local(name, *ty, true);
@@ -87,6 +88,8 @@ struct FnLower<'a> {
     cur: BlockId,
     /// (destino de break, destino de continue)
     loops: Vec<(BlockId, BlockId)>,
+    /// Bloque de cada etiqueta (`GOTO`, solo BASIC), creado en el primer uso.
+    labels: HashMap<String, BlockId>,
 }
 
 fn ann_type(te: &TypeExpr) -> Type {
@@ -136,6 +139,15 @@ impl<'a> FnLower<'a> {
     fn new_block(&mut self) -> BlockId {
         self.blocks.push((Vec::new(), None));
         self.blocks.len() - 1
+    }
+
+    fn label_block(&mut self, name: &str) -> BlockId {
+        if let Some(&b) = self.labels.get(name) {
+            return b;
+        }
+        let b = self.new_block();
+        self.labels.insert(name.to_string(), b);
+        b
     }
 
     fn emit(&mut self, inst: Inst) {
@@ -432,6 +444,15 @@ impl<'a> FnLower<'a> {
     fn stmt(&mut self, s: &Stmt) {
         match &s.kind {
             StmtKind::Pass | StmtKind::Global(_) => {}
+            StmtKind::Label(l) => {
+                let b = self.label_block(&l.name);
+                self.terminate(Terminator::Jump(b));
+                self.cur = b;
+            }
+            StmtKind::Goto(l) => {
+                let b = self.label_block(&l.name);
+                self.terminate(Terminator::Jump(b));
+            }
             // una constante local (`K: Const[u8] = 5`) no es una variable: el frontend ya dio valor a cada uso y la IR no
             // le reserva un slot ni escribe su valor (#11)
             StmtKind::Decl(v) if matches!(v.ann.kind, TypeExprKind::Const(_)) && v.value.as_ref().is_some_and(|e| self.info(e).konst.is_some()) => {}
