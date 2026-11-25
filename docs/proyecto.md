@@ -34,7 +34,7 @@ Se busca el `pypic.toml` **más cercano** al programa (en su carpeta o en las de
 
 ```
 pypic init [carpeta] [--name NOMBRE] [--device PIC16F887] [--clock "Crystal[20 * MHz]"] [--devices-dir DIR]
-pypic project check [--project pypic.toml] [--target perfil] [--format text|json]
+pypic project check [--project pypic.toml] [--target perfil] [--format text|json] [--devices-dir DIR]
 ```
 
 **`pypic init`** crea `pypic.toml` y un `main.py` de partida (parpadeo de RB0) en la carpeta (por defecto la actual). El dispositivo por defecto es `PIC16F887` (acepta `16f887` y `PIC16F887`) y el reloj, el que el dispositivo tiene tras el reset (`Internal[4 * MHz]`); con `--devices-dir` el proyecto recuerda dónde están los Device Packs (`devices_dir`). **Antes de escribir nada** comprueba que el dispositivo existe, que el reloj es válido y que el programa de partida es válido para ese destino: si algo falla, **no se crea nada**. **Nunca sobrescribe**: si ya existe `pypic.toml` o `main.py`, termina con error diciendo cuáles y no toca ni el otro archivo.

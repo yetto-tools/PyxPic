@@ -817,3 +817,13 @@ fn set_usage_errors_say_the_valid_keys() {
     assert_eq!(o.status.code(), Some(2));
     assert!(text(&o).contains("la clave 'project.fantasma' no existe"), "{}", text(&o));
 }
+
+#[test]
+fn project_check_devices_dir_overrides_the_projects_like_build_does() {
+    // el proyecto apunta a una carpeta de Device Packs que no existe; --devices-dir indica la buena
+    let dir = project_dir("check-devdir", "[project]\nmain = \"main.py\"\ndevices_dir = \"carpeta-que-no-existe\"\n[target.a]\ndevice = \"PIC16F887\"\n", BARE_MAIN);
+    let o = pypic(&dir, &["project", "check"]);
+    assert_eq!(o.status.code(), Some(1), "{}", text(&o));
+    let o = pypic(&dir, &["project", "check", "--devices-dir", &devices()]);
+    assert!(o.status.success() && text(&o).contains("perfil a: ok"), "{}", text(&o));
+}

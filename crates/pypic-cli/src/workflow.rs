@@ -282,12 +282,13 @@ pub fn project_cmd(args: &[String]) -> ExitCode {
         eprintln!("'pypic project {sub}' no existe (hay: check, set)");
         return ExitCode::from(2);
     }
-    let (mut project_arg, mut target_arg, mut json) = (None::<String>, None::<String>, false);
+    let (mut project_arg, mut target_arg, mut json, mut devices_arg) = (None::<String>, None::<String>, false, None::<String>);
     let mut it = args[1..].iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--project" => project_arg = it.next().cloned(),
             "--target" => target_arg = it.next().cloned(),
+            "--devices-dir" => devices_arg = it.next().cloned(),
             "--format" => match it.next().map(String::as_str) {
                 Some("json") => json = true,
                 Some("text") => json = false,
@@ -306,13 +307,17 @@ pub fn project_cmd(args: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let project = match project::load(&file) {
+    let mut project = match project::load(&file) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("{e}");
             return ExitCode::from(2);
         }
     };
+    // como en build: --devices-dir manda sobre el devices_dir del proyecto
+    if let Some(d) = devices_arg {
+        project.devices_dir = Some(PathBuf::from(d));
+    }
     let mut targets: Vec<(String, Target)> = Vec::new();
     match &target_arg {
         Some(_) => match project.target(target_arg.as_deref()) {

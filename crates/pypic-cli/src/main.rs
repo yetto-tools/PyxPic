@@ -16,7 +16,7 @@ const USAGE: &str = "uso:
   pypic disasm <archivo.hex> [--pic-as] [-mcpu=16F887] [--devices-dir <dir>]
   pypic device validate <directorio-del-pack>
   pypic init [carpeta] [--name N] [--device PIC16F887] [--clock DECLARACION]   crea pypic.toml y un main.py de partida
-  pypic project check [--project pypic.toml] [--target perfil] [--format text|json]   revisa el proyecto sin modificar nada
+  pypic project check [--project pypic.toml] [--target perfil] [--format text|json] [--devices-dir dir]   revisa el proyecto sin modificar nada
   pypic project set [--target perfil] [--create] [--dry-run] [--unset CLAVE] [CLAVE=VALOR]...   cambia un perfil (valida antes de escribir)
 
 opciones:
