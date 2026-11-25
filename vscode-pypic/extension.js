@@ -8,6 +8,9 @@ const project = require("./project");
 const modes = require("./projectmode");
 const sidebar = require("./sidebar");
 const welcome = require("./welcome");
+const pinout = require("./pinout");
+const resources = require("./resources");
+const extensionVersion = require("./package.json").version;
 
 const welcomeCommands = Object.freeze({
   newProject: "pypic.newProject",
@@ -72,6 +75,7 @@ function activate(context) {
     vscode.workspace.onDidCloseTextDocument((document) => { diagnostics.delete(document.uri); checks.delete(document.uri.toString()); }),
     vscode.workspace.onDidSaveTextDocument((document) => {
       if (document.languageId === "pypic" && vscode.workspace.getConfiguration("pypic", document.uri).get("checkOnSave", true)) void run("check", document, true);
+      pinoutView.refresh();
     }),
     vscode.languages.registerHoverProvider("pypic", {
       provideHover(document, position) {
@@ -94,6 +98,39 @@ function activate(context) {
   for (const document of vscode.workspace.textDocuments) detect(document);
 
   sidebar.register(vscode, context);
+  async function currentHardware() {
+    const document = vscode.window.activeTextEditor?.document;
+    const data = environment(document);
+    const declared = document && language.declaredDevice(document.getText());
+    const sourceDevice = pinout.detectedDevice(declared);
+    if (sourceDevice) return { devicesDir: data.tools.devices, detected: sourceDevice };
+    if (document?.uri.scheme === "file") {
+      const projectContext = contextFor(document);
+      if (projectContext.projectFile) {
+        try {
+          const report = await projectReport(projectContext.projectFile, projectContext.target);
+          const projectDevice = pinout.detectedDevice(undefined, report, projectContext.target);
+          if (projectDevice) return { devicesDir: data.tools.devices, detected: projectDevice };
+          return { devicesDir: data.tools.devices, notice: "El proyecto no tiene un perfil de destino inequívoco." };
+        } catch (error) {
+          if (error instanceof Error) return { devicesDir: data.tools.devices, notice: `No se pudo leer el perfil del proyecto: ${error.message}` };
+          throw error;
+        }
+      }
+    }
+    return { devicesDir: data.tools.devices };
+  }
+  const pinoutView = pinout.register(vscode, context, currentHardware);
+  const resourcesView = resources.register(vscode, context, async () => {
+    const document = vscode.window.activeTextEditor?.document;
+    const hardware = await currentHardware();
+    return {
+      devicesDir: hardware.devicesDir,
+      deviceName: hardware.detected?.name,
+      fileKey: document?.uri.toString(),
+      source: document?.getText() || "",
+    };
+  });
   refreshStatus();
 
   async function run(kind, targetDocument, quiet = false) {
@@ -135,6 +172,7 @@ function activate(context) {
     execFile(tools.executable, args, { cwd, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (stdout) output.append(stdout);
       if (stderr) output.append(stderr);
+      if (!error && kind === "build") resourcesView.updateBuild(key, stdout);
       if (!quiet) output.show(true);
       if (checks.get(key) === request && document.version === version && !document.isClosed) {
         const entries = language.diagnostics(`${stdout}\n${stderr}`, file).map((item) => {
@@ -342,6 +380,7 @@ function activate(context) {
     const picked = await vscode.window.showQuickPick(report.targets.map(modes.targetLabel), { title: "Perfil de destino", placeHolder: "Elige el dispositivo y el reloj con los que se compila" });
     if (!picked) return;
     await context.workspaceState.update(targetKey(projectFile), picked.target);
+    pinoutView.refresh();
     refreshStatus();
     void vscode.window.showInformationMessage(`Perfil de destino: ${picked.target}.`);
   }
@@ -399,6 +438,7 @@ function activate(context) {
     const target = folder ? vscode.ConfigurationTarget.WorkspaceFolder : vscode.ConfigurationTarget.Global;
     try {
       await vscode.workspace.getConfiguration("pypic", uri).update(key, selected[0].fsPath, target);
+      if (key === "devicesDir") pinoutView.refresh();
       void vscode.window.showInformationMessage(`${label}: ${selected[0].fsPath}${folder ? " (proyecto)" : " (usuario)"}`);
     } catch (error) {
       void vscode.window.showErrorMessage(`No se pudo guardar ${label}: ${error instanceof Error ? error.message : String(error)}`);
@@ -422,7 +462,7 @@ function activate(context) {
     vscode.commands.registerCommand("pypic.status", () => {
       const document = vscode.window.activeTextEditor && vscode.window.activeTextEditor.document;
       output.clear();
-      output.appendLine("PyPIC IDE 0.1.4 — Estado y ayuda\n");
+      output.appendLine(`PyPIC IDE ${extensionVersion} — Estado y ayuda\n`);
       if (document && document.uri.scheme === "file") {
         const data = environment(document);
         output.appendLine(`Archivo: ${document.uri.fsPath}\nModo: ${document.languageId}\nDispositivo: ${data.device}\n${data.rows.map((row) => `${row.name}: ${row.value} — ${row.state}`).join("\n")}`);

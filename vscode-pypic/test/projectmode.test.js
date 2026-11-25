@@ -115,6 +115,7 @@ function harness(initialFile) {
     window: {
       activeTextEditor: { document: activeDocument },
       registerTreeDataProvider: () => ({ dispose() {} }),
+      registerWebviewViewProvider: () => ({ dispose() {} }),
       onDidChangeActiveTextEditor: () => ({ dispose() {} }),
       createStatusBarItem: () => ({
         set text(value) { state.status.text = value; }, get text() { return state.status.text; }, set tooltip(value) { state.status.tooltip = value; },

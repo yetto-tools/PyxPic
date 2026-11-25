@@ -41,9 +41,11 @@ The webview uses `var(--vscode-font-family)`, then the operating system sans-ser
 
 ## 4. Spacing & Layout
 
-Base unit: 4px. Tokens are `--space-1` through `--space-10`, mapped in the webview stylesheet. The welcome screen owns its vertical scroll. At 720px and above it uses a two-column grid: the project action occupies the first reading position and the environment state is adjacent. Below that it becomes one column. The activity bar uses one native VS Code tree whose collapsed roots are **Proyecto**, **Construir** and **Entorno**.
+Base unit: 4px. Tokens are `--space-1` through `--space-10`, mapped in the webview stylesheet. The welcome screen owns its vertical scroll. At 720px and above it uses a two-column grid: the project action occupies the first reading position and the environment state is adjacent. Below that it becomes one column. The activity bar uses one native VS Code tree whose collapsed roots are **Proyecto**, **Construir** and **Entorno**, followed by a persistent Pinout webview.
 
 Layout: a scroll-owned welcome webview with a fixed-width readable content rail; project actions first, environment status second, supported next steps last; the webview never causes the VS Code workbench itself to scroll.
+
+Layout: hardware sidebars - keep the VS Code section headers fixed while Resources and the physical package remain inspectable -> scroll-body-shell (https://github.com/changeroa/StyleGallery/blob/main/patterns/viewport-shell/scroll-body-shell.md); scroll owner: each webview document; anti-patterns: editor-tab takeover, nested scrolling and horizontal package overflow.
 
 ## 5. Components
 
@@ -63,9 +65,24 @@ Layout: a scroll-owned welcome webview with a fixed-width readable content rail;
 - **Accessibility:** creation uses native VS Code input and folder dialogs; the webview only starts the flow.
 
 ### Activity-bar section
-- **Structure:** a native VS Code tree with collapsed roots for Proyecto, Construir and Entorno; expanding a root reveals only actions from that task.
+- **Structure:** a native VS Code tree with collapsed roots for Proyecto, Construir and Entorno; expanding a root reveals only actions from that task. Pinout is a sibling webview section.
 - **States:** collapsed and expanded; each action remains available from the Command Palette.
 - **Accessibility:** native tree view semantics, keyboard navigation and theme icons supplied by VS Code.
+
+### Pinout section
+- **Primary action:** inspect a physical pin and its alternate functions.
+- **Priorities:** detected PIC and detection source; physical package; selected-pin detail.
+- **Left out on purpose:** editing the project target, simulator levels and conflict overlays.
+- **Structure:** persistent sidebar webview with device and package heading, always-available catalog selector, pin-type legend, compact physical package diagram and selected-pin detail.
+- **States:** PIC from active source; PIC from active project profile; remembered visualization fallback; missing or invalid pack with a configuration action.
+- **Accessibility:** each pin is a keyboard-reachable button whose name includes its physical number and alternate functions; colour is repeated as text.
+
+| State | User sees | Next action | Must not show |
+|---|---|---|---|
+| Source or profile detected | Automatic device, origin and installed-pack selector | Inspect a pin or preview another model | Claim that a preview changed the project target |
+| No device detected | Installed-pack selector and remembered fallback | Choose a visualization | Claim that the project target changed |
+| Detected pack missing | Warning, installed-pack selector and fallback pinout | Choose an installed pack | Empty package or silent substitution |
+| Catalog empty or invalid | Cause and Device Packs configuration action | Configure packs | Broken diagram |
 
 ## 6. Motion & Interaction
 
@@ -91,3 +108,4 @@ Personas: a learner creating a first PIC program; a firmware developer reopening
 | IDE-2 | Tool recovery | Compiler and Device Pack paths were hidden in settings | Environment rows and path pickers | Command tests and webview QA | Planned |
 | IDE-3 | Project creation | No guided source template | Native VS Code project wizard | Command tests and created files | Planned |
 | IDE-4 | Activity bar | All actions appeared in one unscannable list | Separate Project, Build and Environment views | Extension UI QA and command tests | Planned |
+| IDE-5 | Hardware | The Device Pack pin map was not visible in the IDE | Persistent auto-detected pinout sourced from the installed pack catalog | Renderer tests and webview QA | Implemented |

@@ -18,6 +18,7 @@ test("los comandos comprueban y compilan con la CLI real y muestran sus errores"
   fs.copyFileSync(path.join(root, "examples", "blink.py"), source);
   const commands = new Map();
   const sidebars = new Map();
+  const webviews = new Map();
   const messages = [];
   let result;
   let output = "";
@@ -46,6 +47,7 @@ test("los comandos comprueban y compilan con la CLI real y muestran sus errores"
     },
     window: {
       registerTreeDataProvider: (id, provider) => { sidebars.set(id, provider); return { dispose() {} }; },
+      registerWebviewViewProvider: (id, provider) => { webviews.set(id, provider); return { dispose() {} }; },
       createStatusBarItem: () => ({ show() {}, hide() {}, dispose() {} }),
       onDidChangeActiveTextEditor: () => ({ dispose() {} }),
       activeTextEditor: { document: { uri: { scheme: "file", fsPath: source }, languageId: "python", isDirty: false } },
@@ -80,6 +82,8 @@ test("los comandos comprueban y compilan con la CLI real y muestran sus errores"
   assert.deepEqual(actionTree.getChildren(sections[0]).map((action) => action.command), ["pypic.welcome", "pypic.newProject", "pypic.openProject", "pypic.openFile", "pypic.examples"]);
   assert.deepEqual(actionTree.getChildren(sections[1]).map((action) => action.command), ["pypic.check", "pypic.build", "pypic.selectTarget", "pypic.projectCheck", "pypic.status"]);
   assert.deepEqual(actionTree.getChildren(sections[2]).map((action) => action.command), ["pypic.selectCompiler", "pypic.selectDevices", "pypic.selectPicAs", "pypic.settings"]);
+  assert.ok(webviews.has("pypic.pinout"));
+  assert.ok(webviews.has("pypic.resources"));
   let done = completed();
   await commands.get("pypic.check")();
   await done;
@@ -140,6 +144,11 @@ test("identifica PyPIC y conserva ubicación y severidad de diagnósticos", () =
   assert.equal(workspaceTools.executable, path.join(root, "target", "debug", process.platform === "win32" ? "pypic.exe" : "pypic"));
   assert.equal(workspaceTools.devices, path.join(root, "devices"));
   assert.equal(language.projectTools(path.join(root, "examples", "blink.py"), root, "custom-compiler", "custom-devices").executable, "custom-compiler");
+});
+
+test("el resumen visible mantiene la versión del manifiesto", () => {
+  const manifest = require("../package.json");
+  assert.match(manifest.description, new RegExp(`^v${manifest.version.replaceAll(".", "\\.")} · `));
 });
 
 test("la plantilla de proyecto para cristal compila con la CLI", () => {

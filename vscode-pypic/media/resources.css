@@ -1,0 +1,31 @@
+:root {
+  --surface: var(--vscode-sideBar-background); --raised: var(--vscode-sideBarSectionHeader-background);
+  --text: var(--vscode-sideBar-foreground); --muted: var(--vscode-descriptionForeground);
+  --border: var(--vscode-sideBar-border, var(--vscode-panel-border)); --accent: var(--vscode-progressBar-background);
+  color: var(--text); font: 12px/1.45 var(--vscode-font-family);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface); }
+main { padding: 12px; }
+h1, h2, p, dl, dd { margin: 0; }
+h1 { font-size: 17px; }
+header p, .section-title span, .footnote, .empty p { color: var(--muted); }
+.memory, .peripherals { margin-top: 12px; }
+.meter + .meter { margin-top: 10px; }
+.meter > div, .section-title, dl div { display: flex; justify-content: space-between; gap: 8px; }
+.meter span { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+progress { width: 100%; height: 7px; margin-top: 5px; border: 0; background: var(--raised); color: var(--accent); }
+progress::-webkit-progress-bar { background: var(--raised); }
+progress::-webkit-progress-value { background: var(--accent); }
+.notice { padding: 9px; background: var(--raised); color: var(--muted); }
+dl { margin-top: 10px; padding-top: 7px; border-top: 1px solid var(--border); }
+dl div { padding: 3px 0; } dd { font-variant-numeric: tabular-nums; }
+.section-title { align-items: baseline; } h2 { font-size: 13px; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.chips span { padding: 2px 6px; border: 1px solid var(--accent); border-radius: 10px; }
+.chips em { color: var(--muted); font-style: normal; }
+details { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 7px; }
+summary { cursor: pointer; color: var(--vscode-textLink-foreground); }
+details p { margin-top: 6px; color: var(--muted); overflow-wrap: anywhere; }
+.footnote { margin-top: 12px; font-size: 10px; }
+.empty p { margin-top: 6px; }

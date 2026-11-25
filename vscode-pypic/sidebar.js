@@ -16,7 +16,7 @@ const sections = [
     label: "Construir",
     icon: "tools",
     actions: [
-    { label: "Comprobar archivo", command: "pypic.check", icon: "check" },
+    { label: "Verificar código", command: "pypic.check", icon: "check" },
     { label: "Compilar a HEX", command: "pypic.build", icon: "tools" },
     { label: "Perfil de destino", command: "pypic.selectTarget", icon: "target" },
     { label: "Revisar proyecto", command: "pypic.projectCheck", icon: "checklist" },
