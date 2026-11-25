@@ -3,7 +3,7 @@ from pypic.device import PIC16F887
 from pypic.periph.adc import ADC, AN0
 from pypic.periph.gpio import RD0
 
-CLOCK_HZ: Const[uint32] = 4_000_000   # el reloj de conversion (FOSC/8 a 4 MHz: TAD = 2 us) lo elige el compilador
+CLOCK: Internal[4 * MHz]   # el reloj de conversion (FOSC/8 a 4 MHz: TAD = 2 us) lo elige el compilador
 
 
 def main() -> None:

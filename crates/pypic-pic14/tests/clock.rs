@@ -211,3 +211,37 @@ fn the_old_clock_hz_warning_is_only_for_clock_hz_because_clock_does_configure_th
     let (ok, t) = diagnostics(&format!("from pypic.device import PIC16F887\nCLOCK: Crystal[20 * MHz]\n{uart}"));
     assert!(ok && !t.contains("PYP3005"), "con CLOCK el compilador configura el oscilador: {t}");
 }
+
+// ---- el aviso de los pines que el oscilador externo toma (PYP3016) ------------------------------------------------------------
+
+#[test]
+fn a_crystal_warns_that_ra6_and_ra7_stop_being_available() {
+    let (ok, t) = diagnostics(&prog("CLOCK: Crystal[20 * MHz]"));
+    assert!(ok, "es un aviso, no un error: {t}");
+    assert!(t.contains("warning[PYP3016]") && t.contains("RA7 (OSC1/CLKIN)") && t.contains("RA6 (OSC2/CLKOUT)") && t.contains("cualquier otro uso") && t.contains("ExternalClock"), "{t}");
+    assert!(t.contains("Crystal[20 MHz]"), "{t}");
+}
+
+#[test]
+fn an_external_clock_warns_only_about_ra7_and_says_ra6_is_free() {
+    let (ok, t) = diagnostics(&prog("CLOCK: ExternalClock[8 * MHz]"));
+    assert!(ok && t.contains("warning[PYP3016]") && t.contains("RA7 (OSC1/CLKIN)") && t.contains("RA6 (OSC2/CLKOUT) queda libre"), "{t}");
+    assert!(!t.contains("Crystal"), "{t}");
+}
+
+#[test]
+fn the_internal_oscillator_and_the_manual_form_do_not_warn_about_pins() {
+    for clock in ["CLOCK: Internal[4 * MHz]", "CLOCK: Internal[8 * MHz]"] {
+        let (ok, t) = diagnostics(&prog(clock));
+        assert!(ok && !t.contains("PYP3016"), "{clock}: {t}");
+    }
+    let (_, t) = diagnostics(&prog("CLOCK_HZ: Const[uint32] = 4_000_000"));
+    assert!(!t.contains("PYP3016"), "{t}");
+}
+
+#[test]
+fn the_default_clock_warning_suggests_the_new_declaration() {
+    let src = "from pypic.device import PIC16F887\nfrom pypic.system.time import pause\n\n\ndef main() -> None:\n    pause(1)\n";
+    let (ok, t) = diagnostics(src);
+    assert!(ok && t.contains("PYP3004") && t.contains("declara 'CLOCK: Internal[4 * MHz]'") && !t.contains("Const[uint32]"), "{t}");
+}

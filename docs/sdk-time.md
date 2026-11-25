@@ -8,7 +8,7 @@ from pypic.device import PIC16F887
 from pypic.periph.gpio import RD0
 from pypic.system.time import pause
 
-CLOCK_HZ: Const[uint32] = 4_000_000
+CLOCK: Internal[4 * MHz]
 
 @init_device
 def configurar() -> None:
@@ -38,7 +38,7 @@ como dos funciones con el comportamiento de PICAXE tras leer la sección del wat
 
 ## Cómo se garantiza la precisión
 
-- **Constante → ciclos exactos.** El compilador convierte el tiempo en un número entero de ciclos (`ciclos = tiempo × CLOCK_HZ / (relojes por ciclo × unidad)`, redondeado una sola vez
+- **Constante → ciclos exactos.** El compilador convierte el tiempo en un número entero de ciclos (`ciclos = tiempo × frecuencia del reloj / (relojes por ciclo × unidad)`, redondeado una sola vez
   sobre el total, sin acumular error por milisegundo) y genera código que dura **exactamente** ese número, con 1, 2 o 3 contadores y relleno. Verificado contra el simulador
   para cualquier cantidad de 0 a 400, en todos los umbrales, hasta 100 millones de ciclos y con valores pseudoaleatorios.
 - **Variable (`uint16`)**: `n` vueltas de exactamente 1 unidad más **8 ciclos fijos** de entrada (9 si `n = 0`).
@@ -49,9 +49,9 @@ como dos funciones con el comportamiento de PICAXE tras leer la sección del wat
 
 ## Reloj
 
-- `CLOCK_HZ: Const[uint32] = <hercios>` declara la frecuencia del reloj del sistema.
-- **Sin `CLOCK_HZ`** el compilador usa el reloj por defecto del dispositivo (PIC16F887: 4 MHz, `OSCCON<IRCF> = 110`, p.64) y lo **avisa** (`PYP3004`).
-- Si declaras un reloj distinto del que da la configuración por defecto, avisa (`PYP3005`): el compilador **todavía no programa el oscilador** (`OSCCON`, palabras de configuración, #33), así que los
+- `CLOCK: Internal[4 * MHz]` (o `Crystal[...]` / `ExternalClock[...]`, ver `docs/sdk-reloj.md`) declara la fuente y la frecuencia del reloj del sistema y **configura el oscilador**. La forma manual `CLOCK_HZ: Const[uint32] = <hercios>` solo declara la frecuencia.
+- **Sin reloj declarado** el compilador usa el reloj por defecto del dispositivo (PIC16F887: 4 MHz, `OSCCON<IRCF> = 110`, p.64) y lo **avisa** (`PYP3004`, que sugiere `CLOCK: Internal[4 * MHz]`).
+- Con la forma manual `CLOCK_HZ`, si declaras un reloj distinto del que da la configuración por defecto, avisa (`PYP3005`): el compilador **no programa el oscilador** (con `CLOCK: ...` sí lo hace) (`OSCCON`, palabras de configuración, #33), así que los
   tiempos solo serán correctos si el reloj real es el declarado. En Proteus, la propiedad *Processor Clock Frequency* del PIC debe coincidir.
 
 ## Diagnósticos

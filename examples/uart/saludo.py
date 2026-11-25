@@ -8,7 +8,7 @@ from pypic.device import PIC16F887
 from pypic.periph.uart import UART
 from pypic.system.time import pause
 
-CLOCK_HZ: Const[uint32] = 4_000_000
+CLOCK: Internal[4 * MHz]
 
 # "Hola PyPIC" + CR + LF
 MENSAJE: Rom[uint8] = [72, 111, 108, 97, 32, 80, 121, 80, 73, 67, 13, 10]

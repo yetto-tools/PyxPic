@@ -25,7 +25,7 @@ El acceso a registros y a ensamblador en sintaxis PIC-AS permite un control prog
 | Control de pines (TRIS, PORT, ANSEL) | ✅ `pypic.periph.gpio` |
 | Esperas exactas al ciclo | ✅ `pypic.system.time` (`pause`, `wait`, `delay_us`, `delay_cycles`) |
 | Interrupciones con guardado de contexto | ✅ `@interrupt` |
-| Arranque y configuración inicial | ✅ `@init_device`, `CLOCK_HZ`, declaración del dispositivo |
+| Arranque y configuración inicial | ✅ `@init_device`, `CLOCK` (fuente y frecuencia del reloj), declaración del dispositivo |
 | Bajo consumo (`SLEEP`, watchdog) | ⏳ `nap`/`sleep` reservadas (#38) |
 | Timers (prescaler, desbordamiento, interrupciones) | ✅ `pypic.periph.timer`, `docs/sdk-timer.md` (#39) |
 | **Acceso directo a cualquier registro (SFR) y a sus bits** | ✅ `pypic.regs`, `docs/sdk-regs.md` (#40) |

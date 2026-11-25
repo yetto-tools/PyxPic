@@ -17,7 +17,7 @@ from pypic.device import PIC16F887
 from pypic.periph.gpio import RD0
 from pypic.periph.uart import UART
 
-CLOCK_HZ: Const[uint32] = 4_000_000
+CLOCK: Internal[4 * MHz]
 
 # "GPGGA": el tipo de trama que se cuenta aparte
 TIPO_GGA: Rom[uint8] = [71, 80, 71, 71, 65]

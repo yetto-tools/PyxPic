@@ -2,7 +2,7 @@
 from pypic.device import PIC16F887
 from pypic.periph.uart import UART
 
-CLOCK_HZ: Const[uint32] = 4_000_000   # a 4 MHz el compilador usa BRGH = 1 y SPBRG = 25: 9615 baudios (+0,16 %)
+CLOCK: Internal[4 * MHz]   # a 4 MHz el compilador usa BRGH = 1 y SPBRG = 25: 9615 baudios (+0,16 %)
 
 
 def main() -> None:

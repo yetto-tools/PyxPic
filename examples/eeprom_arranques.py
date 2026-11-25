@@ -4,7 +4,7 @@ from pypic.periph.eeprom import EEPROM
 from pypic.periph.gpio import RD0
 from pypic.system.time import pause
 
-CLOCK_HZ: Const[uint32] = 4_000_000
+CLOCK: Internal[4 * MHz]
 
 
 def main() -> None:

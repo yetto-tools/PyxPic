@@ -3,7 +3,7 @@ from pypic.device import PIC16F887
 from pypic.periph.gpio import RD0
 from pypic.periph.timer import TMR2
 
-CLOCK_HZ: Const[uint32] = 4_000_000
+CLOCK: Internal[4 * MHz]
 
 
 @init_device

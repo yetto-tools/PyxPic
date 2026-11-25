@@ -793,7 +793,7 @@ impl<'a> Gen<'a> {
     // ---- esperas: tiempo -> ciclos de instruccion exactos ------------------------------------------
     fn cycles_for(&self, unit: DelayUnit, n: u128) -> Result<u128, CodegenError> {
         let Some(hz) = self.clock_hz else {
-            return Err(CodegenError::Device("falta el reloj (CLOCK_HZ) para generar las esperas".into()));
+            return Err(CodegenError::Device("falta el reloj: declara 'CLOCK: Internal[4 * MHz]' para generar las esperas".into()));
         };
         let (hz, cpc) = (hz as u128, self.cpc as u128);
         Ok(match unit {
@@ -876,7 +876,7 @@ impl<'a> Gen<'a> {
             return unsupported("esperas dentro de la interrupcion (ocupan la CPU y comparten memoria con el contexto principal)");
         }
         let ws = self.al.delay_ws;
-        let hz = self.clock_hz.ok_or_else(|| CodegenError::Device("falta el reloj (CLOCK_HZ) para generar las esperas".into()))?;
+        let hz = self.clock_hz.ok_or_else(|| CodegenError::Device("falta el reloj: declara 'CLOCK: Internal[4 * MHz]' para generar las esperas".into()))?;
         let cycle_ns = self.cpc as f64 * 1e9 / hz as f64;
         let function = self.f().name.clone();
         match *amount {
@@ -1648,7 +1648,7 @@ impl<'a> Gen<'a> {
         match call.op {
             UartOp::Start(st) => {
                 let brg = st.brg.expect("el frontend resuelve el generador de baudios");
-                let hz = self.clock_hz.ok_or_else(|| CodegenError::Device("UART.start necesita el reloj (CLOCK_HZ)".into()))?;
+                let hz = self.clock_hz.ok_or_else(|| CodegenError::Device("UART.start necesita el reloj: declara 'CLOCK: Internal[4 * MHz]'".into()))?;
                 self.uart_report = Some(UartReport { baud: st.baud, achieved: brg.achieved(hz), error_pct: brg.error_pct(hz), brgh: brg.brgh, brg16: brg.brg16, n: brg.n, fosc_hz: hz });
                 // 12.1.1.6 y 12.1.2.8: baudios, modo asincrono (SYNC = 0), SPEN, TXEN y CREN
                 self.write_banked("BAUDCTL", (brg.brg16 as u8) << self.bit_pos("BRG16")?)?;
@@ -1825,7 +1825,7 @@ impl<'a> Gen<'a> {
             AdcOp::Result => self.adc_result(dst.expect("Result lleva destino"))?,
             AdcOp::Read(n) => {
                 self.adc_select(n)?;
-                let hz = self.clock_hz.ok_or_else(|| CodegenError::Device("ADC.read necesita el reloj (CLOCK_HZ) para la espera de adquisicion".into()))?;
+                let hz = self.clock_hz.ok_or_else(|| CodegenError::Device("ADC.read necesita el reloj (declara 'CLOCK: Internal[4 * MHz]') para la espera de adquisicion".into()))?;
                 let cycles = pypic_frontend::adc::acquisition_cycles(hz, self.cpc, self.m.adc_acq_ns);
                 self.delay(DelayUnit::Cycles, &Operand::Const { value: cycles as i128, ty: Type::Int { bits: 32, signed: false } })?;
                 self.bit_op("GO_DONE", true)?;

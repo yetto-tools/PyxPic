@@ -8,7 +8,7 @@ CLOCK: Crystal[20 * MHz]           # cristal en OSC1/OSC2
 CLOCK: ExternalClock[20 * MHz]     # señal de reloj en CLKIN (RA7)
 ```
 
-`Internal`, `Crystal`, `ExternalClock`, `MHz`, `kHz` y `Hz` están predeclarados (como `uint8` o `Const`); `from pypic.clock import ...` es válido y no hace nada. La frecuencia es una **constante** (`20 * MHz`, `32768 * Hz`, `125 * kHz`). La forma anterior, `CLOCK_HZ: Const[uint32] = 4_000_000`, **sigue valiendo** para quien configure el oscilador a mano; no se pueden usar las dos a la vez (`PYP2192`).
+`Internal`, `Crystal`, `ExternalClock`, `MHz`, `kHz` y `Hz` están predeclarados (como `uint8` o `Const`); `from pypic.clock import ...` es válido y no hace nada. La frecuencia es una **constante** (`20 * MHz`, `32768 * Hz`, `125 * kHz`). `CLOCK_HZ: Const[uint32] = 4_000_000` es la **forma manual**: solo declara la frecuencia y **no configura el oscilador** (quien la usa elige `FOSC` con `--config`); sigue valiendo, pero la recomendada es `CLOCK`. No se pueden usar las dos a la vez (`PYP2192`).
 
 Se eligió la sintaxis `Nombre[frecuencia]` porque es Python válido: `CLOCK_HZ: 4MHz internal` no lo es (`4MHz` no se lee como número).
 
@@ -30,7 +30,19 @@ También fija la frecuencia de `pause`, `delay_us`, la UART, el ADC y los tempor
 | `Crystal` | **LP**: 30 a 37 kHz (el cristal de 32,768 kHz) · **XT**: 100 kHz a 4 MHz · **HS**: más de 4 MHz hasta 20 MHz. Entre 37 y 100 kHz o por encima de 20 MHz no hay modo (`PYP2194`) |
 | `ExternalClock` | De 1 Hz a 20 MHz (modo EC, de continua a 20 MHz) |
 
-Entre 1 y 4 MHz el cristal podría usar XT o HS (la tabla permite ambos): se elige **XT**, de menor ganancia. Si necesitas HS ahí, declara `CLOCK_HZ` y elige `--config FOSC=HS`.
+Entre 1 y 4 MHz el cristal podría usar XT o HS (la tabla permite ambos): se elige **XT**, de menor ganancia. Si necesitas HS ahí, usa la forma manual: `CLOCK_HZ` y `--config FOSC=HS`.
+
+## `Crystal` o `ExternalClock`: qué pines ocupa cada uno
+
+Son dos montajes distintos y no se pueden confundir:
+
+| Declaración | Qué hay en el circuito | Pines que ocupa | Pines que quedan libres |
+|---|---|---|---|
+| `Crystal[f]` | Un cristal o resonador entre `OSC1` y `OSC2` | **RA7** (`OSC1`/`CLKIN`) **y RA6** (`OSC2`/`CLKOUT`) | ninguno de los dos |
+| `ExternalClock[f]` | Una **señal** de reloj ya generada, conectada a `CLKIN` | **RA7** (`OSC1`/`CLKIN`) | **RA6** (como E/S) |
+| `Internal[f]` | Nada: el oscilador está dentro del chip | ninguno | RA6 y RA7 |
+
+Con `Crystal` o `ExternalClock` el compilador **avisa** (`PYP3016`) de los pines que toma: dejan de estar disponibles **para cualquier otro uso** del programa, e importarlos como E/S (`from pypic.periph.gpio import RA6`) es el error `PYP2150`. El aviso de `Crystal` dice además que, si lo que llega a RA7 es una señal y no un cristal, se use `ExternalClock`, que deja libre RA6. `Internal` no avisa de nada: no ocupa pines.
 
 ## `--config FOSC` y `CLOCK`
 
@@ -45,6 +57,7 @@ Entre 1 y 4 MHz el cristal podría usar XT o HS (la tabla permite ambos): se eli
 | `PYP2193` | La frecuencia no es una constante mayor que 0 |
 | `PYP2194` | La fuente no admite esa frecuencia (con los valores válidos en el mensaje) |
 | `PYP2150` | RA6 o RA7 se importan como E/S y el oscilador externo los usa |
+| `PYP3016` | Aviso al declarar `Crystal` (ocupa RA7 y RA6) o `ExternalClock` (ocupa RA7): esos pines dejan de estar disponibles para cualquier otro uso |
 
 ## Lo que no hace, y lo que no puede comprobar
 

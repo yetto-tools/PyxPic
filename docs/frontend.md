@@ -70,7 +70,7 @@ Un programa dice **a qué PIC está orientado** en su primera línea, y de ahí 
 from pypic.device import PIC16F887        # 1. declaración inicial: obligatoria para compilar (pypic build)
 from pypic.periph.gpio import RB0, RD0
 
-CLOCK_HZ: Const[uint32] = 4_000_000          # 2. frecuencia del reloj del sistema (opcional)
+CLOCK: Internal[4 * MHz]                     # 2. fuente y frecuencia del reloj (opcional; docs/sdk-reloj.md)
 
 
 @init_device                               # 3. se ejecuta una vez, antes de main
@@ -86,7 +86,8 @@ def main() -> None:
 - **`from pypic.device import <DISPOSITIVO>`**: debe ser la **primera línea** y única. `pypic` busca el Device Pack con ese nombre (`devices/pic16f887`) en
   `--devices-dir`, `$PYPIC_DEVICES` y `./devices`; si no existe, el error lista los disponibles. `--device <dir>` fuerza un pack concreto y debe coincidir con la declaración.
   `pypic check` y `pypic ir` funcionan sin declaración (análisis genérico, sin validar pines ni límites del dispositivo); `pypic build` la exige.
-- **`CLOCK_HZ: Const[uint32] = <hercios>`**: constante con ese nombre y forma exactos; se valida contra el reloj máximo del dispositivo. No ocupa RAM y no da el aviso de tipo emulado. Si el programa usa esperas (`pypic.system.time`, ver `docs/sdk-time.md`) y no la declara, se usa el reloj por defecto del dispositivo con un aviso.
+- **`CLOCK: Internal[4 * MHz]`** (o `Crystal[20 * MHz]`, `ExternalClock[20 * MHz]`): la forma recomendada de declarar el reloj, ver `docs/sdk-reloj.md`. Elige la fuente y la frecuencia, configura `FOSC` y `OSCCON` y se valida contra el reloj máximo del dispositivo. No ocupa RAM y no da el aviso de tipo emulado. Si el programa usa esperas (`pypic.system.time`, ver `docs/sdk-time.md`) y no declara el reloj, se usa el reloj por defecto del dispositivo con un aviso.
+- **`CLOCK_HZ: Const[uint32] = <hercios>`**: la forma manual, con ese nombre y forma exactos: solo declara la frecuencia (el oscilador lo configuras tú); se valida contra el reloj máximo. No se puede combinar con `CLOCK`.
 
 **Implementado (#69, `docs/sdk-reloj.md`):** `CLOCK: Internal[4 * MHz]`, `CLOCK: Crystal[20 * MHz]` y `CLOCK: ExternalClock[20 * MHz]`, sin imports (el formato `Nombre[frecuencia]` es Python válido; se descartaron `CLOCK = "4MHz internal"` y el constructor con paréntesis). La expresión se resuelve en compilación, configura `FOSC` y `OSCCON` y valida contra el datasheet. `CLOCK_HZ` sigue admitiéndose como declaración de frecuencia compatible, sin configuración automática del oscilador. La frecuencia declarada es FOSC; en PIC16F887 el reloj de instrucción es FOSC/4.
 - **`@init_device`**: una sola función `() -> None` (el nombre es libre); el arranque la llama **después de inicializar las variables y antes de `main`**.

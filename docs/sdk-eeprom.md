@@ -5,7 +5,7 @@
 ```python
 from pypic.periph.eeprom import EEPROM
 
-CLOCK_HZ: Const[uint32] = 4_000_000
+CLOCK: Internal[4 * MHz]
 
 v: uint8 = EEPROM.read(0)        # un byte; una EEPROM virgen vale 0xFF
 EEPROM.write(0, v + 1)           # borra y escribe el byte; vuelve cuando terminó (hasta 6 ms)

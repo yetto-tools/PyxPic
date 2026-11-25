@@ -8,7 +8,7 @@ from pypic.device import PIC16F887
 from pypic.periph.adc import ADC, AN0
 from pypic.periph.gpio import RD0
 
-CLOCK_HZ: Const[uint32] = 4_000_000
+CLOCK: Internal[4 * MHz]
 
 muestras: uint8[8]
 media: uint8 = 0

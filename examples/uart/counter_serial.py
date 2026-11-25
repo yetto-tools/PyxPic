@@ -3,7 +3,7 @@ from pypic import uint8, uint16, uint32, Const, interrupt
 from pypic.periph.uart import UART
 from pypic.system.time import pause
 
-CLOCK_HZ: Const[uint32] = 4_000_000
+CLOCK: Internal[4 * MHz]
 LIMIT: Const[uint8] = 200
 
 ticks: uint16 = 0

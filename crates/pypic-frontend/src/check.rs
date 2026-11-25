@@ -136,9 +136,9 @@ pub struct Program {
     pub pins: Vec<PinDecl>,
     /// Dispositivo declarado con `from pypic.device import PIC16F887`.
     pub device: Option<String>,
-    /// Reloj efectivo: el de `CLOCK_HZ: Const[u32]` o, si usa esperas y no lo declaro, el del dispositivo.
+    /// Reloj efectivo: el de `CLOCK: ...[...]` (o la forma manual `CLOCK_HZ: Const[u32]`) o, si usa esperas y no lo declaro, el del dispositivo.
     pub clock_hz: Option<u32>,
-    /// `clock_hz` es el reloj por defecto del dispositivo (no se declaro `CLOCK_HZ`).
+    /// `clock_hz` es el reloj por defecto del dispositivo (no se declaro `CLOCK` ni `CLOCK_HZ`).
     pub clock_defaulted: bool,
     pub clock_source: Option<ClockSource>,
     /// Llamadas a metodos de `pypic.periph.timer`, por id de expresion.
@@ -426,6 +426,18 @@ struct PwmUse {
     duty: Option<i128>,
 }
 
+/// `CLOCK: Internal[4 * MHz]` para una frecuencia: la declaracion que se sugiere en los mensajes.
+fn internal_decl(hz: u32) -> String {
+    let f = if hz % 1_000_000 == 0 {
+        format!("{} * MHz", hz / 1_000_000)
+    } else if hz % 1_000 == 0 {
+        format!("{} * kHz", hz / 1_000)
+    } else {
+        format!("{hz} * Hz")
+    };
+    format!("CLOCK: Internal[{f}]")
+}
+
 /// Una llamada a `ADC.start(...)` por resolver (reloj automatico) con las condiciones que pide.
 struct AdcStart {
     id: u32,
@@ -528,7 +540,7 @@ impl<'a> Checker<'a> {
         self.declared_device = Some(name.name.clone());
     }
 
-    /// `CLOCK_HZ: Const[u32] = 4_000_000`: frecuencia del reloj del sistema.
+    /// `CLOCK_HZ: Const[u32] = 4_000_000`: la forma manual del reloj (el oscilador lo configura el usuario); la recomendada es `CLOCK: Internal[...]`.
     fn check_clock(&mut self, v: &VarDecl, ty: Type, is_final: bool, konst: Option<i128>) {
         if ty == Type::Error {
             return;
@@ -789,7 +801,7 @@ impl<'a> Checker<'a> {
         self.set(e, Type::Void, None)
     }
 
-    /// Reglas globales de las esperas: necesitan CLOCK_HZ, no van en la interrupcion y avisan si el
+    /// Reglas globales de las esperas: necesitan el reloj (CLOCK o CLOCK_HZ), no van en la interrupcion y avisan si el
     /// tiempo pedido no cae en un numero entero de ciclos de instruccion.
     fn check_time_usage(&mut self) {
         let uses = std::mem::take(&mut self.time_uses);
@@ -801,14 +813,14 @@ impl<'a> Checker<'a> {
                     self.d.warning(
                         "PYP3004",
                         first.span,
-                        format!("no se declaro CLOCK_HZ: se usa el reloj por defecto de {} ({def} Hz); declara 'CLOCK_HZ: Const[uint32] = {def}' para fijarlo y quitar este aviso", self.target.name),
+                        format!("no se declaro el reloj: se usa el reloj por defecto de {} ({def} Hz); declara '{}' para fijarlo y quitar este aviso", self.target.name, internal_decl(def)),
                     );
                     self.clock_hz = Some(def);
                     self.clock_defaulted = true;
                     def
                 }
                 None => {
-                    self.d.error("PYP2101", first.span, format!("{} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK_HZ: Const[uint32] = 4_000_000'", first.name));
+                    self.d.error("PYP2101", first.span, format!("{} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK: Internal[4 * MHz]' (o Crystal[...] / ExternalClock[...])", first.name));
                     return;
                 }
             },
@@ -1200,14 +1212,14 @@ impl<'a> Checker<'a> {
                 self.d.warning(
                     "PYP3004",
                     span,
-                    format!("no se declaro CLOCK_HZ: se usa el reloj por defecto de {} ({def} Hz); declara 'CLOCK_HZ: Const[uint32] = {def}' para fijarlo y quitar este aviso", self.target.name),
+                    format!("no se declaro el reloj: se usa el reloj por defecto de {} ({def} Hz); declara '{}' para fijarlo y quitar este aviso", self.target.name, internal_decl(def)),
                 );
                 self.clock_hz = Some(def);
                 self.clock_defaulted = true;
                 Some(def)
             }
             None => {
-                self.d.error("PYP2101", span, format!("{who} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK_HZ: Const[uint32] = 4_000_000'"));
+                self.d.error("PYP2101", span, format!("{who} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK: Internal[4 * MHz]' (o Crystal[...] / ExternalClock[...])"));
                 None
             }
         }
@@ -2594,6 +2606,22 @@ impl<'a> Checker<'a> {
     fn apply_clock_source(&mut self, src: ClockSource, span: Span) {
         for (pin, function) in src.pins {
             self.claims.push(Claim { pin: pin.to_string(), function: function.to_string(), peripheral: format!("oscilador externo ({})", src.kind.name()), span, via_timer: false });
+        }
+        match src.kind {
+            ClockKind::Crystal => self.d.warning(
+                "PYP3016",
+                span,
+                format!(
+                    "Crystal[{}] ocupa RA7 (OSC1/CLKIN) y RA6 (OSC2/CLKOUT): dejan de estar disponibles para cualquier otro uso del programa (importar RA6 o RA7 como E/S es el error PYP2150). Si lo que llega a RA7 es una senal de reloj y no un cristal, usa ExternalClock: solo ocupa RA7 y RA6 queda libre",
+                    clock::fmt_hz(src.hz)
+                ),
+            ),
+            ClockKind::ExternalClock => self.d.warning(
+                "PYP3016",
+                span,
+                format!("ExternalClock[{}] ocupa RA7 (OSC1/CLKIN): deja de estar disponible para cualquier otro uso del programa; RA6 (OSC2/CLKOUT) queda libre como E/S", clock::fmt_hz(src.hz)),
+            ),
+            ClockKind::Internal => {}
         }
         self.clock_hz = Some(src.hz);
         self.clock_source = Some(src);

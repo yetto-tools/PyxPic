@@ -5,7 +5,7 @@
 ```python
 from pypic.periph.adc import ADC, AN0, AN5
 
-CLOCK_HZ: Const[uint32] = 4_000_000
+CLOCK: Internal[4 * MHz]
 
 ADC.start()                      # ADCON1/ADCON0: resultado a la derecha, referencia VDD/VSS, reloj de conversión elegido, ADC encendido
 v: uint16 = ADC.read(AN0)           # 0..1023

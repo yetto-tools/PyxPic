@@ -54,7 +54,7 @@ pub const IRCF_RESET: u8 = 6;
 const CRYSTAL_PINS: &[(&str, &str)] = &[("RA7", "OSC1"), ("RA6", "OSC2")];
 const EC_PINS: &[(&str, &str)] = &[("RA7", "CLKIN")];
 
-fn fmt_hz(hz: u32) -> String {
+pub fn fmt_hz(hz: u32) -> String {
     if hz >= 1_000_000 && hz % 100_000 == 0 {
         format!("{} MHz", hz as f64 / 1e6)
     } else if hz >= 1_000 && hz % 100 == 0 {
