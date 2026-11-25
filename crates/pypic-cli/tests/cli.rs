@@ -840,3 +840,89 @@ fn check_prints_the_new_warnings_and_still_succeeds() {
         assert!(t.contains(expected), "falta {expected}: {t}");
     }
 }
+
+// ---- pypic check --format json (#10) ------------------------------------------------------------------------------------------
+
+/// Corre `pypic check prog.py --format json` en una carpeta nueva (asi el campo "file" es estable) y devuelve la salida.
+fn json_check(source: &str, extra: &[&str]) -> (Output, String) {
+    // una carpeta propia por llamada: las pruebas corren en paralelo y no deben pisarse el prog.py
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let dir = tmp(&format!("json-{}", NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
+    std::fs::write(dir.join("prog.py"), source).unwrap();
+    let mut args = vec!["check", "prog.py", "--format", "json", "--devices-dir"];
+    let dev = devices();
+    args.push(&dev);
+    args.extend_from_slice(extra);
+    let o = pypic(&dir, &args);
+    let out = String::from_utf8_lossy(&o.stdout).replace("\r\n", "\n");
+    (o, out)
+}
+
+const WITH_ERRORS: &str = "from pypic.device import PIC16F887\n\n\ndef f(a: uint8) -> uint8:\n    return a\n    a = 1\n\n\ndef main() -> None:\n    x: uint8 = 300\n    y = = 5\n";
+const WITH_WARNINGS: &str = "from pypic.device import PIC16F887\n\n\ndef f(a: uint8, b: uint8) -> uint8:\n    return a\n    a = 1\n\n\ndef main() -> None:\n    x: uint8 = 5\n    f(1, 2)\n";
+
+/// Las instantaneas fijan el formato: cambiarlo a proposito exige actualizar el archivo y subir `version` si rompe a quien lo lee.
+fn snapshot(name: &str) -> String {
+    std::fs::read_to_string(root().join("crates/pypic-cli/tests/snapshots").join(name)).unwrap().replace("\r\n", "\n")
+}
+
+#[test]
+fn check_json_matches_the_committed_snapshots() {
+    let (o, out) = json_check(WITH_ERRORS, &[]);
+    assert_eq!(o.status.code(), Some(1), "con errores sale con 1");
+    assert_eq!(out, snapshot("check_errors.json"), "el JSON con errores cambio");
+    let (o, out) = json_check(WITH_WARNINGS, &[]);
+    assert_eq!(o.status.code(), Some(0), "solo avisos: sale con 0");
+    assert_eq!(out, snapshot("check_warnings.json"), "el JSON con avisos cambio");
+}
+
+#[test]
+fn check_json_is_one_document_with_versioned_ranges_and_no_other_output() {
+    let (o, out) = json_check(WITH_ERRORS, &[]);
+    assert!(o.stderr.is_empty(), "nada en stderr: {}", String::from_utf8_lossy(&o.stderr));
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"));
+    assert_eq!(v["version"], 1);
+    assert_eq!(v["file"], "prog.py");
+    assert_eq!(v["ok"], false);
+    assert_eq!((v["summary"]["errors"].as_u64(), v["summary"]["warnings"].as_u64()), (Some(2), Some(0)));
+    let d = v["diagnostics"].as_array().unwrap();
+    assert_eq!(d.len(), 2);
+    // el error de tipos (linea 10) y el de sintaxis (linea 11) salen juntos y ordenados por posicion
+    assert_eq!((d[0]["code"].as_str(), d[0]["severity"].as_str()), (Some("PYP2040"), Some("error")));
+    assert_eq!(d[1]["code"], "PYP1100");
+    for item in d {
+        let (s, e) = (&item["range"]["start"], &item["range"]["end"]);
+        let (sl, sc, el, ec) = (s["line"].as_u64().unwrap(), s["column"].as_u64().unwrap(), e["line"].as_u64().unwrap(), e["column"].as_u64().unwrap());
+        assert!(sl >= 1 && sc >= 1, "las posiciones son de 1 en adelante");
+        assert!((el, ec) >= (sl, sc), "el fin no esta antes del inicio");
+        assert!(item["message"].as_str().is_some_and(|m| !m.is_empty()));
+    }
+    assert_eq!(d[0]["range"]["start"]["line"], 10);
+    assert_eq!((d[0]["range"]["start"]["column"].as_u64(), d[0]["range"]["end"]["column"].as_u64()), (Some(16), Some(19)), "el rango cubre el 300");
+}
+
+#[test]
+fn check_json_of_a_clean_program_is_ok_with_no_diagnostics() {
+    let (o, out) = json_check("from pypic.device import PIC16F887\n\n\ndef main() -> None:\n    pass\n", &[]);
+    assert!(o.status.success());
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!((v["ok"].clone(), v["summary"]["errors"].clone(), v["diagnostics"].as_array().map(Vec::len)), (serde_json::json!(true), serde_json::json!(0), Some(0)));
+}
+
+#[test]
+fn the_text_output_is_unchanged_and_json_is_only_for_check() {
+    let dir = tmp("json-text");
+    std::fs::write(dir.join("prog.py"), WITH_WARNINGS).unwrap();
+    let o = pypic(&dir, &["check", "prog.py", "--devices-dir", &devices()]);
+    let t = text(&o);
+    assert!(t.contains("prog.py:6:5: warning[PYP3020]") && t.contains("prog.py: ok"), "{t}");
+    assert!(!t.contains("\"version\""));
+    for args in [&["build", "prog.py", "--format", "json"][..], &["ir", "prog.py", "--format", "json"][..]] {
+        let o = pypic(&dir, &[args, &["--devices-dir", &devices()]].concat());
+        assert_eq!(o.status.code(), Some(2), "{}", text(&o));
+        assert!(text(&o).contains("solo vale con check"), "{}", text(&o));
+    }
+    let o = pypic(&dir, &["check", "prog.py", "--format", "yaml"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(text(&o).contains("'text' o 'json'"), "{}", text(&o));
+}

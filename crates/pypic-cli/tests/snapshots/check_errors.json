@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "file": "prog.py",
+  "ok": false,
+  "summary": {
+    "errors": 2,
+    "warnings": 0
+  },
+  "diagnostics": [
+    {
+      "code": "PYP2040",
+      "severity": "error",
+      "message": "el valor 300 no cabe en uint8 (rango 0..255)",
+      "range": {
+        "start": {
+          "line": 10,
+          "column": 16
+        },
+        "end": {
+          "line": 10,
+          "column": 19
+        }
+      }
+    },
+    {
+      "code": "PYP1100",
+      "severity": "error",
+      "message": "se esperaba una expresion, se encontro Assign",
+      "range": {
+        "start": {
+          "line": 11,
+          "column": 9
+        },
+        "end": {
+          "line": 11,
+          "column": 10
+        }
+      }
+    }
+  ]
+}

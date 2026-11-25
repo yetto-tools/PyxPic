@@ -6,6 +6,7 @@ use pypic_frontend::{analyze, TargetProfile};
 use pypic_pic14::{disassemble, Image};
 
 mod project;
+mod report;
 mod workflow;
 
 const USAGE: &str = "uso:
@@ -22,6 +23,7 @@ const USAGE: &str = "uso:
 opciones:
   --project <pypic.toml>  archivo de proyecto (por defecto se busca el mas cercano al programa; sin archivo, usa su 'main')
   --target <perfil>       perfil de destino del proyecto ([target.perfil]); por defecto default_target o el unico
+  --format text|json      como se imprimen los diagnosticos: texto (por defecto) o JSON versionado, solo con check (docs/diagnosticos-json.md)
   --no-opt                no optimiza la IR (para depurar o comparar tamanos; ver docs/ir-optimizaciones.md)
   --device <directorio>   usa este Device Pack (por defecto se busca el que declara el programa)
   --devices-dir <dir>     donde buscar los Device Packs (tambien $PYPIC_DEVICES y ./devices)
@@ -361,6 +363,7 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     let mut listing = false;
     let mut timing = false;
     let mut optimize = true;
+    let mut json = false;
     let mut settings: Vec<(String, String)> = Vec::new();
     let mut project_arg: Option<String> = None;
     let mut target_arg: Option<String> = None;
@@ -373,6 +376,14 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
             "--listing" => listing = true,
             "--timing" => timing = true,
             "--no-opt" => optimize = false,
+            "--format" => match it.next().map(String::as_str) {
+                Some("json") => json = true,
+                Some("text") => json = false,
+                _ => {
+                    eprintln!("--format es 'text' o 'json'");
+                    return ExitCode::from(2);
+                }
+            },
             "--device" => device_dir = it.next().cloned(),
             "--devices-dir" => devices_dir = it.next().cloned(),
             "--native-bits" => native = it.next().and_then(|v| v.parse::<u32>().ok()),
@@ -496,6 +507,15 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     }
 
     let res = analyze(&src, &target);
+    if json {
+        if cmd != "check" {
+            eprintln!("--format json solo vale con check: build e ir imprimen texto");
+            return ExitCode::from(2);
+        }
+        // un solo documento JSON en la salida estandar, sin ninguna otra linea
+        println!("{}", serde_json::to_string_pretty(&report::diagnostics_json(&file, &src, &res.diagnostics)).expect("el informe es JSON valido"));
+        return if res.diagnostics.has_errors() { ExitCode::from(1) } else { ExitCode::SUCCESS };
+    }
     print!("{}", res.diagnostics.render(&src, &file));
     let Some(program) = res.program else { return ExitCode::from(1) };
     if let (Some(c), true, Some((tn, _))) = (&profile_clock, source_clock, &profile) {
