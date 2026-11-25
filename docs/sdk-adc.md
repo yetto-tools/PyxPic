@@ -3,6 +3,7 @@
 **Estado: implementado (primer módulo de #45).** Convertidor de 10 bits con 14 canales del PIC16F887 (DS40001291H, cap. 9 y tabla 17-11). Todo se resuelve al compilar; el costo en ciclos está a la vista.
 
 ```python
+from pypic.device import PIC16F887
 from pypic.periph.adc import ADC, AN0, AN5
 
 CLOCK: Internal[4 * MHz]

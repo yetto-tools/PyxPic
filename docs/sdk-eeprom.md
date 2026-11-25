@@ -3,6 +3,7 @@
 **Estado: implementado (tercer módulo de #45, solo la EEPROM de datos).** Los 256 bytes de EEPROM de datos del PIC16F887 (DS40001291H, cap. 10, pp. 110-113 y 119-120; parámetros D120-D124 en la p.246). La lectura y escritura de la **memoria de programa** (flash) no están: es `flash` de #46.
 
 ```python
+from pypic.device import PIC16F887
 from pypic.periph.eeprom import EEPROM
 
 CLOCK: Internal[4 * MHz]

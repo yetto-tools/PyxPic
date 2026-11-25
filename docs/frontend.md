@@ -85,7 +85,10 @@ def main() -> None:
 
 - **`from pypic.device import <DISPOSITIVO>`**: debe ser la **primera línea** y única. `pypic` busca el Device Pack con ese nombre (`devices/pic16f887`) en
   `--devices-dir`, `$PYPIC_DEVICES` y `./devices`; si no existe, el error lista los disponibles. `--device <dir>` fuerza un pack concreto y debe coincidir con la declaración.
-  `pypic check` y `pypic ir` funcionan sin declaración (análisis genérico, sin validar pines ni límites del dispositivo); `pypic build` la exige.
+  `pypic check` y `pypic ir` funcionan sin declaración (análisis genérico, sin validar pines ni límites del dispositivo), pero **lo avisan** (`PYP3017`); `pypic build` la exige.
+  **Va siempre en el código**, también en un proyecto con `pypic.toml`: el mismo programa puede ser válido para varios PIC y la declaración es lo que dice **para cuál está escrito** y,
+  por tanto, qué se espera tener: de ella salen los pines (`PYP2150`), los periféricos (`from pypic.periph.pwm import PWM1` es un error si el dispositivo no trae CCP1: `PYP2200`, `PYP2210`...),
+  los registros, los tipos nativos, la pila, el reloj máximo, la RAM y la ROM. Si el dispositivo viene solo del perfil de `pypic.toml` y el código no lo declara, se avisa (`PYP3018`).
 - **`CLOCK: Internal[4 * MHz]`** (o `Crystal[20 * MHz]`, `ExternalClock[20 * MHz]`): la forma recomendada de declarar el reloj, ver `docs/sdk-reloj.md`. Elige la fuente y la frecuencia, configura `FOSC` y `OSCCON` y se valida contra el reloj máximo del dispositivo. No ocupa RAM y no da el aviso de tipo emulado. Si el programa usa esperas (`pypic.system.time`, ver `docs/sdk-time.md`) y no declara el reloj, se usa el reloj por defecto del dispositivo con un aviso.
 - **`CLOCK_HZ: Const[uint32] = <hercios>`**: la forma manual, con ese nombre y forma exactos: solo declara la frecuencia (el oscilador lo configuras tú); se valida contra el reloj máximo. No se puede combinar con `CLOCK`.
 

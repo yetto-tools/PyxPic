@@ -3,6 +3,7 @@
 **Estado: implementado (segundo módulo de #45, solo el modo PWM de una salida).** `PWM1` es el módulo CCP1 (pin `RC2`/`P1A`/`CCP1`) y `PWM2` es CCP2 (pin `RC1`/`CCP2`) del PIC16F887 (DS40001291H, cap. 11, pp. 122-129). Captura, comparación y los modos de puente (medio puente, puente completo, dirección de pulso) **no** están: ver *Lo que no hay todavía*.
 
 ```python
+from pypic.device import PIC16F887
 from pypic.periph.pwm import PWM1, PWM2
 
 CLOCK: Internal[4 * MHz]

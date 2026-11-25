@@ -4,6 +4,7 @@ Timer0, Timer1 y Timer2 son **periféricos**: se importan como nombres, igual qu
 (`peripherals.json`). Importar uno que el dispositivo no trae es el error `PYP2120`. Todo se resuelve al compilar; el MCU ejecuta solo instrucciones nativas.
 
 ```python
+from pypic.device import PIC16F887
 from pypic.periph.timer import TMR0, TMR1, TMR2, INTERNAL, T1OSC
 ```
 

@@ -73,7 +73,7 @@ fn toml_str(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "/").replace('"', "\\\""))
 }
 
-const MAIN_TEMPLATE: &str = "\"\"\"@NAME@: parpadeo de RB0 cada 500 ms. El dispositivo y el reloj estan en pypic.toml (docs/proyecto.md).\"\"\"\nfrom pypic.periph.gpio import RB0\nfrom pypic.system.time import pause\n\n\ndef main() -> None:\n    RB0.output()\n    while True:\n        RB0.toggle()\n        pause(500)\n";
+const MAIN_TEMPLATE: &str = "\"\"\"@NAME@: parpadeo de RB0 cada 500 ms. El dispositivo se declara aqui, en el codigo; el reloj y la configuracion estan en pypic.toml (docs/proyecto.md).\"\"\"\nfrom pypic.device import @DEVICE@\nfrom pypic.periph.gpio import RB0\nfrom pypic.system.time import pause\n\n\ndef main() -> None:\n    RB0.output()\n    while True:\n        RB0.toggle()\n        pause(500)\n";
 
 /// `pypic init [carpeta] [--name N] [--device PIC16F887] [--clock "Internal[4 * MHz]"] [--devices-dir D]`
 pub fn init(args: &[String]) -> ExitCode {
@@ -119,7 +119,7 @@ pub fn init(args: &[String]) -> ExitCode {
         eprintln!("--clock \"{clock}\" no es valido para {device}");
         return ExitCode::from(1);
     }
-    let main_src = MAIN_TEMPLATE.replace("@NAME@", &name);
+    let main_src = MAIN_TEMPLATE.replace("@NAME@", &name).replace("@DEVICE@", &device);
     // el programa de partida debe ser valido para este dispositivo y este reloj antes de escribir nada
     let mut probe: TargetProfile = target.clone();
     probe.project_clock = pypic_frontend::parse_clock(&clock, &target).ok();

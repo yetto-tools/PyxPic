@@ -506,7 +506,23 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
         target.project_clock = Some(c.clone());
     }
 
-    let res = analyze(&src, &target);
+    let mut res = analyze(&src, &target);
+    // sin dispositivo el analisis es generico: no se sabe que pines, perifericos, registros ni limites tiene el PIC, y el mismo codigo puede
+    // compilar para otro PIC que no tenga lo que el programa espera. Que falte tiene que verse en la salida, no pasar como un `ok` mudo.
+    if device_name.is_none() {
+        res.diagnostics.warning(
+            "PYP3017",
+            pypic_frontend::Span::new(0, 0),
+            "no se declaro el dispositivo: el analisis es generico y NO comprueba que el PIC tenga los pines, perifericos, registros y limites que usa el programa; declaralo en la primera linea ('from pypic.device import PIC16F887') o en un perfil de pypic.toml",
+        );
+    } else if declared.is_none() {
+        // el perfil lo da, pero el codigo no dice para que PIC esta escrito: el mismo fuente puede compilar para otro PIC que no tenga lo que espera
+        res.diagnostics.warning(
+            "PYP3018",
+            pypic_frontend::Span::new(0, 0),
+            format!("el programa no declara su dispositivo: se usa {} del perfil de pypic.toml; ponlo en la primera linea ('from pypic.device import {}') para que el codigo diga que PIC espera y se compruebe contra el perfil", device_name.as_deref().unwrap_or("?"), device_name.as_deref().unwrap_or("PIC16F887")),
+        );
+    }
     if json {
         if cmd != "check" {
             eprintln!("--format json solo vale con check: build e ir imprimen texto");

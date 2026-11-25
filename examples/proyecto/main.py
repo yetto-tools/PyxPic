@@ -1,8 +1,9 @@
-"""Parpadeo de RD0 cada 500 ms. El dispositivo, el reloj y la configuracion no estan aqui: salen del perfil de pypic.toml.
+"""Parpadeo de RD0 cada 500 ms. El dispositivo se declara aqui, en el codigo; el reloj y la configuracion salen del perfil de pypic.toml.
 
 Con `pypic build` (perfil 'interna') sale un .hex para el oscilador interno de 4 MHz; con `pypic build --target cristal`, el mismo
-programa para un cristal de 20 MHz. Si este archivo declarara su propio dispositivo o reloj, mandaria el programa sobre el perfil.
+programa para un cristal de 20 MHz. Si un perfil pidiera otro dispositivo, `pypic` lo rechaza: el codigo dice para que PIC esta escrito.
 """
+from pypic.device import PIC16F887
 from pypic.periph.gpio import RD0
 from pypic.system.time import pause
 
