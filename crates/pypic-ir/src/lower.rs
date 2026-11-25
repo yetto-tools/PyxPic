@@ -256,6 +256,13 @@ impl<'a> FnLower<'a> {
                 };
                 self.emit(Inst::Uart { call, dst, arg });
             }
+            ExprKind::MethodCall { .. } if self.prog.comp_calls.contains_key(&e.id) => {
+                let call = self.prog.comp_calls[&e.id];
+                // leer sin usar el resultado no tiene efecto: no se emite
+                if !call.returns_value() || dst.is_some() {
+                    self.emit(Inst::Comp { call, dst: if call.returns_value() { dst } else { None } });
+                }
+            }
             ExprKind::MethodCall { args, .. } if self.prog.eeprom_calls.contains_key(&e.id) => {
                 let call = self.prog.eeprom_calls[&e.id];
                 use pypic_frontend::EepromOp as E;

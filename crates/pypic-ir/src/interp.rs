@@ -40,6 +40,12 @@ pub struct Machine<'m> {
     pub adc_inputs: [i128; 16],
     adc_channel: u8,
     adc_result: i128,
+    /// Los comparadores de referencia: encendido, entrada inversora (`CxCH`), referencia no inversora y polaridad de cada uno. Las
+    /// entradas son las mismas cuentas de 10 bits que `adc_inputs` (`C12IN0-` = AN0, `C12IN1-` = AN1, `C12IN2-` = AN9, `C12IN3-` = AN10,
+    /// `C1IN+` = AN3 y `C2IN+` = AN2); CVREF y la referencia fija salen de las ecuaciones del datasheet con `SIM_VDD_VOLTS`. El nivel se
+    /// calcula en cada `out()`: no se modela el tiempo de respuesta.
+    comparators: [(bool, u8, CmpRef, bool); 2],
+    cvref: Option<(u8, bool)>,
     /// La UART de referencia: lo que el programa envio y lo que se le va a dar a leer (la prueba lo carga con `uart_input`).
     pub uart_tx: Vec<u8>,
     pub uart_rx: std::collections::VecDeque<u8>,
@@ -81,6 +87,8 @@ impl<'m> Machine<'m> {
             adc_inputs: [0; 16],
             adc_channel: 0,
             adc_result: 0,
+            comparators: [(false, 0, CmpRef::Pin, false); 2],
+            cvref: None,
             uart_tx: Vec::new(),
             uart_rx: Default::default(),
             uart_tx9: Vec::new(),
@@ -285,6 +293,31 @@ impl<'m> Machine<'m> {
                     self.adc_result = self.adc_inputs[n as usize];
                     self.write(f, fr, dst.unwrap(), self.adc_result);
                 }
+            },
+            Inst::Comp { call, dst } => match call {
+                CompCall::Cmp(id, op) => {
+                    let i = id.n() as usize - 1;
+                    match op {
+                        CompOp::Start { neg, pos, invert } => self.comparators[i] = (true, *neg, *pos, *invert),
+                        CompOp::Stop => self.comparators[i].0 = false,
+                        CompOp::Out => {
+                            let (on, neg, pos, invert) = self.comparators[i];
+                            let n = self.adc_inputs[pypic_frontend::comparator::NEG_INPUTS[neg as usize].1 as usize] as f64;
+                            let p = match pos {
+                                CmpRef::Pin => self.adc_inputs[id.pos_pin_an() as usize] as f64,
+                                CmpRef::Cvref => self.cvref.map_or(0.0, |(s, low)| pypic_frontend::comparator::cvref_counts(s, low)),
+                                CmpRef::Fixed => pypic_frontend::comparator::FIXED_REF_VOLTS / pypic_frontend::comparator::SIM_VDD_VOLTS * 1023.0,
+                            };
+                            let v = pypic_frontend::comparator::output(on, invert, p, n);
+                            self.write(f, fr, dst.unwrap(), v as i128);
+                        }
+                    }
+                }
+                CompCall::Cvref(op) => match op {
+                    CvrefOp::Start { step, low_range } => self.cvref = Some((*step, *low_range)),
+                    CvrefOp::Set(step) => self.cvref = self.cvref.map(|(_, low)| (*step, low)),
+                    CvrefOp::Stop => self.cvref = None,
+                },
             },
             Inst::ArrGet { dst, arr, index } => {
                 let i = self.array_index(*arr, self.read(fr, index));

@@ -10,6 +10,7 @@
 //!  * Sin recursion: la memoria es estatica y la pila de hardware es limitada.
 
 use crate::adc::{self, AdcCall, AdcOp};
+use crate::comparator::{self, CmpId, CmpRef, CompCall, CompOp, CvrefOp};
 use crate::eeprom::{EepromCall, EepromOp};
 use crate::pwm::{self, PwmCall, PwmId, PwmOp, PwmTiming};
 use crate::uart::{self, FmtPart, UartCall, UartOp, UartStart};
@@ -165,6 +166,8 @@ pub struct Program {
     pub pwm_calls: BTreeMap<u32, PwmCall>,
     /// Llamadas a metodos de `pypic.periph.eeprom`, por id de expresion.
     pub eeprom_calls: BTreeMap<u32, EepromCall>,
+    /// Llamadas a metodos de `pypic.periph.comparator` y `pypic.periph.vref`, por id de expresion.
+    pub comp_calls: BTreeMap<u32, CompCall>,
     /// Llamadas a metodos de `pypic.periph.uart`, por id de expresion.
     pub uart_calls: BTreeMap<u32, UartCall>,
     /// Las partes de cada `UART.write_text(f"...")`, por id de expresion.
@@ -197,6 +200,7 @@ pub struct Checked {
     pub pwm_calls: BTreeMap<u32, PwmCall>,
     /// Llamadas a metodos de `pypic.periph.eeprom`, por id de expresion.
     pub eeprom_calls: BTreeMap<u32, EepromCall>,
+    pub comp_calls: BTreeMap<u32, CompCall>,
     pub uart_calls: BTreeMap<u32, UartCall>,
     pub uart_fmt: BTreeMap<u32, Vec<FmtPart>>,
 }
@@ -248,6 +252,12 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         pwm_names: HashSet::new(),
         eeprom_name: false,
         eeprom_calls: BTreeMap::new(),
+        comp_names: HashSet::new(),
+        comp_consts: HashSet::new(),
+        cvref_name: false,
+        comp_calls: BTreeMap::new(),
+        cvref_started: false,
+        cvref_needed: None,
         pwm_calls: BTreeMap::new(),
         pwm_pending: Vec::new(),
         pwm_uses: Vec::new(),
@@ -274,7 +284,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         stmt_top: None,
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, clock_source: c.clock_source, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, arrays: c.arrays, array_inits: c.array_inits, array_gets: c.array_gets, text_calls: c.text_calls, adc_calls: c.adc_calls, adc_config: c.adc_config, pwm_calls: c.pwm_calls, eeprom_calls: c.eeprom_calls, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, clock_source: c.clock_source, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, arrays: c.arrays, array_inits: c.array_inits, array_gets: c.array_gets, text_calls: c.text_calls, adc_calls: c.adc_calls, adc_config: c.adc_config, pwm_calls: c.pwm_calls, eeprom_calls: c.eeprom_calls, comp_calls: c.comp_calls, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -360,6 +370,13 @@ struct Checker<'a> {
     /// EEPROM de datos: importada y sus llamadas.
     eeprom_name: bool,
     eeprom_calls: BTreeMap<u32, EepromCall>,
+    /// Comparadores (`CMP1`, `CMP2`), sus constantes (`C12IN0`.., `REF_PIN`..), CVREF, las llamadas y si algun comparador pide CVREF.
+    comp_names: HashSet<String>,
+    comp_consts: HashSet<String>,
+    cvref_name: bool,
+    comp_calls: BTreeMap<u32, CompCall>,
+    cvref_started: bool,
+    cvref_needed: Option<Span>,
     pwm_calls: BTreeMap<u32, PwmCall>,
     pwm_pending: Vec<PwmStart>,
     pwm_uses: Vec<PwmUse>,
@@ -509,6 +526,7 @@ impl<'a> Checker<'a> {
         self.check_timer_usage();
         self.check_pin_claims();
         self.check_adc_usage();
+        self.check_comparator_usage();
         self.check_pwm_usage();
         self.check_uart_usage();
         self.check_time_usage();
@@ -650,6 +668,46 @@ impl<'a> Checker<'a> {
                 } else {
                     let all: Vec<String> = std::iter::once("ADC".to_string()).chain((0..adc::CHANNELS).map(|c| format!("AN{c}"))).chain(adc::CLOCKS.iter().map(|(c, _)| c.to_string())).collect();
                     self.d.error("PYP2170", n.span, format!("'pypic.periph.adc' no exporta '{}' (exporta: {})", n.name, all.join(", ")));
+                }
+            }
+            return;
+        }
+        if module == "pypic.periph.comparator" {
+            for n in names {
+                let has = |this: &Self, p: &str| this.target.peripherals.as_ref().is_none_or(|set| set.contains(p));
+                if CmpId::from_name(&n.name).is_some() {
+                    if !has(self, "COMPARATORS") {
+                        self.d.error("PYP2214", n.span, format!("'{}' no tiene comparadores: el dispositivo no trae el modulo COMPARATORS", self.target.name));
+                        continue;
+                    }
+                    self.comp_names.insert(n.name.clone());
+                } else if let Some(&(_, an)) = comparator::NEG_INPUTS.iter().find(|(c, _)| *c == n.name) {
+                    if self.target.pin_claims.as_ref().is_some_and(|c| !c.contains_key(&format!("ANS{an}"))) {
+                        self.d.error("PYP2214", n.span, format!("'{}' no tiene la entrada {}: ningun pin del dispositivo es AN{an}", self.target.name, n.name));
+                        continue;
+                    }
+                    self.comp_consts.insert(n.name.clone());
+                } else if comparator::REFS.iter().any(|(c, _)| *c == n.name) {
+                    self.comp_consts.insert(n.name.clone());
+                } else {
+                    let all: Vec<String> = ["CMP1", "CMP2"].iter().map(|s| s.to_string()).chain(comparator::NEG_INPUTS.iter().map(|(c, _)| c.to_string())).chain(comparator::REFS.iter().map(|(c, _)| c.to_string())).collect();
+                    self.d.error("PYP2214", n.span, format!("'pypic.periph.comparator' no exporta '{}' (exporta: {})", n.name, all.join(", ")));
+                }
+            }
+            return;
+        }
+        if module == "pypic.periph.vref" {
+            for n in names {
+                if n.name == "CVREF" {
+                    if let Some(set) = &self.target.peripherals {
+                        if !set.contains("VREF") {
+                            self.d.error("PYP2220", n.span, format!("'{}' no tiene CVREF: el dispositivo no trae el modulo VREF", self.target.name));
+                            continue;
+                        }
+                    }
+                    self.cvref_name = true;
+                } else {
+                    self.d.error("PYP2220", n.span, format!("'pypic.periph.vref' no exporta '{}' (exporta: CVREF)", n.name));
                 }
             }
             return;
@@ -1919,6 +1977,188 @@ impl<'a> Checker<'a> {
         }
     }
 
+    // ------------------------------------------------------ comparadores (pypic.periph.comparator) y CVREF (pypic.periph.vref)
+    fn cmp_method(&mut self, e: &Expr, id: CmpId, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
+        let name = id.name();
+        let void = |this: &mut Self| this.set(e, Type::Void, None);
+        match method {
+            "start" => {
+                if !args.is_empty() {
+                    self.d.error("PYP2215", args[0].span, format!("{name}.start se escribe con argumentos con nombre: {name}.start(negative=C12IN0, positive=REF_PIN, invert=False)"));
+                    for a in args {
+                        self.expr(a);
+                    }
+                }
+                let (mut neg, mut pos, mut invert) = (None, None, false);
+                for k in kwargs {
+                    match (k.name.as_str(), &k.value.kind) {
+                        ("negative", ExprKind::Name(n)) if self.comp_consts.contains(n) && comparator::NEG_INPUTS.iter().any(|(c, _)| c == n) => {
+                            let ch = comparator::NEG_INPUTS.iter().position(|(c, _)| c == n).unwrap();
+                            neg = Some(ch as u8);
+                            self.set(&k.value, Type::Literal, None);
+                            self.note_claims(&format!("ANS{}", comparator::NEG_INPUTS[ch].1), k.value.span);
+                        }
+                        ("negative", _) => {
+                            self.expr(&k.value);
+                            self.d.error("PYP2215", k.value.span, format!("{name}.start: negative es la entrada inversora, C12IN0, C12IN1, C12IN2 o C12IN3 (importadas de pypic.periph.comparator)"));
+                        }
+                        ("positive", ExprKind::Name(n)) if self.comp_consts.contains(n) && comparator::REFS.iter().any(|(c, _)| c == n) => {
+                            pos = comparator::REFS.iter().find(|(c, _)| c == n).map(|(_, r)| *r);
+                            self.set(&k.value, Type::Literal, None);
+                            match pos {
+                                Some(CmpRef::Pin) => self.note_claims(&format!("ANS{}", id.pos_pin_an()), k.value.span),
+                                Some(CmpRef::Cvref) => {
+                                    self.cvref_needed.get_or_insert(k.value.span);
+                                }
+                                _ => {}
+                            }
+                        }
+                        ("positive", _) => {
+                            self.expr(&k.value);
+                            self.d.error("PYP2215", k.value.span, format!("{name}.start: positive es REF_PIN (el pin C{}IN+), REF_CVREF o REF_FIXED (0,6 V), importadas de pypic.periph.comparator", id.n()));
+                        }
+                        ("invert", _) => {
+                            self.expr(&k.value);
+                            match (self.konst(&k.value), self.ty(&k.value)) {
+                                (Some(v), Type::Bool) => invert = v != 0,
+                                _ => self.d.error("PYP2215", k.value.span, format!("{name}.start: invert es True o False (CxPOL: invierte el nivel de salida)")),
+                            }
+                        }
+                        _ => {
+                            self.expr(&k.value);
+                            self.d.error("PYP2215", k.name_span, format!("{name}.start no tiene el argumento '{}' (admite: negative, positive, invert)", k.name));
+                        }
+                    }
+                }
+                if let (Some(neg), Some(pos)) = (neg, pos) {
+                    self.comp_calls.insert(e.id, CompCall::Cmp(id, CompOp::Start { neg, pos, invert }));
+                }
+                // un argumento ausente (uno mal escrito ya dio su propio error)
+                for want in ["negative", "positive"] {
+                    if kwargs.iter().all(|k| k.name != want) {
+                        self.d.error("PYP2215", e.span, format!("{name}.start necesita {want}=: {name}.start(negative=C12IN0, positive=REF_PIN)"));
+                    }
+                }
+                void(self)
+            }
+            "stop" | "out" => {
+                if let Some(k) = kwargs.first() {
+                    self.d.error("PYP2215", k.name_span, format!("{name}.{method} no acepta argumentos con nombre"));
+                }
+                if !args.is_empty() {
+                    self.d.error("PYP2055", e.span, format!("'{name}.{method}' no recibe argumentos"));
+                    for a in args {
+                        self.expr(a);
+                    }
+                }
+                let op = if method == "stop" { CompOp::Stop } else { CompOp::Out };
+                self.comp_calls.insert(e.id, CompCall::Cmp(id, op));
+                if op == CompOp::Out { self.set(e, Type::Bool, None) } else { void(self) }
+            }
+            other => {
+                self.d.error("PYP2216", e.span, format!("{name} no tiene el metodo '{other}' (disponibles: start, stop, out)"));
+                for a in args {
+                    self.expr(a);
+                }
+                self.set(e, Type::Error, None)
+            }
+        }
+    }
+
+    /// Un paso de CVREF: constante de 0 a 15.
+    fn cvref_step(&mut self, a: &Expr, what: &str) -> Option<u8> {
+        self.expr(a);
+        match (self.konst(a), self.ty(a)) {
+            (Some(v), t) if t != Type::Bool && (0..comparator::CVREF_STEPS as i128).contains(&v) => Some(v as u8),
+            _ => {
+                self.d.error("PYP2221", a.span, format!("{what} es una constante de 0 a 15 (VR<3:0>): se escribe en el registro al compilar"));
+                None
+            }
+        }
+    }
+
+    fn cvref_method(&mut self, e: &Expr, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
+        let void = |this: &mut Self| this.set(e, Type::Void, None);
+        match method {
+            "start" => {
+                if !args.is_empty() {
+                    self.d.error("PYP2221", args[0].span, "CVREF.start se escribe con argumentos con nombre: CVREF.start(step=8, low_range=False)");
+                    for a in args {
+                        self.expr(a);
+                    }
+                }
+                let (mut step, mut low) = (None, false);
+                for k in kwargs {
+                    match k.name.as_str() {
+                        "step" => step = self.cvref_step(&k.value, "CVREF.start: step"),
+                        "low_range" => {
+                            self.expr(&k.value);
+                            match (self.konst(&k.value), self.ty(&k.value)) {
+                                (Some(v), Type::Bool) => low = v != 0,
+                                _ => self.d.error("PYP2221", k.value.span, "CVREF.start: low_range es True (rango bajo, 0 a 15/24 de VDD) o False (rango alto, 1/4 a 23/32 de VDD)"),
+                            }
+                        }
+                        _ => {
+                            self.expr(&k.value);
+                            self.d.error("PYP2221", k.name_span, format!("CVREF.start no tiene el argumento '{}' (admite: step, low_range)", k.name));
+                        }
+                    }
+                }
+                self.cvref_started = true;
+                match step {
+                    Some(step) => {
+                        self.comp_calls.insert(e.id, CompCall::Cvref(CvrefOp::Start { step, low_range: low }));
+                    }
+                    None if kwargs.iter().all(|k| k.name != "step") => self.d.error("PYP2221", e.span, "CVREF.start necesita step=: CVREF.start(step=8)"),
+                    None => {}
+                }
+                void(self)
+            }
+            "set" => {
+                if let Some(k) = kwargs.first() {
+                    self.d.error("PYP2221", k.name_span, "CVREF.set no acepta argumentos con nombre: CVREF.set(8)");
+                }
+                if args.len() != 1 {
+                    self.d.error("PYP2055", e.span, "'CVREF.set' recibe un paso (0 a 15)");
+                    for a in args {
+                        self.expr(a);
+                    }
+                    return void(self);
+                }
+                if let Some(step) = self.cvref_step(&args[0], "CVREF.set recibe el paso, que") {
+                    self.comp_calls.insert(e.id, CompCall::Cvref(CvrefOp::Set(step)));
+                }
+                void(self)
+            }
+            "stop" => {
+                if !args.is_empty() || !kwargs.is_empty() {
+                    self.d.error("PYP2055", e.span, "'CVREF.stop' no recibe argumentos");
+                    for a in args {
+                        self.expr(a);
+                    }
+                }
+                self.comp_calls.insert(e.id, CompCall::Cvref(CvrefOp::Stop));
+                void(self)
+            }
+            other => {
+                self.d.error("PYP2222", e.span, format!("CVREF no tiene el metodo '{other}' (disponibles: start, set, stop)"));
+                for a in args {
+                    self.expr(a);
+                }
+                self.set(e, Type::Error, None)
+            }
+        }
+    }
+
+    /// Un comparador que pide `REF_CVREF` sin ninguna llamada a `CVREF.start()` en el programa (se comprueba que exista, no el orden).
+    fn check_comparator_usage(&mut self) {
+        if let Some(sp) = self.cvref_needed.take() {
+            if !self.cvref_started {
+                self.d.error("PYP2218", sp, "el comparador usa REF_CVREF pero nunca se llama a CVREF.start(): inicia la referencia con CVREF.start(step=...) (de 'from pypic.periph.vref import CVREF')");
+            }
+        }
+    }
+
     // ------------------------------------------------------ EEPROM de datos (pypic.periph.eeprom)
     fn eeprom_method(&mut self, e: &Expr, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
         if let Some(k) = kwargs.first() {
@@ -2126,6 +2366,12 @@ impl<'a> Checker<'a> {
         }
         if obj == "EEPROM" && self.eeprom_name {
             return self.eeprom_method(e, method, args, kwargs);
+        }
+        if let Some(id) = CmpId::from_name(obj).filter(|_| self.comp_names.contains(obj)) {
+            return self.cmp_method(e, id, method, args, kwargs);
+        }
+        if obj == "CVREF" && self.cvref_name {
+            return self.cvref_method(e, method, args, kwargs);
         }
         if let Some(id) = PwmId::from_name(obj).filter(|_| self.pwm_names.contains(obj)) {
             return self.pwm_method(e, id, method, args, kwargs);
@@ -3154,6 +3400,12 @@ impl<'a> Checker<'a> {
             self.d.error("PYP2175", e.span, format!("'{n}' es una constante del ADC: solo se usa como argumento de ADC.select/read o ADC.start(clock=...)"));
         } else if self.eeprom_name && n == "EEPROM" {
             self.d.error("PYP2213", e.span, "'EEPROM' es la memoria de datos: usa sus metodos (EEPROM.read(a), EEPROM.write(a, v), EEPROM.busy()...)");
+        } else if self.comp_names.contains(n) {
+            self.d.error("PYP2217", e.span, format!("'{n}' es un comparador: usa sus metodos ({n}.start(negative=C12IN0, positive=REF_PIN), {n}.out(), {n}.stop())"));
+        } else if self.comp_consts.contains(n) {
+            self.d.error("PYP2217", e.span, format!("'{n}' es una constante de los comparadores: solo se usa como argumento de CMPx.start(negative=..., positive=...)"));
+        } else if self.cvref_name && n == "CVREF" {
+            self.d.error("PYP2223", e.span, "'CVREF' es la referencia de tension: usa sus metodos (CVREF.start(step=8), CVREF.set(n), CVREF.stop())");
         } else if self.pwm_names.contains(n) {
             self.d.error("PYP2205", e.span, format!("'{n}' es un modulo PWM: usa sus metodos ({n}.start(frequency=1000), {n}.duty(v), {n}.stop())"));
         } else if self.array_idx.contains_key(n) {
@@ -3648,7 +3900,7 @@ const PERIPH_MODULES: &[&str] = &["gpio", "adc", "timer", "pwm", "ccp", "eccp", 
 const SYSTEM_MODULES: &[&str] = &["time", "irq", "wdt", "clock", "power", "flash"];
 /// `pypic.soft.*`: implementaciones por software sobre cualquier GPIO (cuestan ciclos de CPU).
 const SOFT_MODULES: &[&str] = &["spi", "i2c", "uart", "onewire"];
-const IMPLEMENTED_MODULES: &[&str] = &["pypic.periph.uart", "pypic.periph.adc", "pypic.periph.pwm", "pypic.periph.eeprom", "pypic.periph.gpio", "pypic.periph.timer", "pypic.regs", "pypic.bits", "pypic.system.time"];
+const IMPLEMENTED_MODULES: &[&str] = &["pypic.periph.uart", "pypic.periph.adc", "pypic.periph.pwm", "pypic.periph.eeprom", "pypic.periph.comparator", "pypic.periph.vref", "pypic.periph.gpio", "pypic.periph.timer", "pypic.regs", "pypic.bits", "pypic.system.time"];
 
 /// Problema con la ruta de un modulo `pypic.*` (renombrado, categoria sin modulo, inexistente o aun no implementado).
 /// `None` si es un modulo implementado o no es del arbol de categorias.

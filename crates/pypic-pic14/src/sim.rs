@@ -95,6 +95,10 @@ pub struct Sim {
     uart_prev_cren: bool,
     /// Ciclo en que el oscilador interno queda estable tras escribir OSCCON (0 si no hay cambio pendiente).
     osc_ready_at: u64,
+    /// Los comparadores: el nivel de `C1OUT` y `C2OUT` en el ciclo anterior (un cambio sube `C1IF`/`C2IF`). Las entradas son las cuentas de
+    /// `adc_inputs` (0 a 1023 = VSS a VDD) y la referencia fija de 0,6 V se convierte con `SIM_VDD_VOLTS`; el tiempo de respuesta (CM04) no se
+    /// modela: el nivel se recalcula cada ciclo de instruccion.
+    cmp_prev: [bool; 2],
     adc_prev_go: bool,
     adc_prev_on: bool,
     adc_prev_chs: u8,
@@ -110,7 +114,7 @@ impl Sim {
                 flash[a as usize] = w;
             }
         }
-        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None, t0_pre: 0, t0_inhibit: 0, t1_pre: 0, t2_pre: 0, t2_post: 0, timer_events: Vec::new(), adc_inputs: [0; 16], fosc_hz: 4_000_000, adc_violations: Vec::new(), adc_tacq_ns: 11_500.0, adc_low_voltage: false, uart_tx: Vec::new(), uart_tx9: Vec::new(), uart_txreg9: false, uart_violations: Vec::new(), uart_rx_pending: Default::default(), uart_fifo: Default::default(), uart_txreg: None, uart_tsr_left: 0, uart_prev_cren: false, osc_ready_at: 0, adc_prev_go: false, adc_prev_on: false, adc_prev_chs: 0, adc_acq_from: 0, adc_remaining: 0, pwm_latch: [0; 2], pwm_events: Vec::new(), eeprom: [0xFF; 256], eeprom_write_ns: 6_000_000.0, eeprom_violations: Vec::new(), ee_stage: 0, ee_done_at: None, ee_pending: (0, 0) };
+        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None, t0_pre: 0, t0_inhibit: 0, t1_pre: 0, t2_pre: 0, t2_post: 0, timer_events: Vec::new(), adc_inputs: [0; 16], fosc_hz: 4_000_000, adc_violations: Vec::new(), adc_tacq_ns: 11_500.0, adc_low_voltage: false, uart_tx: Vec::new(), uart_tx9: Vec::new(), uart_txreg9: false, uart_violations: Vec::new(), uart_rx_pending: Default::default(), uart_fifo: Default::default(), uart_txreg: None, uart_tsr_left: 0, uart_prev_cren: false, osc_ready_at: 0, adc_prev_go: false, adc_prev_on: false, adc_prev_chs: 0, adc_acq_from: 0, adc_remaining: 0, cmp_prev: [false; 2], pwm_latch: [0; 2], pwm_events: Vec::new(), eeprom: [0xFF; 256], eeprom_write_ns: 6_000_000.0, eeprom_violations: Vec::new(), ee_stage: 0, ee_done_at: None, ee_pending: (0, 0) };
         s.reset();
         s
     }
@@ -128,6 +132,7 @@ impl Sim {
         (self.t0_pre, self.t0_inhibit, self.t1_pre, self.t2_pre, self.t2_post) = (0, 0, 0, 0, 0);
         (self.adc_prev_go, self.adc_prev_on, self.adc_prev_chs, self.adc_remaining) = (false, false, 0, 0);
         self.pwm_latch = [0; 2];
+        self.cmp_prev = [false; 2];
         // un reinicio en medio de una escritura la interrumpe: WRERR = 1 (10.1.1); el contenido de la EEPROM no cambia
         self.ee_stage = 0;
         if self.ee_done_at.take().is_some() {
@@ -480,6 +485,7 @@ impl Sim {
             self.ram[0x8F] |= if (self.ram[0x8F] >> 4) & 7 == 0 { 0x02 } else { 0x04 };
         }
         self.tick_adc(now);
+        self.tick_comparators();
         self.tick_eeprom(now);
         self.tick_uart(now);
         let (option, intcon) = (self.ram[0x81], 0x0B);
@@ -544,6 +550,30 @@ impl Sim {
     }
 
     /// CCPxCON (modo PWM: CCPxM<3:2> = 11): al empezar el periodo (TMR2 == PR2) `CCPRxL:DCxB` pasa al registro esclavo.
+    /// Comparadores C1 y C2 (DS40001291H 8.2 a 8.4, pp.86-92): el nivel de `CxOUT` (con `CxPOL`) en `CMxCON0`, su copia en `MCxOUT` de
+    /// `CM2CON1` y `CxIF` (`PIR2`) en cada cambio. CVREF sale de `VRCON` (ecuacion 8-1, con `VRSS` = 0) y la referencia fija de `FVREN`.
+    fn tick_comparators(&mut self) {
+        use pypic_frontend::comparator as c;
+        let (vrcon, srcon, cm2con1) = (self.ram[0x97], self.ram[0x185], self.ram[0x109]);
+        let cvref = if vrcon & 0x80 != 0 || cm2con1 & 0x30 != 0 { c::cvref_counts(vrcon & 0xF, vrcon & 0x20 != 0) } else { 0.0 };
+        let fixed = if srcon & 1 != 0 { c::FIXED_REF_VOLTS / c::SIM_VDD_VOLTS * 1023.0 } else { 0.0 };
+        for i in 0..2 {
+            let con0 = self.ram[0x107 + i];
+            let (on, pol, r, ch) = (con0 & 0x80 != 0, con0 & 0x10 != 0, con0 & 0x04 != 0, (con0 & 3) as usize);
+            let rsel = cm2con1 & (0x20 >> i) != 0;
+            let pos_pin_an = if i == 0 { 3 } else { 2 };
+            let pos = if !r { self.adc_inputs[pos_pin_an] as f64 } else if rsel { cvref } else { fixed };
+            let neg = self.adc_inputs[c::NEG_INPUTS[ch].1 as usize] as f64;
+            let out = c::output(on, pol, pos, neg);
+            self.ram[0x107 + i] = (con0 & !0x40) | if out { 0x40 } else { 0 };
+            self.ram[0x109] = (self.ram[0x109] & !(0x80 >> i)) | if out { 0x80 >> i } else { 0 };
+            if out != self.cmp_prev[i] {
+                self.cmp_prev[i] = out;
+                self.ram[0x0D] |= 0x20 << i; // C1IF (PIR2<5>) y C2IF (PIR2<6>)
+            }
+        }
+    }
+
     fn pwm_period_start(&mut self, now: u64) {
         for (i, (con, rl)) in [(0x17usize, 0x15usize), (0x1D, 0x1B)].into_iter().enumerate() {
             if self.ram[con] & 0x0C == 0x0C {

@@ -92,7 +92,7 @@ fn operands_mut(inst: &mut Inst) -> Vec<&mut Operand> {
         Inst::Bits { src, .. } => src.iter_mut().collect(),
         Inst::RomGet { index, .. } | Inst::ArrGet { index, .. } => vec![index],
         Inst::ArrSet { index, value, .. } => vec![index, value],
-        Inst::PinCfg { .. } | Inst::PinToggle { .. } | Inst::PinGet { .. } | Inst::Adc { .. } => {
+        Inst::PinCfg { .. } | Inst::PinToggle { .. } | Inst::PinGet { .. } | Inst::Adc { .. } | Inst::Comp { .. } => {
             vec![]
         }
     }
@@ -114,6 +114,7 @@ fn dsts_mut(inst: &mut Inst) -> Vec<&mut Place> {
         | Inst::Reg { dst, .. }
         | Inst::Bits { dst, .. }
         | Inst::Adc { dst, .. }
+        | Inst::Comp { dst, .. }
         | Inst::Eeprom { dst, .. }
         | Inst::Uart { dst, .. } => dst.iter_mut().collect(),
         Inst::PinCfg { .. }

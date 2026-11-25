@@ -13,7 +13,7 @@ from pypic.system.time import pause           # sistema: CPU, reloj y energía
 
 | Categoría | Qué es | Módulos |
 |---|---|---|
-| `pypic.periph.*` | **Hardware integrado del chip**; solo existe si el dispositivo lo tiene (lo valida el Device Pack) | `gpio` ✅, `timer` ✅ (`docs/sdk-timer.md`), `adc` ✅ (`docs/sdk-adc.md`), `uart` ✅ (`docs/sdk-uart.md`), `pwm` ✅ (`docs/sdk-pwm.md`, solo la salida PWM de CCP1/CCP2), `eeprom` ✅ (`docs/sdk-eeprom.md`, solo la EEPROM de datos), `ccp`, `eccp`, `spi`, `i2c`, `comparator`, `vref`, `latch` |
+| `pypic.periph.*` | **Hardware integrado del chip**; solo existe si el dispositivo lo tiene (lo valida el Device Pack) | `gpio` ✅, `timer` ✅ (`docs/sdk-timer.md`), `adc` ✅ (`docs/sdk-adc.md`), `uart` ✅ (`docs/sdk-uart.md`), `pwm` ✅ (`docs/sdk-pwm.md`, solo la salida PWM de CCP1/CCP2), `eeprom` ✅ (`docs/sdk-eeprom.md`, solo la EEPROM de datos), `comparator` ✅ y `vref` ✅ (`docs/sdk-comparador.md`, sin salida a pin, Timer1 ni pestillo SR), `ccp`, `eccp`, `spi`, `i2c`, `latch` |
 | `pypic.regs` | **Registros del núcleo y de los periféricos por nombre** (`STATUS.Z.set()`, `OPTION_REG.write(v)`), validados con `registers.json` | ✅ `docs/sdk-regs.md` |
 | `pypic.bits` | **Rotaciones, SWAPF, bits y acarreo**: intrínsecos 1:1 a instrucción (`rol_c`, `swap`, `bit_set`...) | ✅ `docs/sdk-bits.md` |
 | `pypic.system.*` | **CPU, reloj y energía** | `time` ✅ (`pause`, `wait`, `delay_us`, `delay_cycles`; `nap`/`sleep` reservadas), `irq`, `wdt`, `clock`, `power`, `flash` |

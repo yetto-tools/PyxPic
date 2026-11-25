@@ -151,6 +151,12 @@ fn verify_fn(m: &Module, f: &Function, errs: &mut Vec<String>) {
                         e(format!("{}: Adc {:?} mal formado", at(i), call.op));
                     }
                 }
+                Inst::Comp { call, dst } => {
+                    let bad = if call.returns_value() { !dst.is_some_and(|d| valid(d) && m.place_ty(f, d) == Type::Bool) } else { dst.is_some() };
+                    if bad {
+                        e(format!("{}: Comp {:?} mal formado", at(i), call));
+                    }
+                }
                 Inst::ArrGet { dst, arr, index } => {
                     let u8_ty = Type::Int { bits: 8, signed: false };
                     if *arr >= m.arrays.len() || !valid(*dst) || m.place_ty(f, *dst) != u8_ty || ty(index) != u8_ty {

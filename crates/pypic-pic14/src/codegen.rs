@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
-use pypic_ir::ir::{EepromCall, EepromOp, PwmCall, PwmOp, AdcCall, AdcOp, BitsOp, UartCall, UartOp, BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, RegCall, RegOp, Terminator, TimerCall, TimerId, TimerOp, TimerStart, Type, UnaryOp};
+use pypic_ir::ir::{CmpRef, CompCall, CompOp, CvrefOp, EepromCall, EepromOp, PwmCall, PwmOp, AdcCall, AdcOp, BitsOp, UartCall, UartOp, BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, RegCall, RegOp, Terminator, TimerCall, TimerId, TimerOp, TimerStart, Type, UnaryOp};
 use pypic_frontend::timer::{GateSource, TimerSource};
 
 use crate::asm::{assemble_fragment, AsmError, FragItem};
@@ -324,7 +324,7 @@ fn allocate(m: &Module, live: &[usize], isr_ctx: &HashSet<usize>, opts: &Options
         temps.insert(fi, f.temps.iter().map(|&t| size(t).map(&mut take)).collect::<Result<Vec<_>, _>>()?);
     }
     // ADC.read espera la adquisicion con la misma espera exacta que `delay_cycles`
-    let uses_delay = live.iter().any(|&fi| m.functions[fi].blocks.iter().any(|b| b.insts.iter().any(|i| matches!(i, pypic_ir::ir::Inst::Delay { .. } | pypic_ir::ir::Inst::Adc { call: AdcCall { op: AdcOp::Read(_) }, .. }))));
+    let uses_delay = live.iter().any(|&fi| m.functions[fi].blocks.iter().any(|b| b.insts.iter().any(|i| matches!(i, pypic_ir::ir::Inst::Delay { .. } | pypic_ir::ir::Inst::Adc { call: AdcCall { op: AdcOp::Read(_) }, .. } | pypic_ir::ir::Inst::Comp { call: CompCall::Cmp(_, CompOp::Start { .. }) | CompCall::Cvref(CvrefOp::Start { .. } | CvrefOp::Set(_)), .. }))));
     let delay_ws = if uses_delay { take(5) } else { 0 };
     // cada contexto que use una rutina de runtime (`*`, `//`, `%`) tiene su propio bloque de 9 bytes
     let uses_rt = |isr: bool| {
@@ -954,6 +954,7 @@ impl<'a> Gen<'a> {
             I::Reg { call, dst, arg } => self.reg(call, *dst, arg.as_ref()),
             I::Bits { op, dst, src } => self.bits(*op, *dst, src.as_ref()),
             I::Adc { call, dst } => self.adc(call, *dst),
+            I::Comp { call, dst } => self.comp(call, *dst),
             I::Pwm { call, hi, dc } => self.pwm(call, hi.as_ref(), dc.as_ref()),
             I::Eeprom { call, dst, addr, val } => self.eeprom(call, *dst, addr.as_ref(), val.as_ref()),
             I::Uart { call, dst, arg } => self.uart(call, *dst, arg.as_ref()),
@@ -1772,12 +1773,16 @@ impl<'a> Gen<'a> {
     }
 
     // ---- ADC (pypic.periph.adc, docs/sdk-adc.md): los registros y bits salen del Device Pack por nombre ----
-    fn adc_select(&mut self, n: u8) -> Result<(), CodegenError> {
-        // el pin del canal como entrada analogica: TRIS = 1 y ANSEL = 1
+    /// El pin del canal `ANn` como entrada analogica: `TRIS` = 1 y `ANSEL` = 1 (lo usan el ADC y los comparadores).
+    fn analog_input(&mut self, n: u8) -> Result<(), CodegenError> {
         let (port, bit) = *self.analog_pins.get(&n).ok_or_else(|| CodegenError::Device(format!("el Device Pack no tiene el canal AN{n}")))?;
         let tris = self.reg_addr(&format!("TRIS{port}"))?;
         self.banked(tris, |g, f| g.asm.i(Bsf(f, bit)));
-        self.bit_op(&format!("ANS{n}"), true)?;
+        self.bit_op(&format!("ANS{n}"), true)
+    }
+
+    fn adc_select(&mut self, n: u8) -> Result<(), CodegenError> {
+        self.analog_input(n)?;
         // CHS<3:0> en ADCON0 sin tocar el reloj, GO ni ADON
         let adcon0 = self.reg_bank0("ADCON0")?;
         let chs0 = self.bit_pos("CHS0")?;
@@ -1834,6 +1839,87 @@ impl<'a> Gen<'a> {
                 self.asm.i(Btfsc(go_addr as u8, go_bit));
                 self.asm.goto(top);
                 self.adc_result(dst.expect("Read lleva destino"))?;
+            }
+        }
+        Ok(())
+    }
+
+    // ---- comparadores y CVREF (pypic.periph.comparator y pypic.periph.vref, docs/sdk-comparador.md): registros y bits del Device Pack por nombre ----
+    /// La espera de asentamiento que el datasheet pide tras encender el modulo (`ns`), en ciclos de instruccion exactos.
+    fn settle(&mut self, ns: u32) -> Result<(), CodegenError> {
+        let hz = self.clock_hz.ok_or_else(|| CodegenError::Device("los comparadores y CVREF necesitan el reloj (declara 'CLOCK: Internal[4 * MHz]') para la espera de asentamiento".into()))?;
+        let cycles = pypic_frontend::adc::acquisition_cycles(hz, self.cpc, ns);
+        self.delay(DelayUnit::Cycles, &Operand::Const { value: cycles as i128, ty: Type::Int { bits: 32, signed: false } })
+    }
+
+    fn comp(&mut self, call: &CompCall, dst: Option<Place>) -> Result<(), CodegenError> {
+        match *call {
+            CompCall::Cmp(id, op) => {
+                let n = id.n();
+                let con0 = self.reg_addr(&format!("CM{n}CON0"))?;
+                match op {
+                    CompOp::Start { neg, pos, invert } => {
+                        // DS40001291H 8.2 (pp.87-90): las entradas como analogicas (TRIS y ANSEL), la referencia (CxR, CxRSEL, FVREN),
+                        // CMxCON0 con CxON y, tras la espera del cambio de modo (CM05), la bandera CxIF en 0
+                        self.analog_input(pypic_frontend::comparator::NEG_INPUTS[neg as usize].1)?;
+                        match pos {
+                            CmpRef::Pin => self.analog_input(id.pos_pin_an())?,
+                            CmpRef::Cvref => self.bit_op(&format!("C{n}RSEL"), true)?,
+                            CmpRef::Fixed => {
+                                self.bit_op(&format!("C{n}RSEL"), false)?;
+                                self.bit_op("FVREN", true)?;
+                            }
+                        }
+                        let mut v = (1u8 << self.bit_pos(&format!("C{n}ON"))?) | neg;
+                        if invert {
+                            v |= 1 << self.bit_pos(&format!("C{n}POL"))?;
+                        }
+                        if pos != CmpRef::Pin {
+                            v |= 1 << self.bit_pos(&format!("C{n}R"))?;
+                        }
+                        self.asm.i(Movlw(v));
+                        self.banked(con0, |g, f| g.asm.i(Movwf(f)));
+                        self.settle(call.settle_ns())?;
+                        // leer CMxCON0 borra la condicion de discrepancia (8.4); luego CxIF en 0
+                        self.banked(con0, |g, f| g.asm.i(Movf(f, W)));
+                        self.bit_op(&format!("C{n}IF"), false)?;
+                    }
+                    CompOp::Stop => self.bit_op(&format!("C{n}ON"), false)?,
+                    CompOp::Out => {
+                        let d = self.regs(dst.expect("Out lleva destino"))?[0];
+                        let out = self.bit_pos(&format!("C{n}OUT"))?;
+                        self.asm.i(Clrf(d));
+                        self.banked(con0, |g, f| g.asm.i(Movf(f, W)));
+                        self.asm.i(Andlw(1 << out));
+                        self.asm.i(Btfss(STATUS, BIT_Z));
+                        self.asm.i(Incf(d, F));
+                    }
+                }
+            }
+            CompCall::Cvref(op) => {
+                let vrcon = self.reg_addr("VRCON")?;
+                match op {
+                    CvrefOp::Start { step, low_range } => {
+                        // VREN, rango (VRR = 1 es el bajo), VRSS = 0 (VDD a VSS), VROE = 0 (sin sacarla al pin) y VR<3:0>
+                        let mut v = (1u8 << self.bit_pos("VREN")?) | step;
+                        if low_range {
+                            v |= 1 << self.bit_pos("VRR")?;
+                        }
+                        self.asm.i(Movlw(v));
+                        self.banked(vrcon, |g, f| g.asm.i(Movwf(f)));
+                        self.settle(call.settle_ns())?;
+                    }
+                    CvrefOp::Set(step) => {
+                        self.banked(vrcon, |g, f| {
+                            g.asm.i(Movlw(0xF0));
+                            g.asm.i(Andwf(f, W));
+                            g.asm.i(Iorlw(step));
+                            g.asm.i(Movwf(f));
+                        });
+                        self.settle(call.settle_ns())?;
+                    }
+                    CvrefOp::Stop => self.banked(vrcon, |g, f| g.asm.i(Clrf(f))),
+                }
             }
         }
         Ok(())
