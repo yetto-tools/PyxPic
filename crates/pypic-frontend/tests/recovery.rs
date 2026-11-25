@@ -49,7 +49,7 @@ fn only_errors_are_added_not_warnings_and_a_real_undefined_name_still_counts_wit
     let (codes, _, _) = run("def main() -> None:\n    x: uint8 = nope\n");
     assert!(codes.contains(&"PYP2043"), "{codes:?}");
     // y un programa correcto sigue dando programa
-    let (codes, _, program) = run("def main() -> None:\n    x: uint8 = 1\n");
+    let (codes, _, program) = run("def main() -> None:\n    _x: uint8 = 1\n");
     assert!(codes.is_empty() && program);
 }
 

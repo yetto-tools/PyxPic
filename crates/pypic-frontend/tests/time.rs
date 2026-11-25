@@ -77,7 +77,7 @@ fn ms_and_seconds_take_a_u16_or_a_constant() {
     assert_eq!(codes(&body("delay_us(-1)"), &pic()), vec!["PYP2040"]);
     assert_eq!(codes(&body("pause()"), &pic()), vec!["PYP2055"]);
     assert_eq!(codes(&body("pause(1, 2)"), &pic()), vec!["PYP2055"]);
-    assert_eq!(codes(&body("x: u8 = pause(5)"), &pic()), vec!["PYP2041"]); // devuelve None
+    assert_eq!(codes(&body("_x: u8 = pause(5)"), &pic()), vec!["PYP2041"]); // devuelve None
 }
 
 #[test]

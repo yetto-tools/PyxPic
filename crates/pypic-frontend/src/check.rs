@@ -197,6 +197,8 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         fidx: HashMap::new(),
         cur: None,
         locals: HashMap::new(),
+        local_decls: Vec::new(),
+        read_names: HashSet::new(),
         global_decls: HashSet::new(),
         loop_depth: 0,
         warned: HashSet::new(),
@@ -284,6 +286,9 @@ struct Checker<'a> {
     fidx: HashMap<String, usize>,
     cur: Option<usize>,
     locals: HashMap<String, Symbol>,
+    /// Las variables locales declaradas en la funcion actual (nombre y posicion) y los nombres que se leen: para avisar de las que no se usan.
+    local_decls: Vec<(String, Span)>,
+    read_names: HashSet<String>,
     global_decls: HashSet<String>,
     loop_depth: u32,
     /// Tipos emulados ya avisados (un aviso por tipo).
@@ -2124,6 +2129,9 @@ impl<'a> Checker<'a> {
         if is_global && name == "CLOCK_HZ" {
             self.check_clock(v, ty, is_final, konst);
         }
+        if !is_global {
+            self.local_decls.push((name.clone(), v.name.span));
+        }
         let sym = Symbol {
             name: name.clone(),
             ty,
@@ -2146,6 +2154,8 @@ impl<'a> Checker<'a> {
         }
         self.cur = Some(idx);
         self.locals.clear();
+        self.local_decls.clear();
+        self.read_names.clear();
         self.global_decls.clear();
         self.loop_depth = 0;
         let params = self.functions[idx].params.clone();
@@ -2157,6 +2167,17 @@ impl<'a> Checker<'a> {
         }
         if f.asm.is_none() {
             self.block(&f.body);
+            // variables y parametros que nunca se leen (un nombre que empieza por `_` es intencional y no avisa)
+            for (name, span) in std::mem::take(&mut self.local_decls) {
+                if !name.starts_with('_') && !self.read_names.contains(&name) {
+                    self.d.warning("PYP3021", span, format!("la variable local '{name}' se declara pero nunca se lee: quitala o usala (un nombre que empieza por _ no avisa)"));
+                }
+            }
+            for p in &f.params {
+                if !p.name.name.starts_with('_') && !self.read_names.contains(&p.name.name) {
+                    self.d.warning("PYP3022", p.name.span, format!("el parametro '{}' de '{}' nunca se usa: quitalo o llamalo _{}", p.name.name, f.name.name, p.name.name));
+                }
+            }
         }
         let ret = self.functions[idx].ret;
         if f.asm.is_none() && !matches!(ret, Type::Void | Type::Error) && !terminates(&f.body) {
@@ -2499,8 +2520,20 @@ impl<'a> Checker<'a> {
 
     // ----------------------------------------------------------- sentencias
     fn block(&mut self, stmts: &[Stmt]) {
+        // lo que sigue a una sentencia que no vuelve (return, break, continue, un if cuyas dos ramas no vuelven, un `while True` sin break) no se
+        // ejecuta nunca: se avisa una vez por bloque en la primera sentencia inalcanzable (un `pass` suelto no cuenta) y se sigue comprobando
+        let (mut why, mut warned) = (None, false);
         for s in stmts {
+            if let (Some(w), false) = (why, warned) {
+                if !matches!(s.kind, StmtKind::Pass) {
+                    self.d.warning("PYP3020", s.span, format!("codigo inalcanzable: {w}"));
+                    warned = true;
+                }
+            }
             self.stmt(s);
+            if why.is_none() {
+                why = diverges(s);
+            }
         }
     }
 
@@ -2575,6 +2608,8 @@ impl<'a> Checker<'a> {
             },
             StmtKind::IndexAssign { target, index, op, value } => self.index_assign(target, index, *op, value, s.span),
             StmtKind::AugAssign { target, op, value } => {
+                // `x += 1` lee x: no cuenta como "nunca se lee" (un contador que solo se incrementa es un uso)
+                self.read_names.insert(target.name.clone());
                 let sym = self.assign_target(target);
                 match sym {
                     Some(sym) if sym.ty.is_int() => {
@@ -2766,6 +2801,7 @@ impl<'a> Checker<'a> {
 
     fn name(&mut self, e: &Expr, n: &str) -> Type {
         if let Some(sym) = self.lookup(n) {
+            self.read_names.insert(n.to_string());
             return self.set(e, sym.ty, sym.konst);
         }
         if self.timer_consts.contains(n) {
@@ -3331,6 +3367,20 @@ fn terminates(stmts: &[Stmt]) -> bool {
         StmtKind::While { test, body } => matches!(test.kind, ExprKind::Bool(true)) && !has_break(body),
         _ => false,
     })
+}
+
+/// Por que lo que sigue a esta sentencia no se ejecuta, si es que no se ejecuta.
+fn diverges(s: &Stmt) -> Option<&'static str> {
+    match &s.kind {
+        StmtKind::Return(_) => Some("sigue a un return"),
+        StmtKind::Break => Some("sigue a un break"),
+        StmtKind::Continue => Some("sigue a un continue"),
+        StmtKind::If { body, orelse, .. } if !orelse.is_empty() && body.iter().any(|b| diverges(b).is_some()) && orelse.iter().any(|b| diverges(b).is_some()) => {
+            Some("las dos ramas del if terminan (return, break o continue)")
+        }
+        StmtKind::While { test, body } if matches!(test.kind, ExprKind::Bool(true)) && !has_break(body) => Some("sigue a un 'while True' sin break: no termina nunca"),
+        _ => None,
+    }
 }
 
 fn has_break(stmts: &[Stmt]) -> bool {

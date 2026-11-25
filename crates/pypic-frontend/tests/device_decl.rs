@@ -108,7 +108,7 @@ fn init_device_is_marked_by_a_decorator_and_any_name_works() {
 
 #[test]
 fn init_device_rules() {
-    assert_eq!(codes("@init_device\ndef f(a: u8) -> None:\n    pass\n", &generic()), vec!["PYP2097"]); // sin parametros
+    assert_eq!(codes("@init_device\ndef f(_a: u8) -> None:\n    pass\n", &generic()), vec!["PYP2097"]); // sin parametros
     assert_eq!(codes("@init_device\ndef f() -> u8:\n    return 1\n", &generic()), vec!["PYP2097"]); // sin retorno
     assert_eq!(codes("@init_device\n@interrupt\ndef f() -> None:\n    pass\n", &generic()), vec!["PYP2097"]); // no a la vez que @interrupt
     let two = "@init_device\ndef a() -> None:\n    pass\n@init_device\ndef b() -> None:\n    pass\n";

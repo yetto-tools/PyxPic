@@ -827,3 +827,16 @@ fn project_check_devices_dir_overrides_the_projects_like_build_does() {
     let o = pypic(&dir, &["project", "check", "--devices-dir", &devices()]);
     assert!(o.status.success() && text(&o).contains("perfil a: ok"), "{}", text(&o));
 }
+
+#[test]
+fn check_prints_the_new_warnings_and_still_succeeds() {
+    let dir = tmp("warnings");
+    let src = dir.join("a.py");
+    std::fs::write(&src, "from pypic.device import PIC16F887\n\n\ndef f(a: uint8, b: uint8) -> uint8:\n    return a\n    a = 1\n\n\ndef main() -> None:\n    x: uint8 = 5\n    f(1, 2)\n").unwrap();
+    let o = pypic(&root(), &["check", src.to_str().unwrap()]);
+    let t = text(&o);
+    assert!(o.status.success(), "las advertencias no hacen fallar: {t}");
+    for expected in ["warning[PYP3020]", "warning[PYP3021]", "warning[PYP3022]", "a.py: ok"] {
+        assert!(t.contains(expected), "falta {expected}: {t}");
+    }
+}
