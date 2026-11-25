@@ -186,7 +186,11 @@ fn bad_arrays_are_located_errors() {
         ("x: int8[4]", "    pass\n", "PYP2170", "uint8"),
         ("x: uint8[0]", "    pass\n", "PYP2171", "1 a 255"),
         ("x: uint8[256]", "    pass\n", "PYP2171", "1 a 255"),
-        ("x: uint8[4] = 0", "    pass\n", "PYP2170", "se inicializa"),
+        ("x: uint8[4] = 0", "    pass\n", "PYP2160", "lista de constantes"),
+        ("x: uint8[4] = [1, 2, 3]", "    pass\n", "PYP2160", "trae 3"),
+        ("x: uint8[2] = [1, 2, 3]", "    pass\n", "PYP2160", "trae 3"),
+        ("x: uint8[2] = [1, 256]", "    pass\n", "PYP2160", "no cabe"),
+        ("n: uint8 = 1\nx: uint8[2] = [1, n]", "    pass\n", "PYP2160", "constantes"),
         ("buf: uint8[16]", "    buf[16] = 1\n", "PYP2161", "fuera del arreglo"),
         ("buf: uint8[16]", "    x: uint8 = buf[16]\n", "PYP2161", "fuera del arreglo"),
         ("buf: uint8[16]", "    x: uint8 = buf\n", "PYP2172", "es un arreglo"),
@@ -290,4 +294,37 @@ fn the_moving_average_example_converges_to_the_input_and_drives_rd0() {
         assert_eq!(s.pin('D', 0), Some(rd0), "RD0 con {input}");
         assert!(s.adc_violations.is_empty(), "{:?}", s.adc_violations);
     }
+}
+
+// ---- inicializadores: buf: uint8[N] = [...] ----------------------------------------------------------------------------
+
+#[test]
+fn initial_values_are_in_ram_before_main_and_match_the_interpreter() {
+    for (decl, expect) in [
+        ("buf: uint8[4] = [1, 2, 3, 4]", vec![1u8, 2, 3, 4]),
+        ("buf: uint8[3] = [0, 255, 0]", vec![0, 255, 0]),
+        ("buf: uint8[6] = [9, 0, 0, 7, 0, 5]", vec![9, 0, 0, 7, 0, 5]),
+        ("buf: uint8[1] = [42]", vec![42]),
+        ("buf: uint8[5] = [0, 0, 0, 0, 0]", vec![0; 5]),
+    ] {
+        let src = format!("{}{decl}\ntotal: uint8 = 0\n\n\ndef main() -> None:\n    global total\n    total = buf[0] + buf[len(buf) - 1]\n    while True:\n        pass\n", head());
+        let (m, c) = build(&src);
+        let mach = Machine::new(&m);
+        assert_eq!(mach.arrays[0], expect, "el interprete parte de los valores iniciales: {decl}");
+        let mut sim = Sim::new(&c.image);
+        for _ in 0..2000 {
+            sim.step();
+        }
+        assert_eq!(pic_array(&c, &sim, "buf"), expect, "{decl}");
+        let sum = (expect[0] as u16 + *expect.last().unwrap() as u16) as u8;
+        assert_eq!(pic_global(&c, &sim, "total"), sum as i128, "{decl}");
+    }
+}
+
+#[test]
+fn an_array_with_an_initializer_costs_one_extra_word_per_nonzero_element() {
+    let size = |decl: &str| build(&format!("{}{decl}\n\n\ndef main() -> None:\n    buf[0] = 1\n", head())).1.flash_words;
+    let zero = size("buf: uint8[3]");
+    assert_eq!(size("buf: uint8[3] = [0, 0, 0]"), zero, "los ceros son CLRF, igual que sin inicializador");
+    assert_eq!(size("buf: uint8[3] = [1, 2, 3]"), zero + 3, "cada elemento distinto de cero cambia CLRF por MOVLW + MOVWF");
 }

@@ -1222,10 +1222,20 @@ fn compile_mode(m: &Module, opts: &Options, multi: bool) -> Result<Compiled, Cod
             }
         }
     }
-    // los arreglos de RAM empiezan en cero: hasta 4 elementos con CLRF; mas, un bucle con FSR (sin contador)
+    // los arreglos de RAM empiezan en cero (o con su inicializador): hasta 4 elementos con CLRF; mas, un bucle con FSR (sin contador)
     for (ai, (_, n)) in m.arrays.iter().enumerate() {
         let base = g.al.arrays[ai];
-        if *n <= 4 {
+        if let Some(init) = m.array_inits.get(ai).filter(|v| !v.is_empty()) {
+            // con valores iniciales: MOVLW/MOVWF por cada elemento distinto de cero (CLRF para los ceros)
+            for (k, &byte) in init.iter().enumerate() {
+                if byte == 0 {
+                    g.asm.i(Clrf(base + k as u8));
+                } else {
+                    g.asm.i(Movlw(byte));
+                    g.asm.i(Movwf(base + k as u8));
+                }
+            }
+        } else if *n <= 4 {
             for k in 0..*n {
                 g.asm.i(Clrf(base + k as u8));
             }

@@ -15,7 +15,8 @@ def main() -> None:
 
 ## Reglas
 
-- **Solo globales y solo `uint8`.** Un arreglo local, de otro tipo (`uint16[4]`, `int8[4]`), con capacidad fuera de 1 a 255 (`PYP2171`) o con inicializador es un error. Los elementos empiezan **en cero**: el arranque pone a cero toda la RAM de cada arreglo (hasta 4 elementos con `CLRF`; más, con un bucle sobre `FSR`).
+- **Solo globales y solo `uint8`.** Un arreglo local, de otro tipo (`uint16[4]`, `int8[4]`) o con capacidad fuera de 1 a 255 (`PYP2171`) es un error. Sin inicializador, los elementos empiezan **en cero**: el arranque pone a cero toda la RAM de cada arreglo (hasta 4 elementos con `CLRF`; más, con un bucle sobre `FSR`).
+- **Inicializador:** `tabla: uint8[4] = [10, 20, 30, 40]` da **todos** los valores (la lista trae exactamente la capacidad; `PYP2160` si faltan, sobran, no son constantes o no caben en un `uint8`). El arranque los escribe en la RAM antes de `main`: `MOVLW` + `MOVWF` por cada valor distinto de cero (2 palabras de flash) y `CLRF` por cada cero (1 palabra), sin bucle, aunque sean más de 4. Con hasta 4 elementos eso es **una palabra más por cada valor distinto de cero** que sin inicializador; con más de 4, el arreglo sin inicializador se pone a cero con un bucle corto y el inicializado ocupa de 1 a 2 palabras por elemento. Para empezar en cero se omite el `= ...`. No es una tabla `Rom`: vive en RAM y se puede escribir.
 - **No hace falta `global`** para escribir un elemento (no se reasigna el nombre), igual que en Python.
 - **El nombre solo no es un valor:** `x = buf` y `buf = 3` son `PYP2172`; se usa `buf[i]` y `len(buf)`.
 - **Índice:** un `uint8` (o una constante). Una constante fuera de la capacidad es el error `PYP2161`; otro tipo de índice, `PYP2163` (convierte con `uint8(...)`).

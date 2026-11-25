@@ -148,6 +148,8 @@ pub struct Module {
     pub roms: Vec<(String, Vec<u8>)>,
     /// Arreglos de RAM (`buf: uint8[16]`): nombre y capacidad. Empiezan en cero.
     pub arrays: Vec<(String, usize)>,
+    /// Los valores iniciales de cada arreglo; vacio si empieza en cero.
+    pub array_inits: Vec<Vec<u8>>,
     pub functions: Vec<Function>,
     pub pins: Vec<Pin>,
     /// Dispositivo declarado en el programa (`from pypic.device import PIC16F887`).

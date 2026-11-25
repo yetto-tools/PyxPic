@@ -79,7 +79,7 @@ impl<'m> Machine<'m> {
             uart_rx: Default::default(),
             uart_tx9: Vec::new(),
             uart_rx9: Default::default(),
-            arrays: module.arrays.iter().map(|(_, n)| vec![0; *n]).collect(),
+            arrays: module.arrays.iter().enumerate().map(|(i, (_, n))| module.array_inits.get(i).filter(|v| !v.is_empty()).cloned().unwrap_or_else(|| vec![0; *n])).collect(),
             array_oob: Vec::new(),
         }
     }

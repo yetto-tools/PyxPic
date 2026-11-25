@@ -25,6 +25,7 @@ pub fn lower_unoptimized(prog: &Program) -> Module {
     m.clock_source = prog.clock_source.clone();
     m.roms = prog.roms.clone();
     m.arrays = prog.arrays.clone();
+    m.array_inits = prog.array_inits.clone();
     m.adc_acq_ns = prog.adc_config.acq_ns;
     let mut gidx = HashMap::new();
     for it in &prog.module.items {

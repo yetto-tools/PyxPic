@@ -150,6 +150,8 @@ pub struct Program {
     pub rom_gets: BTreeMap<u32, usize>,
     /// Arreglos de RAM (`buf: uint8[16]`): nombre y capacidad; y las lecturas `buf[i]` con indice variable, por id de expresion.
     pub arrays: Vec<(String, usize)>,
+    /// Los valores iniciales de cada arreglo (`buf: uint8[4] = [1, 2, 3, 4]`); vacio si empieza en cero.
+    pub array_inits: Vec<Vec<u8>>,
     pub array_gets: BTreeMap<u32, usize>,
     /// Las llamadas a `parse_dec` / `parse_hex`, por id de expresion.
     pub text_calls: BTreeMap<u32, TextCall>,
@@ -178,6 +180,8 @@ pub struct Checked {
     pub roms: Vec<(String, Vec<u8>)>,
     pub rom_gets: BTreeMap<u32, usize>,
     pub arrays: Vec<(String, usize)>,
+    /// Los valores iniciales de cada arreglo (`buf: uint8[4] = [1, 2, 3, 4]`); vacio si empieza en cero.
+    pub array_inits: Vec<Vec<u8>>,
     pub array_gets: BTreeMap<u32, usize>,
     /// Las llamadas a `parse_dec` / `parse_hex`, por id de expresion.
     pub text_calls: BTreeMap<u32, TextCall>,
@@ -243,6 +247,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         rom_idx: HashMap::new(),
         rom_gets: BTreeMap::new(),
         arrays: Vec::new(),
+        array_inits: Vec::new(),
         array_idx: HashMap::new(),
         array_gets: BTreeMap::new(),
         text_calls: BTreeMap::new(),
@@ -253,7 +258,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         stmt_top: None,
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, clock_source: c.clock_source, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, arrays: c.arrays, array_gets: c.array_gets, text_calls: c.text_calls, adc_calls: c.adc_calls, adc_config: c.adc_config, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt }
+    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, clock_source: c.clock_source, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, arrays: c.arrays, array_inits: c.array_inits, array_gets: c.array_gets, text_calls: c.text_calls, adc_calls: c.adc_calls, adc_config: c.adc_config, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -349,6 +354,7 @@ struct Checker<'a> {
     rom_idx: HashMap<String, usize>,
     rom_gets: BTreeMap<u32, usize>,
     arrays: Vec<(String, usize)>,
+    array_inits: Vec<Vec<u8>>,
     array_idx: HashMap<String, usize>,
     array_gets: BTreeMap<u32, usize>,
     text_calls: BTreeMap<u32, TextCall>,
@@ -2322,9 +2328,29 @@ impl<'a> Checker<'a> {
         if !(1..=255).contains(&n) {
             self.d.error("PYP2171", v.ann.span, format!("la capacidad de un arreglo va de 1 a 255 (el indice es un uint8), '{name}' pide {n}"));
         }
+        let mut init = Vec::new();
         if let Some(val) = &v.value {
-            self.expr(val);
-            self.d.error("PYP2170", val.span, format!("un arreglo empieza con todos sus elementos en cero y no se inicializa con valores: quita el '= ...' de '{name}'"));
+            match &val.kind {
+                ExprKind::List(items) => {
+                    for it in items {
+                        let t = self.expr(it);
+                        match (t, self.konst(it)) {
+                            (Type::Error, _) => {}
+                            (_, Some(k)) if (0..=255).contains(&k) => init.push(k as u8),
+                            (_, Some(k)) => self.d.error("PYP2160", it.span, format!("el valor {k} no cabe en un uint8 (0..=255)")),
+                            (_, None) => self.d.error("PYP2160", it.span, "los valores iniciales de un arreglo son constantes: se escriben en el arranque, antes de main"),
+                        }
+                    }
+                    if items.len() as i128 != n {
+                        self.d.error("PYP2160", val.span, format!("'{name}' tiene {n} elementos y la lista trae {}: un inicializador da todos los valores (para empezar en cero, quita el '= ...')", items.len()));
+                        init.clear();
+                    }
+                }
+                _ => {
+                    self.expr(val);
+                    self.d.error("PYP2160", val.span, format!("'{name}' se inicializa con una lista de constantes: buf: uint8[3] = [1, 2, 3]"));
+                }
+            }
         }
         if self.globals.contains_key(name) || self.rom_idx.contains_key(name) || self.array_idx.contains_key(name) || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.reg_names.contains_key(name) || self.timer_names.contains_key(name) || self.bits_fns.contains(name) || self.time_fns.contains_key(name) {
             self.d.error("PYP2009", v.name.span, format!("'{name}' ya esta declarado"));
@@ -2332,6 +2358,7 @@ impl<'a> Checker<'a> {
         }
         self.array_idx.insert(name.clone(), self.arrays.len());
         self.arrays.push((name.clone(), n.clamp(1, 255) as usize));
+        self.array_inits.push(init);
     }
 
     /// El indice de `buf[i]` / `buf[i] = v`: un `uint8` (o una constante dentro de la capacidad).
