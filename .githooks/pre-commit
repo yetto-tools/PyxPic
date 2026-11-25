@@ -1,0 +1,43 @@
+#!/bin/sh
+# Guardia de identidad (docs/identidades.md): bloquea un commit con el nombre o el correo equivocados, para que dos cuentas o dos identidades no se
+# crucen en este repositorio. Lo que se espera sale de la configuracion LOCAL del repositorio (identity.expectedName / identity.expectedEmail);
+# la identidad que Git usaria sale de `git var`, que ya incluye el includeIf por carpeta, las variables GIT_AUTHOR_* y los -c.
+
+expected_name=$(git config --get identity.expectedName)
+expected_email=$(git config --get identity.expectedEmail)
+if [ -z "$expected_name" ] || [ -z "$expected_email" ]; then
+  cat >&2 <<'EOF'
+identidad: este repositorio usa la guardia de .githooks pero no dice que identidad espera. Configurala una vez:
+  git config --local identity.expectedName  "Nombre Apellido"
+  git config --local identity.expectedEmail "correo@ejemplo.com"
+  git config --local identity.expectedAccount "cuenta-de-github"
+  git config --local identity.expectedOwner   "propietario-del-repositorio"
+Si no quieres la guardia: git config --local --unset core.hooksPath
+EOF
+  exit 1
+fi
+
+bad=0
+check() {
+  who=$1
+  ident=$2
+  name=$(printf '%s' "$ident" | sed -E 's/ <[^>]*>.*$//')
+  email=$(printf '%s' "$ident" | sed -E 's/^.*<([^>]*)>.*$/\1/')
+  if [ "$name" != "$expected_name" ] || [ "$email" != "$expected_email" ]; then
+    echo "identidad: $who del commit es '$name <$email>' y este repositorio espera '$expected_name <$expected_email>'." >&2
+    bad=1
+  fi
+}
+check "el autor" "$(git var GIT_AUTHOR_IDENT)"
+check "quien confirma (committer)" "$(git var GIT_COMMITTER_IDENT)"
+
+if [ "$bad" = 1 ]; then
+  cat >&2 <<EOF
+Commit bloqueado para que no se crucen las identidades. Para este repositorio:
+  git config --local user.name  "$expected_name"
+  git config --local user.email "$expected_email"
+(y revisa que la carpeta tenga su includeIf en ~/.gitconfig; ver docs/identidades.md). Para saltarse la guardia a proposito: git commit --no-verify
+EOF
+  exit 1
+fi
+exit 0

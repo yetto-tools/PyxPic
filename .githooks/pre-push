@@ -1,0 +1,73 @@
+#!/bin/sh
+# Guardia de identidad antes de subir (docs/identidades.md): comprueba a donde y como se sube y con que identidad estan los commits NUEVOS.
+#  1. el propietario del remoto es el esperado (identity.expectedOwner): no se sube a un repositorio de otra cuenta u organizacion;
+#  2. la cuenta de credenciales fijada para esta carpeta es la esperada (identity.expectedAccount): el push no usa la cuenta equivocada;
+#  3. todos los commits que se van a subir tienen el autor esperado (o un correo de identity.allowedEmail, por ejemplo un colaborador).
+# Lo que ya estaba en el remoto no se vuelve a juzgar.
+
+remote_name=$1
+url=$2
+expected_name=$(git config --get identity.expectedName)
+expected_email=$(git config --get identity.expectedEmail)
+expected_account=$(git config --get identity.expectedAccount)
+expected_owner=$(git config --get identity.expectedOwner)
+if [ -z "$expected_name" ] || [ -z "$expected_email" ]; then
+  echo "identidad: falta identity.expectedName / identity.expectedEmail (ver .githooks/pre-commit para configurarlos)." >&2
+  exit 1
+fi
+
+status=0
+
+if [ -n "$expected_owner" ]; then
+  owner=$(printf '%s' "$url" | sed -E 's#^(https?://([^@/]*@)?[^/]+/|git@[^:]+:|ssh://git@[^/]+/)([^/]+)/.*$#\3#')
+  if [ "$owner" != "$expected_owner" ]; then
+    echo "identidad: el remoto '$remote_name' ($url) es de '$owner' y este repositorio espera '$expected_owner'. Push bloqueado." >&2
+    status=1
+  fi
+fi
+
+if [ -n "$expected_account" ]; then
+  account=$(git config --get credential.https://github.com.username)
+  case "$url" in
+    https://*)
+      if [ "$account" != "$expected_account" ]; then
+        echo "identidad: las credenciales de esta carpeta usan la cuenta '${account:-(ninguna)}' y se espera '$expected_account'. Revisa el includeIf de ~/.gitconfig (credential.https://github.com.username). Push bloqueado." >&2
+        status=1
+      fi
+      ;;
+  esac
+fi
+
+zero=0000000000000000000000000000000000000000
+bad_list=""
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
+  if [ "$remote_sha" = "$zero" ]; then
+    range=$(git rev-list "$local_sha" --not --remotes="$remote_name")
+  else
+    range=$(git rev-list "$remote_sha..$local_sha" 2>/dev/null)
+  fi
+  for c in $range; do
+    name=$(git log -1 --format=%an "$c")
+    email=$(git log -1 --format=%ae "$c")
+    ok=0
+    if [ "$name" = "$expected_name" ] && [ "$email" = "$expected_email" ]; then ok=1; fi
+    for allowed in $(git config --get-all identity.allowedEmail); do
+      if [ "$email" = "$allowed" ]; then ok=1; fi
+    done
+    if [ "$ok" = 0 ]; then
+      bad_list="$bad_list
+  $(git log -1 --format='%h  %an <%ae>  %s' "$c")"
+      status=1
+    fi
+  done
+done
+
+if [ -n "$bad_list" ]; then
+  echo "identidad: estos commits NUEVOS no tienen el autor esperado ('$expected_name <$expected_email>'):$bad_list" >&2
+  echo "Para corregir el ultimo: git commit --amend --reset-author. Para un colaborador legitimo: git config --local --add identity.allowedEmail correo@ejemplo.com" >&2
+fi
+if [ "$status" != 0 ]; then
+  echo "Push bloqueado. Para saltarse la guardia a proposito: git push --no-verify" >&2
+fi
+exit $status
