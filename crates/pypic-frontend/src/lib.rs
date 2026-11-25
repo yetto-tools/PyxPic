@@ -73,19 +73,28 @@ pub fn parse_clock(text: &str, target: &TargetProfile) -> Result<ClockSource, St
     }
 }
 
+/// Diagnosticos del verificador que, sobre un AST incompleto, pueden ser falsos porque dependen de una declaracion que el parser descarto: nombre o
+/// funcion no definidos, asignar a lo no declarado, `global` de lo no declarado y el inicio (`start`) del ADC o la UART que estaba en codigo descartado.
+const DEPEND_ON_DROPPED_CODE: &[&str] = &["PYP2043", "PYP2022", "PYP2020", "PYP2023", "PYP2171", "PYP2181"];
+
 pub fn analyze(source: &str, target: &TargetProfile) -> Analysis {
     let mut d = Diagnostics::default();
     let mut module = parser::parse(source, &mut d);
-    // Si hubo errores de sintaxis/subconjunto no se continua: el AST puede estar incompleto.
-    if d.has_errors() {
-        return Analysis { program: None, diagnostics: d };
-    }
     for it in &mut module.items {
         if let ast::Item::Func(f) = it {
             if let Some(a) = &mut f.asm {
                 a.first_line = 1 + source[..a.offset.min(source.len())].matches('\n').count();
             }
         }
+    }
+    // Con errores de sintaxis no hay programa, pero se siguen comprobando los tipos de lo que el parser si leyo (la recuperacion descarta la
+    // linea rota y su bloque): asi se ven los dos tipos de error a la vez. Los diagnosticos que dependen de lo que falta (un nombre o una
+    // funcion cuya definicion era la linea rota) se descartan: serian falsos.
+    if d.has_errors() {
+        let mut partial = Diagnostics::default();
+        check::check(&module, target, &mut partial);
+        d.items.extend(partial.items.into_iter().filter(|x| x.severity == Severity::Error && !DEPEND_ON_DROPPED_CODE.contains(&x.code)));
+        return Analysis { program: None, diagnostics: d };
     }
     let c = check::check(&module, target, &mut d);
     let program = (!d.has_errors()).then_some(Program { module, info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, clock_source: c.clock_source, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, arrays: c.arrays, array_gets: c.array_gets, adc_calls: c.adc_calls, adc_config: c.adc_config, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt, text_calls: c.text_calls });

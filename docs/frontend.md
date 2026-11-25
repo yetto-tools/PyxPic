@@ -108,6 +108,7 @@ cargo test
 ## Criterios de aceptacion
 
 - [x] Parser con errores con ubicacion y recuperacion por sentencia (`syntax_errors_report_all_statements`).
+- [x] Errores de sintaxis y de tipos a la vez (#4): tras un error de sintaxis se siguen comprobando los tipos de lo que el parser si leyo (la recuperacion descarta la linea rota y su bloque). Solo se suman **errores** (no avisos) y se descartan los que dependen de lo descartado (`PYP2043` nombre o funcion no definidos, `PYP2022`, `PYP2020`, `PYP2023`, `PYP2171`, `PYP2181`): un nombre cuya declaracion era la linea rota no se reporta como indefinido. No hay programa mientras haya errores de sintaxis. `crates/pypic-frontend/tests/recovery.rs`, incluida una prueba que rompe cada linea de todos los ejemplos (mas de 2000 programas) para asegurar que el verificador no se cae con un AST incompleto.
 - [x] Tipado y constantes (literales, casts, overflow, `//` y `%`).
 - [x] Reglas hardware-conscientes: sin recursion, una ISR, tipos limitados por el destino.
 - [x] Cada construccion rechazada tiene test con su codigo.
