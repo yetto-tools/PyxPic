@@ -2,7 +2,7 @@
 
 Estado verificado (2026-11-24). Leyenda: **[x]** hecho y probado · **[~]** parcial, con su límite y el issue que lo cierra · **[ ]** sin empezar.
 Hecho = hay código, pruebas que pasan (`cargo test --workspace`) y, donde aplica, verificación contra el datasheet o el simulador del núcleo.
-Nada de lo marcado [x] se ha probado todavía en **hardware real**: el blink y el pulsador se confirmaron en Proteus (#16).
+Del conjunto marcado [x], en **hardware real** solo se confirmaron el blink, la EEPROM y la UART con un programador K150 y un montaje (`docs/programador-k150.md`, #16); lo demás se probó en el simulador, y el blink y el pulsador además en Proteus.
 Los issues abiertos están en <https://github.com/yetto-tools/PyPic/issues>.
 
 ## Fase 0 — Diseño
@@ -18,7 +18,7 @@ Los issues abiertos están en <https://github.com/yetto-tools/PyPic/issues>.
 - [~] Bancos, saltos y llamadas: todo el dato en el banco 0 (#26); programas de hasta toda la flash con PCLATH (una función por página, +4 ciclos por llamada); sin enlazador entre módulos
 - [x] Arreglos estáticos `uint8[N]` globales e indexado `buf[i]` (#8, primera entrega: `docs/sdk-arreglos.md`) · [ ] otros tipos de elemento, locales, inicializadores y `char[N]`/recepción de texto (#63).
 - [x] Intel HEX y palabras de configuración por nombre (`pypic build --config`)
-- [x] Blink y pulsador reales compilados desde `.py`, confirmados en Proteus; [ ] confirmación en hardware (#16)
+- [x] Blink y pulsador reales compilados desde `.py`, confirmados en Proteus; [x] blink, EEPROM y UART confirmados en hardware real con un K150 (#16, `docs/programador-k150.md`)
 - [~] Ensamblador textual con un subconjunto de la sintaxis PIC-AS y ensamblador en línea (`@asm_function`); compatibilidad y directivas pendientes en #49–#52, #60, #66 y #67. `IDLOC0`–`IDLOC3` y su desensamblado están implementados (#68).
 - [x] Intérprete de referencia de la IR y simulador del núcleo PIC14 (solo en el host, para pruebas diferenciales)
 
@@ -56,4 +56,4 @@ cargo run -p pypic-cli -- device validate devices/pic16f887
 cargo run -p pypic-cli -- build examples/python/gpio/blink.py -o /tmp/blink.hex --timing --listing
 cargo run -p pypic-cli -- asm examples/asm/gpio/blink_rd0.s -Wl,-presetVec=0h,-pintentry=4h -o /tmp/b.hex   # compare con examples/hex/blink_rd0.hex
 ```
-La comparación opcional con XC8 requiere configurar `PYPIC_TEST_PIC_AS` y `PYPIC_TEST_XC8_DFP` como se indica en `docs/asm-pic14.md`; cubre casos concretos, no toda la compatibilidad (#66, #67). Estos comandos no verifican el comportamiento en hardware real (solo hay confirmación en Proteus, #16).
+La comparación opcional con XC8 requiere configurar `PYPIC_TEST_PIC_AS` y `PYPIC_TEST_XC8_DFP` como se indica en `docs/asm-pic14.md`; cubre casos concretos, no toda la compatibilidad (#66, #67). Estos comandos no verifican el comportamiento en hardware real (solo hay confirmación en Proteus y la de `docs/programador-k150.md`, #16).

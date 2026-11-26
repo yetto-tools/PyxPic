@@ -10,7 +10,7 @@ Compilador de firmware para microcontroladores PIC con la **sintaxis de Python**
 | | |
 |---|---|
 | **Funciona** (512 pruebas, muchas diferenciales entre el intérprete de referencia y un simulador del núcleo) | frontend con tipos y diagnósticos con ubicación · IR y backend PIC14 · las 35 instrucciones y un ensamblador con la **sintaxis de pic-as** (macros, `PSECT`, `CONFIG`) · Intel HEX · Device Pack del PIC16F887 · GPIO, temporizadores 0/1/2, ADC de 10 bits, UART 8N1 y de 9 bits, texto y f-strings en la UART, arreglos `uint8[N]`, registros y bits, acarreo, esperas exactas al ciclo, tablas en flash, `*` `//` `%` y desplazamientos · interrupciones · `@asm_function` |
-| **Confirmado en Proteus** | `blink` y `button_led` compilados desde `.py` (`docs/proteus-blink.md`). **Falta confirmarlo en hardware real** (#16) |
+| **Confirmado en Proteus y en hardware** | `blink` y `button_led` compilados desde `.py` en Proteus (`docs/proteus-blink.md`). En **hardware real** (un PIC16F887, un programador K150 y un montaje; sin medir voltajes ni la exactitud al ciclo): el parpadeo, la EEPROM y la UART (`docs/programador-k150.md`) |
 | **Límites conocidos** | solo el PIC16F887 (#25) · sin `u32`/`i32` (#32) · todo el dato en el banco 0 (#26) y una función no puede pasar de 2048 palabras · PWM solo de una salida (sin captura, comparación ni puentes), sin SPI ni I²C ni pestillo SR (resto de #45) · extensión VS Code inicial, sin depurador ni terminal serie |
 | **Sin empezar** | Wizard, DAP, I²C Scanner y la Fase 4 (otros PIC, backends C/ASM, Blockly) |
 
