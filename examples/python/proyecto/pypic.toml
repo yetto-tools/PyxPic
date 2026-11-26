@@ -4,7 +4,7 @@
 [project]
 name = "parpadeo"
 main = "main.py"
-devices_dir = "../../devices"      # relativa a este archivo
+devices_dir = "../../../devices"      # relativa a este archivo
 default_target = "interna"
 
 [target.interna]

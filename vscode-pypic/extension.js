@@ -247,7 +247,7 @@ function activate(context) {
   }
 
   async function examples() {
-    const files = await vscode.workspace.findFiles("**/examples/**/*.py", "**/{target,node_modules}/**", 200);
+    const files = await vscode.workspace.findFiles("**/examples/**/*.{py,bas,s}", "**/{target,node_modules}/**", 200);
     if (!files.length) {
       void vscode.window.showInformationMessage("No se encontraron ejemplos. Abre la carpeta del repositorio PyPIC.");
       return;

@@ -50,7 +50,7 @@ Comprueba la coherencia interna, no solo el formato:
 
 ```
 cargo run -p pypic-cli -- device validate devices/pic16f887
-cargo run -p pypic-cli -- check examples/counter.py --device devices/pic16f887
+cargo run -p pypic-cli -- check examples/python/gpio/counter.py --device devices/pic16f887
 ```
 
 `--native-bits` y `--max-int-bits` sobrescriben los valores del pack.

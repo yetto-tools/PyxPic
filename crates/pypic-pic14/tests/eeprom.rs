@@ -312,7 +312,7 @@ fn read_busy_and_failed_costs_are_fixed() {
 
 #[test]
 fn the_boot_counter_example_counts_across_power_cycles_and_blinks_that_many_times() {
-    let src = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/eeprom_arranques.py")).unwrap();
+    let src = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/python/eeprom/eeprom_arranques.py")).unwrap();
     let (_, c) = build(&src);
     let mut s = Sim::new(&c.image);
     for boot in 1..=4u8 {

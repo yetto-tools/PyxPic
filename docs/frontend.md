@@ -105,7 +105,7 @@ Formato: `archivo:linea:col: error[PYPnnnn]: mensaje`. Rangos: `PYP0xxx` lexer, 
 ## Uso
 
 ```
-cargo run -p pypic-cli -- check examples/counter.py [--native-bits 8] [--max-int-bits 16]
+cargo run -p pypic-cli -- check examples/python/gpio/counter.py [--native-bits 8] [--max-int-bits 16]
 cargo test
 ```
 

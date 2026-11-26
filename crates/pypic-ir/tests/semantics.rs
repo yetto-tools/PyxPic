@@ -135,7 +135,7 @@ fn infinite_loop_hits_step_limit() {
 
 #[test]
 fn example_program_runs() {
-    let m = build(include_str!("../../../examples/counter.py"));
+    let m = build(include_str!("../../../examples/python/gpio/counter.py"));
     assert_eq!(Machine::new(&m).with_step_limit(100_000).call("main", &[]), Ok(None));
 }
 

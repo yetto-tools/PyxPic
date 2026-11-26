@@ -12,7 +12,7 @@ fn ir(src: &str) -> String {
 
 #[test]
 fn example_program_lowers_and_verifies() {
-    ir(include_str!("../../../examples/counter.py"));
+    ir(include_str!("../../../examples/python/gpio/counter.py"));
 }
 
 #[test]

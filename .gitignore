@@ -6,4 +6,4 @@
 skills-lock.json
 
 # proyecto de ejemplo: los .hex salen de pypic build
-examples/proyecto/build/
+examples/python/proyecto/build/

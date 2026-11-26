@@ -343,7 +343,7 @@ fn duty_and_stop_costs_are_fixed() {
 
 #[test]
 fn the_potentiometer_example_maps_one_adc_reading_to_one_duty() {
-    let src = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/pwm.py")).unwrap();
+    let src = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/python/pwm/pwm.py")).unwrap();
     let (_, c) = build(&src);
     for reading in [0u16, 1, 300, 512, 1023] {
         let mut s = Sim::new(&c.image);

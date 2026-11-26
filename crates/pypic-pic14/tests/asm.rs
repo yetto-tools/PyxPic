@@ -55,7 +55,7 @@ fn enc(i: Inst) -> u16 {
 #[test]
 fn the_pic_as_blink_is_identical_to_the_hand_assembled_proteus_verified_program() {
     let e = env_with(&["-presetVec=0h", "-pintentry=4h"]);
-    let a = ok_with(include_str!("../../../examples/asm/blink_rd0.s"), &e);
+    let a = ok_with(include_str!("../../../examples/asm/gpio/blink_rd0.s"), &e);
     assert_eq!(a.image, samples::blink_rd0());
     let hex = a.image.to_intel_hex(16);
     let on_disk = include_str!("../../../examples/hex/blink_rd0.hex").replace("\r\n", "\n");

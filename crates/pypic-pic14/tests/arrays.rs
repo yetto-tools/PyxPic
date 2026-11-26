@@ -282,7 +282,7 @@ const COST_ADD_VAR: u64 = 21;
 #[test]
 fn the_moving_average_example_converges_to_the_input_and_drives_rd0() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let src = std::fs::read_to_string(root.join("examples/media_movil.py")).unwrap();
+    let src = std::fs::read_to_string(root.join("examples/python/adc/media_movil.py")).unwrap();
     let r = analyze(&src, &pack().target_profile());
     let p = r.program.unwrap_or_else(|| panic!("{}", r.diagnostics.render(&src, "media_movil.py")));
     let c = compile(&lower(&p), &Options::default()).unwrap();

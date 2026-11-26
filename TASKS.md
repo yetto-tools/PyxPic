@@ -53,7 +53,7 @@ cargo test -p pypic-pic14 --test runtime                            # *, //, %: 
 cargo test -p pypic-pic14 --test asm                                # ensamblador pic-as; el blink en pic-as reproduce byte a byte el .hex probado en Proteus
 cargo test -p pypic-device                                          # Device Pack del PIC16F887 contra sus propias reglas de coherencia
 cargo run -p pypic-cli -- device validate devices/pic16f887
-cargo run -p pypic-cli -- build examples/blink.py -o /tmp/blink.hex --timing --listing
-cargo run -p pypic-cli -- asm examples/asm/blink_rd0.s -Wl,-presetVec=0h,-pintentry=4h -o /tmp/b.hex   # compare con examples/hex/blink_rd0.hex
+cargo run -p pypic-cli -- build examples/python/gpio/blink.py -o /tmp/blink.hex --timing --listing
+cargo run -p pypic-cli -- asm examples/asm/gpio/blink_rd0.s -Wl,-presetVec=0h,-pintentry=4h -o /tmp/b.hex   # compare con examples/hex/blink_rd0.hex
 ```
 La comparación opcional con XC8 requiere configurar `PYPIC_TEST_PIC_AS` y `PYPIC_TEST_XC8_DFP` como se indica en `docs/asm-pic14.md`; cubre casos concretos, no toda la compatibilidad (#66, #67). Estos comandos no verifican el comportamiento en hardware real (solo hay confirmación en Proteus, #16).

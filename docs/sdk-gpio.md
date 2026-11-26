@@ -75,10 +75,10 @@ Pruebas del frontend (diagnósticos), del Device Pack (pines reales del PIC16F88
 el simulador PIC14; se comparan **los cambios de nivel de cada pin en orden**, no solo el estado final (`crates/pypic-pic14/tests/gpio.rs`). El simulador
 del host no sustituye a Proteus ni al hardware.
 
-## Ejemplo para Proteus: `examples/button_led.py`
+## Ejemplo para Proteus: `examples/python/gpio/button_led.py`
 
 ```
-pypic build examples/button_led.py -o examples/hex/button_led.hex
+pypic build examples/python/gpio/button_led.py -o examples/hex/button_led.hex
 ```
 
 Montaje: PIC16F887; LED + resistencia de 330 Ω entre **RD0 (pin 19)** y GND; un **pulsador en RB0 (pin 33)** hacia +5 V con una resistencia de **10 kΩ a GND**

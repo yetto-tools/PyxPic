@@ -25,8 +25,8 @@ fn text(o: &Output) -> String {
 #[test]
 fn the_bas_examples_check_and_build() {
     let dir = tmp("examples");
-    for name in ["parpadeo", "sensor"] {
-        let src = root().join(format!("examples/{name}.bas"));
+    for name in ["gpio/parpadeo", "adc/sensor"] {
+        let src = root().join(format!("examples/basic/{name}.bas"));
         let r = pypic(&root(), &["check", src.to_str().unwrap()]);
         assert!(r.status.success(), "{name}: {}", text(&r));
         let out = dir.join(format!("{name}.hex"));
@@ -48,7 +48,7 @@ fn a_basic_error_names_the_bas_file_and_line() {
 #[test]
 fn a_project_can_use_a_bas_main_and_clean_removes_its_hex() {
     let dir = tmp("project");
-    std::fs::write(dir.join("main.bas"), std::fs::read_to_string(root().join("examples/parpadeo.bas")).unwrap()).unwrap();
+    std::fs::write(dir.join("main.bas"), std::fs::read_to_string(root().join("examples/basic/gpio/parpadeo.bas")).unwrap()).unwrap();
     std::fs::write(dir.join("pypic.toml"), format!("[project]\nname = \"b\"\nmain = \"main.bas\"\ndevices_dir = {:?}\n\n[target.x]\ndevice = \"PIC16F887\"\noutput = \"build/b.hex\"\n", root().join("devices").to_string_lossy().replace(std::path::MAIN_SEPARATOR, "/"))).unwrap();
     let r = pypic(&dir, &["build"]);
     assert!(r.status.success(), "{}", text(&r));

@@ -17,7 +17,7 @@ Todos usan la API real `pypic.periph.uart` (`docs/sdk-uart.md`), en modo asíncr
 ## Compilar y probar
 
 ```
-pypic build examples/uart/eco.py -o eco.hex --timing    # --timing imprime la velocidad real y su error
+pypic build examples/python/uart/eco.py -o eco.hex --timing    # --timing imprime la velocidad real y su error
 ```
 Los `.hex` ya generados están en `examples/hex/uart_*.hex`. Para verlos funcionar sin hardware, las pruebas del simulador están en `crates/pypic-pic14/tests/uart_examples.rs` (`cargo test -p pypic-pic14 --test uart_examples`).
 
@@ -37,7 +37,7 @@ Los `.hex` ya generados están en `examples/hex/uart_*.hex`. Para verlos funcion
 | `gps_nmea.py` | Reconoce tramas NMEA, comprueba su checksum y cuenta | Resincroniza en el siguiente `$`; checksum malo = inválida |
 | `direccion_9bits.py` | Direccionamiento multipunto con 9 bits: bit 8 = 1 es dirección, 0 es dato | Datos sin atender se ignoran; borra `OERR` |
 
-`examples/uart_echo.py` (fuera de esta carpeta) devuelve cada byte **incrementado en uno**; no es el eco.
+`examples/python/uart/uart_echo.py` (fuera de esta carpeta) devuelve cada byte **incrementado en uno**; no es el eco.
 
 ## Verificación: qué está probado y qué no
 

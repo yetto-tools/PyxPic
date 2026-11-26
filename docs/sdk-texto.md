@@ -1,6 +1,6 @@
 # Texto a número: `parse_dec` y `parse_hex`
 
-**Estado: implementado (cuarta parte de #63).** Convierten el texto de un arreglo `uint8[N]` (por ejemplo la línea que dejó `UART.read_line`) a un `uint16`. La otra dirección, número a texto en decimal o hexadecimal, son las f-strings (`docs/sdk-uart.md`: `{v}`, `{v:04X}`). Juntas dan el convertidor decimal ↔ hexadecimal por el puerto serie (`examples/uart/convertidor.py`).
+**Estado: implementado (cuarta parte de #63).** Convierten el texto de un arreglo `uint8[N]` (por ejemplo la línea que dejó `UART.read_line`) a un `uint16`. La otra dirección, número a texto en decimal o hexadecimal, son las f-strings (`docs/sdk-uart.md`: `{v}`, `{v:04X}`). Juntas dan el convertidor decimal ↔ hexadecimal por el puerto serie (`examples/python/uart/convertidor.py`).
 
 ```python
 linea: uint8[12]

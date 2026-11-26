@@ -1,4 +1,4 @@
-//! Los ejemplos de `examples/uart/` compilan y se comportan como dicen, en el simulador (caso normal y un caso de error).
+//! Los ejemplos de `examples/python/uart/` compilan y se comportan como dicen, en el simulador (caso normal y un caso de error).
 //! Nada de esto se ha probado con un puerto serie real.
 
 use std::path::PathBuf;
@@ -17,7 +17,7 @@ const FRAME: u64 = 1040;
 fn build(name: &str) -> Compiled {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let pack = DevicePack::load(&root.join("devices/pic16f887")).unwrap();
-    let src = std::fs::read_to_string(root.join("examples/uart").join(format!("{name}.py"))).unwrap();
+    let src = std::fs::read_to_string(root.join("examples/python/uart").join(format!("{name}.py"))).unwrap();
     let r = analyze(&src, &pack.target_profile());
     let p = r.program.unwrap_or_else(|| panic!("{name}:\n{}", r.diagnostics.render(&src, "t.py")));
     let m = lower(&p);

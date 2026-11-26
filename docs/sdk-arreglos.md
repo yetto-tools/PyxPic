@@ -71,4 +71,4 @@ El acceso indirecto usa `FSR`, que **una interrupción podría pisar** a mitad d
 
 ## Verificación
 
-`crates/pypic-pic14/tests/arrays.rs`: PIC14 contra el intérprete de la IR en lectura, escritura, asignación compuesta y `len`; dos arreglos sin solaparse; **la RAM completa idéntica** entre un índice saturado y uno en rango; el arranque en cero con la RAM llena de `FF`; la interrupción en cada instrucción; los diagnósticos; RAM agotada; y los costos de arriba. Ejemplo: `examples/media_movil.py` (media móvil de 8 lecturas del ADC, probada en simulador con tres entradas). **No probado en hardware.**
+`crates/pypic-pic14/tests/arrays.rs`: PIC14 contra el intérprete de la IR en lectura, escritura, asignación compuesta y `len`; dos arreglos sin solaparse; **la RAM completa idéntica** entre un índice saturado y uno en rango; el arranque en cero con la RAM llena de `FF`; la interrupción en cada instrucción; los diagnósticos; RAM agotada; y los costos de arriba. Ejemplo: `examples/python/adc/media_movil.py` (media móvil de 8 lecturas del ADC, probada en simulador con tres entradas). **No probado en hardware.**

@@ -49,4 +49,4 @@ código de usuario existe `pypic.regs` (`STATUS.Z.value()`, sin garantía de con
 
 `crates/pypic-pic14/tests/bits.rs`: prueba diferencial entre el intérprete de la IR (que modela C exactamente) y el simulador del núcleo — desplazamiento de
 16 bits encadenado, rotación a la derecha con `C` puesto, `swap`, bits en `uint8`/`uint16`/locales, un bucle que multiplica por 2^12 — más todos los rechazos de arriba.
-Ejemplo: `examples/shift16.py`.
+Ejemplo: `examples/python/registros/shift16.py`.

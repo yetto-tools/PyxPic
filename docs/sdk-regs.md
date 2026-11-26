@@ -68,4 +68,4 @@ analógico usado como digital: el compilador ya lo pasa a digital (borra su bit 
 
 `crates/pypic-pic14/tests/regs.rs`: prueba diferencial entre el intérprete de la IR (que modela los registros como memoria plana) y el simulador del
 núcleo sobre registros de los cuatro bancos, composición con expresiones y bucles, vuelta al banco 0 y todos los rechazos de arriba.
-Ejemplo: `examples/registers.py`.
+Ejemplo: `examples/python/registros/registers.py`.

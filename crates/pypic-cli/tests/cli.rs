@@ -45,7 +45,7 @@ fn pic_as_blink_matches_native_assembler_when_xc8_and_dfp_are_configured() {
     let dir = tmp("xc8-compat");
     let official = dir.join("official.hex");
     let native = dir.join("native.hex");
-    let source = "examples/asm/blink_rd0.s";
+    let source = "examples/asm/gpio/blink_rd0.s";
     let options = "-Wl,-presetVec=0h,-pintentry=4h";
     let xc8 = Command::new(pic_as).current_dir(root())
         .arg("-mcpu=16F887").arg(format!("-mdfp={dfp}"))
@@ -155,7 +155,7 @@ fn disasm_pic_as_uses_device_pack_configuration_and_vectors() {
 #[test]
 fn build_finds_the_device_pack_from_the_programs_declaration() {
     let out = tmp("build").join("button_led.hex");
-    let o = pypic(&root(), &["build", "examples/button_led.py", "-o", out.to_str().unwrap()]);
+    let o = pypic(&root(), &["build", "examples/python/gpio/button_led.py", "-o", out.to_str().unwrap()]);
     assert!(o.status.success(), "{}", text(&o));
     assert!(text(&o).contains("PIC16F887") && text(&o).contains("4000000 Hz"), "{}", text(&o));
     let summary = String::from_utf8_lossy(&o.stdout);
@@ -173,7 +173,7 @@ fn build_works_from_any_directory_with_pypic_devices() {
     let o = Command::new(env!("CARGO_BIN_EXE_pypic"))
         .current_dir(tmp("elsewhere"))
         .env("PYPIC_DEVICES", root().join("devices"))
-        .args(["build", root().join("examples/counter.py").to_str().unwrap(), "-o", out.to_str().unwrap()])
+        .args(["build", root().join("examples/python/gpio/counter.py").to_str().unwrap(), "-o", out.to_str().unwrap()])
         .output()
         .unwrap();
     assert!(o.status.success(), "{}", text(&o));
@@ -252,7 +252,7 @@ fn pins_are_validated_against_the_declared_device() {
 
 #[test]
 fn the_shipped_examples_all_build() {
-    for ex in ["examples/counter.py", "examples/button_led.py"] {
+    for ex in ["examples/python/gpio/counter.py", "examples/python/gpio/button_led.py"] {
         let out = tmp("examples").join(format!("{}.hex", Path::new(ex).file_stem().unwrap().to_string_lossy()));
         let o = pypic(&root(), &["build", ex, "-o", out.to_str().unwrap()]);
         assert!(o.status.success(), "{ex}: {}", text(&o));
@@ -264,7 +264,7 @@ fn the_shipped_examples_all_build() {
 #[test]
 fn blink_example_builds_and_the_timing_report_shows_exact_cycles() {
     let out = tmp("blink").join("blink.hex");
-    let o = pypic(&root(), &["build", "examples/blink.py", "--timing", "-o", out.to_str().unwrap()]);
+    let o = pypic(&root(), &["build", "examples/python/gpio/blink.py", "--timing", "-o", out.to_str().unwrap()]);
     assert!(o.status.success(), "{}", text(&o));
     let t = text(&o);
     assert!(t.contains("500 ms -> 500000 ciclos") && t.contains("+0.0 ns"), "{t}");
@@ -298,7 +298,7 @@ fn removed_aliases_point_to_the_single_name() {
 fn asm_reproduces_the_proteus_verified_hex_byte_for_byte() {
     // el dispositivo sale de la directiva PROCESSOR; los vectores se fijan con las opciones del enlazador de pic-as
     let out = tmp("asm").join("blink_rd0.hex");
-    let o = pypic(&root(), &["asm", "examples/asm/blink_rd0.s", "-Wl,-presetVec=0h,-pintentry=4h", "-o", out.to_str().unwrap()]);
+    let o = pypic(&root(), &["asm", "examples/asm/gpio/blink_rd0.s", "-Wl,-presetVec=0h,-pintentry=4h", "-o", out.to_str().unwrap()]);
     assert!(o.status.success(), "{}", text(&o));
     let made = std::fs::read_to_string(&out).unwrap().replace("
 ", "
@@ -530,7 +530,7 @@ fn project_file_errors_are_located_and_explain_the_valid_keys() {
     let o = pypic(&dir, &["check", dir.join("main.py").to_str().unwrap()]);
     assert_eq!(o.status.code(), Some(2), "{}", text(&o));
     assert!(text(&o).contains("[target.a] la clave 'devce' no existe (admite: device, clock, config, output)"), "{}", text(&o));
-    let o = pypic(&root(), &["check", "examples/blink.py", "--target", "x"]);
+    let o = pypic(&root(), &["check", "examples/python/gpio/blink.py", "--target", "x"]);
     assert!(!o.status.success() && text(&o).contains("--target necesita un pypic.toml"), "{}", text(&o));
     // un reloj invalido en el perfil se explica con las reglas del reloj
     let dir = project_dir("proj-badclock", "[project]\ndevices_dir = \"@DEVICES@\"\n[target.a]\ndevice = \"PIC16F887\"\nclock = \"Internal[20 * MHz]\"\n", BARE_MAIN);
@@ -545,7 +545,7 @@ fn project_file_errors_are_located_and_explain_the_valid_keys() {
 
 #[test]
 fn the_shipped_project_example_builds_both_targets_and_creates_the_output_folder() {
-    let dir = root().join("examples/proyecto");
+    let dir = root().join("examples/python/proyecto");
     let _ = std::fs::remove_dir_all(dir.join("build"));
     let o = pypic(&dir, &["build"]);
     assert!(o.status.success(), "{}", text(&o));

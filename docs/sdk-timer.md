@@ -47,7 +47,7 @@ TMR2.every_ms(20)          # 20 000 ciclos a 4 MHz: prescaler 16, PR2 = 124, pos
 
 ## Ejemplo
 
-`examples/timer_blink.py` parpadea RD0 cada 500 ms contando 25 avisos de Timer2, sin esperas bloqueantes.
+`examples/python/temporizadores/timer_blink.py` parpadea RD0 cada 500 ms contando 25 avisos de Timer2, sin esperas bloqueantes.
 
 ## Verificación
 

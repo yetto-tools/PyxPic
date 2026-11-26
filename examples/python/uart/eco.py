@@ -1,7 +1,7 @@
 """Eco: devuelve cada byte recibido SIN modificar (incluidos 0x00 y 0xFF), a 9600 baudios 8N1.
 
 Conexion: RC6/TX -> RX del adaptador, RC7/RX <- TX del adaptador, tierra comun. Terminal a 9600 8N1.
-(El ejemplo examples/uart_echo.py devuelve cada byte incrementado en uno: es otro ejemplo.)
+(El ejemplo examples/python/uart/uart_echo.py devuelve cada byte incrementado en uno: es otro ejemplo.)
 
 Politica ante lo inesperado:
   * Cualquier valor de byte es un dato valido y se devuelve tal cual.

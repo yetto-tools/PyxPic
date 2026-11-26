@@ -15,12 +15,12 @@ Para PIC16F887 se reconoce `CONFIG WRT = 256`, nombre del DFP que protege las pr
 En las pruebas con PIC-AS 4.00, declarar una palabra CONFIG hace que el enlazador también emita la otra con su valor predeterminado; sin ninguna declaración CONFIG no emite ninguna. PyPIC emite solo las palabras declaradas. Esta diferencia puede cambiar el contenido del HEX y debe tenerse en cuenta al programar fusibles.
 
 **Estado: implementación parcial.** `pypic asm` ensambla un subconjunto de la sintaxis de `pic-as` para PIC16 clásico (MPLAB XC8 PIC Assembler, guía DS50002974F, cap. 4 y 5). No se garantiza compatibilidad completa: las directivas pendientes y las diferencias deben comprobarse con PIC-AS real. Es la base del ensamblador en línea ([asm-inline.md](asm-inline.md)).
-Verificado: el blink escrito en PIC-AS (`examples/asm/blink_rd0.s`) produce **byte por byte** el mismo `.hex` que se probó en Proteus,
+Verificado: el blink escrito en PIC-AS (`examples/asm/gpio/blink_rd0.s`) produce **byte por byte** el mismo `.hex` que se probó en Proteus,
 y las 16 008 instrucciones válidas sobreviven a desensamblar y volver a ensamblar.
 
 ### Comparación con XC8 PIC-AS
 
-Se comparó `examples/asm/blink_rd0.s` con PIC-AS 4.00 y el DFP oficial PIC16Fxxx 1.9.176: ambos ensambladores produjeron la misma imagen, incluidas CONFIG1 y CONFIG2. Para repetir la prueba automatizada, indicar `PYPIC_TEST_PIC_AS` con la ruta de `pic-as.exe` y `PYPIC_TEST_XC8_DFP` con la carpeta `xc8` del DFP; ejecutar `cargo test -p pypic-cli --test cli pic_as_blink_matches_native_assembler_when_xc8_and_dfp_are_configured -- --nocapture`. Si faltan ambas variables la comparación se omite. Para un archivo `.s` con `#include`, el comando oficial necesita `-xassembler-with-cpp`; el DFP se indica con `-mdfp`. Esta prueba no certifica todas las directivas ni todos los valores de configuración.
+Se comparó `examples/asm/gpio/blink_rd0.s` con PIC-AS 4.00 y el DFP oficial PIC16Fxxx 1.9.176: ambos ensambladores produjeron la misma imagen, incluidas CONFIG1 y CONFIG2. Para repetir la prueba automatizada, indicar `PYPIC_TEST_PIC_AS` con la ruta de `pic-as.exe` y `PYPIC_TEST_XC8_DFP` con la carpeta `xc8` del DFP; ejecutar `cargo test -p pypic-cli --test cli pic_as_blink_matches_native_assembler_when_xc8_and_dfp_are_configured -- --nocapture`. Si faltan ambas variables la comparación se omite. Para un archivo `.s` con `#include`, el comando oficial necesita `-xassembler-with-cpp`; el DFP se indica con `-mdfp`. Esta prueba no certifica todas las directivas ni todos los valores de configuración.
 
 ```
 pypic asm blink_rd0.s -Wl,-presetVec=0h,-pintentry=4h -o blink_rd0.hex [--listing]

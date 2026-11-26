@@ -71,13 +71,13 @@ XC8 y PIC-AS son opcionales: solo se necesitan para las pruebas diferenciales co
 Desde la raíz del repositorio, `cargo run` compila la CLI si hace falta y ejecuta el comando solicitado. Por ejemplo:
 
 ```powershell
-cargo run -p pypic-cli -- check examples/counter.py
-cargo run -p pypic-cli -- ir examples/counter.py
-cargo run -p pypic-cli -- build examples/counter.py -o counter.hex --listing
-cargo run -p pypic-cli -- build examples/button_led.py -o button_led.hex      # el dispositivo lo declara el propio programa
-cargo run -p pypic-cli -- build examples/blink.py -o blink.hex --timing         # informe de tiempos: pedido, ciclos y error
-cargo run -p pypic-cli -- build examples/blink.py --config WDTE=ON,FOSC=XT      # palabras de configuración por nombre
-cargo run -p pypic-cli -- asm examples/asm/blink_rd0.s -Wl,-presetVec=0h,-pintentry=4h -o blink_rd0.hex   # sintaxis pic-as
+cargo run -p pypic-cli -- check examples/python/gpio/counter.py
+cargo run -p pypic-cli -- ir examples/python/gpio/counter.py
+cargo run -p pypic-cli -- build examples/python/gpio/counter.py -o counter.hex --listing
+cargo run -p pypic-cli -- build examples/python/gpio/button_led.py -o button_led.hex      # el dispositivo lo declara el propio programa
+cargo run -p pypic-cli -- build examples/python/gpio/blink.py -o blink.hex --timing         # informe de tiempos: pedido, ciclos y error
+cargo run -p pypic-cli -- build examples/python/gpio/blink.py --config WDTE=ON,FOSC=XT      # palabras de configuración por nombre
+cargo run -p pypic-cli -- asm examples/asm/gpio/blink_rd0.s -Wl,-presetVec=0h,-pintentry=4h -o blink_rd0.hex   # sintaxis pic-as
 cargo run -p pypic-cli -- device validate devices/pic16f887
 cargo run -p pypic-cli -- disasm archivo.hex     # inspecciona un .hex (programa y palabras de configuración)
 ```

@@ -34,12 +34,12 @@ valor que deja un borrado.
 
 ### Período del parpadeo, medido a mano
 
-`examples/blink.py` (500 ms encendido y 500 ms apagado, período esperado 1,000 s), con el cronómetro de un teléfono y una
+`examples/python/gpio/blink.py` (500 ms encendido y 500 ms apagado, período esperado 1,000 s), con el cronómetro de un teléfono y una
 marca por encendido: 23 marcas en 23,13 s (1,006 s de media); las últimas 8 visibles, 0,970 s de media. Las vueltas
 sueltas van de 0,92 a 1,02 s. Es compatible con lo esperado con un margen de unos pocos puntos porcentuales; **no**
 verifica la exactitud al ciclo, que requiere osciloscopio o analizador lógico.
 
-## Programas de prueba (`examples/hardware/`)
+## Programas de prueba (`examples/python/hardware/`)
 
 Todos se compilan con `--config MCLRE=ON`.
 
@@ -70,7 +70,7 @@ final, `:024200000700B5` (valor `0x07` en la dirección 0).
 
 | Programa | Pin del LED |
 |---|---|
-| `examples/blink.py` | RD0, pin 19 |
+| `examples/python/gpio/blink.py` | RD0, pin 19 |
 | Un blink sobre `RB0` | RB0, pin 33 |
 
 ## Salida serie
@@ -95,7 +95,7 @@ Para ver datos sin contar parpadeos: `UART.start(baud=9600)` y un adaptador TTL-
 1. Compilar desde la raíz del repositorio:
 
    ```
-   cargo run -p pypic-cli -- build examples/blink.py --config MCLRE=ON -o blink.hex
+   cargo run -p pypic-cli -- build examples/python/gpio/blink.py --config MCLRE=ON -o blink.hex
    ```
 
    Sin `-o` o sin revisar la ruta se puede cargar por error un HEX antiguo.

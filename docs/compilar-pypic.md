@@ -55,8 +55,8 @@ Las pruebas del workspace incluyen pruebas del frontend, IR, Device Pack, backen
 Desde la raíz, comprueba el programa y genera un HEX:
 
 ```text
-cargo run -p pypic-cli -- check examples/uart/adc_serial.py
-cargo run -p pypic-cli -- build examples/uart/adc_serial.py -o adc_serial.hex
+cargo run -p pypic-cli -- check examples/python/uart/adc_serial.py
+cargo run -p pypic-cli -- build examples/python/uart/adc_serial.py -o adc_serial.hex
 ```
 
 `cargo run` construye la CLI si hace falta y luego la ejecuta. El HEX se crea en la ruta indicada; si el archivo ya existe, puede sobrescribirse. La salida muestra los recursos conocidos y las advertencias. El PIC16F887 se declara en el propio ejemplo, y la CLI encuentra su Device Pack en `devices/` cuando se ejecuta desde la raíz.

@@ -15,7 +15,7 @@ test("los comandos comprueban y compilan con la CLI real y muestran sus errores"
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pypic extension "));
   const source = path.join(dir, "blink.py");
   const hex = path.join(dir, "blink.hex");
-  fs.copyFileSync(path.join(root, "examples", "blink.py"), source);
+  fs.copyFileSync(path.join(root, "examples", "python", "gpio", "blink.py"), source);
   const commands = new Map();
   const sidebars = new Map();
   const webviews = new Map();
@@ -152,13 +152,13 @@ test("identifica PyPIC y conserva ubicación y severidad de diagnósticos", () =
   assert.ok(language.info.PWM1 && language.info.PWM2 && language.info.duty);
   assert.deepEqual(language.completions("otro."), []);
   const root = path.resolve(__dirname, "../..");
-  const tools = language.projectTools(path.join(root, "examples", "uart", "adc_serial.py"), path.dirname(root), "pypic", "");
+  const tools = language.projectTools(path.join(root, "examples", "python", "uart", "adc_serial.py"), path.dirname(root), "pypic", "");
   assert.equal(tools.executable, path.join(root, "target", "debug", process.platform === "win32" ? "pypic.exe" : "pypic"));
   assert.equal(tools.devices, path.join(root, "devices"));
   const workspaceTools = language.projectTools(root, root, "pypic", "");
   assert.equal(workspaceTools.executable, path.join(root, "target", "debug", process.platform === "win32" ? "pypic.exe" : "pypic"));
   assert.equal(workspaceTools.devices, path.join(root, "devices"));
-  assert.equal(language.projectTools(path.join(root, "examples", "blink.py"), root, "custom-compiler", "custom-devices").executable, "custom-compiler");
+  assert.equal(language.projectTools(path.join(root, "examples", "python", "gpio", "blink.py"), root, "custom-compiler", "custom-devices").executable, "custom-compiler");
 });
 
 test("el resumen visible mantiene la versión del manifiesto", () => {
