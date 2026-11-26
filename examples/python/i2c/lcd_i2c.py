@@ -16,10 +16,10 @@ from pypic.system.time import delay_us, pause
 
 CLOCK: Internal[4 * MHz]
 
-DIRECCION: uint8 = 0x4E        # 0x27 << 1
-BIT_RS: uint8 = 0x01
-BIT_E: uint8 = 0x04
-BIT_LUZ: uint8 = 0x08
+DIRECCION: uint8 = 0x40        # 0x20 << 1
+BIT_RS:    uint8 = 0x01
+BIT_E:     uint8 = 0x04
+BIT_LUZ:   uint8 = 0x08
 
 LINEA1: Rom[uint8] = [72, 111, 108, 97, 32, 80, 121, 80, 73, 67]              # "Hola PyPIC"
 LINEA2: Rom[uint8] = [73, 50, 67, 32, 49, 48, 48, 32, 107, 72, 122]           # "I2C 100 kHz"
