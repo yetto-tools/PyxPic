@@ -1,22 +1,28 @@
 {
   "name": "pypic-ide",
   "displayName": "PyPIC IDE",
-  "description": "v0.1.18 · Comprueba y compila programas PyPIC desde VS Code.",
-  "version": "0.1.18",
+  "description": "v0.1.19 · Comprueba y compila programas PyPIC desde VS Code.",
+  "version": "0.1.19",
   "publisher": "pypic",
   "license": "MIT",
   "icon": "media/icon.png",
   "repository": { "type": "git", "url": "https://github.com/yetto-tools/PyPic.git" },
-  "files": ["extension.js", "language.js", "pinout.js", "resources.js", "project.js", "projectmode.js", "sidebar.js", "welcome.js", "spelling.js", "cspell", "README.md", "LICENSE", "media", "syntaxes"],
+  "files": ["extension.js", "language.js", "pinout.js", "resources.js", "project.js", "projectmode.js", "sidebar.js", "welcome.js", "spelling.js", "cspell", "README.md", "LICENSE", "media", "syntaxes", "language-configuration-basic.json"],
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Programming Languages"],
   "main": "./extension.js",
   "scripts": { "test": "node --test test/commands.test.js test/projectmode.test.js test/pinout.test.js test/resources.test.js test/spelling.test.js" },
-  "activationEvents": ["onView:pypic.actions", "onView:pypic.resources", "onView:pypic.pinout", "onLanguage:python", "onLanguage:pypic", "workspaceContains:pypic.toml"],
+  "activationEvents": ["onView:pypic.actions", "onView:pypic.resources", "onView:pypic.pinout", "onLanguage:python", "onLanguage:pypic", "onLanguage:pypic-basic", "workspaceContains:pypic.toml"],
   "capabilities": { "untrustedWorkspaces": { "supported": false } },
   "contributes": {
-    "languages": [{ "id": "pypic", "aliases": ["PyPIC"] }],
-    "grammars": [{ "language": "pypic", "scopeName": "source.pypic", "path": "./syntaxes/pypic.tmLanguage.json" }],
+    "languages": [
+      { "id": "pypic", "aliases": ["PyPIC"] },
+      { "id": "pypic-basic", "aliases": ["PyPIC BASIC"], "extensions": [".bas"], "configuration": "./language-configuration-basic.json" }
+    ],
+    "grammars": [
+      { "language": "pypic", "scopeName": "source.pypic", "path": "./syntaxes/pypic.tmLanguage.json" },
+      { "language": "pypic-basic", "scopeName": "source.pypic-basic", "path": "./syntaxes/pypic-basic.tmLanguage.json" }
+    ],
     "viewsContainers": { "activitybar": [
       { "id": "pypic", "title": "PyPIC", "icon": "media/pypic.svg" }
     ] },
@@ -44,9 +50,9 @@
       { "command": "pypic.selectPicAs", "title": "PyPIC: Seleccionar PIC-AS (opcional)" }
     ],
     "menus": { "editor/title": [
-      { "command": "pypic.check", "when": "resourceLangId == python || resourceLangId == pypic", "group": "navigation" },
-      { "command": "pypic.build", "when": "resourceLangId == python || resourceLangId == pypic", "group": "navigation" },
-      { "command": "pypic.clean", "when": "resourceLangId == python || resourceLangId == pypic", "group": "navigation" }
+      { "command": "pypic.check", "when": "resourceLangId == python || resourceLangId == pypic || resourceLangId == pypic-basic", "group": "navigation" },
+      { "command": "pypic.build", "when": "resourceLangId == python || resourceLangId == pypic || resourceLangId == pypic-basic", "group": "navigation" },
+      { "command": "pypic.clean", "when": "resourceLangId == python || resourceLangId == pypic || resourceLangId == pypic-basic", "group": "navigation" }
     ],
     "view/title": [
       { "command": "pypic.check", "when": "view == pypic.actions", "group": "navigation@1" },

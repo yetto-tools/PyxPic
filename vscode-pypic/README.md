@@ -1,6 +1,6 @@
 # PyPIC IDE para VS Code
 
-**Versión de la extensión: 0.1.18.** VS Code muestra este número en el resumen y desde el manifiesto de la extensión en la vista Extensiones.
+**Versión de la extensión: 0.1.19.** VS Code muestra este número en el resumen y desde el manifiesto de la extensión en la vista Extensiones.
 
 Extensión para VS Code de escritorio. Usa el compilador PyPIC instalado en el host; no necesita GPASM ni XC8 para crear, comprobar y compilar proyectos.
 
@@ -41,3 +41,7 @@ El pinout se elige automáticamente desde el código fuente y, si no hay declara
 **Seleccionar PIC-AS (opcional)** guarda su ruta para referencia; la extensión todavía no ejecuta PIC-AS ni integra otros toolchains. PyPIC no necesita XC8 para compilar.
 
 Para verificar las pruebas: `npm test` dentro de `vscode-pypic` (o `node --test vscode-pypic/test/commands.test.js vscode-pypic/test/projectmode.test.js` desde la raíz; pasar la carpeta entera falla en Node 24). Necesitan la CLI compilada (`cargo build -p pypic-cli`).
+
+## PyPIC BASIC (`.bas`)
+
+Los archivos `.bas` son PyPIC BASIC (estilo PICAXE, `docs/basic-picaxe.md`): resaltado, ayuda al pasar el cursor, completado de comandos y de métodos del SDK, comprobación al guardar con `PYB....` y `PYP....` en Problemas, y los botones Verificar, Compilar y Limpiar. El PIC se detecta de `DEVICE PIC16F887`. Si otra extensión ya reclama `.bas` (por ejemplo una de Visual Basic o de VBA), asócialo con `"files.associations": { "*.bas": "pypic-basic" }`.

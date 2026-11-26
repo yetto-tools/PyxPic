@@ -58,6 +58,28 @@ const info = {
   sending: "`UART.sending()` indica si el registro de desplazamiento de transmisión sigue ocupado.",
 };
 
+/** Ayuda al pasar el cursor sobre una palabra de PyPIC BASIC (sin distinguir mayusculas). */
+const basicInfo = {
+  device: "`DEVICE PIC16F887`: el PIC para el que esta escrito el programa. Obligatorio.",
+  clock: "`CLOCK INTERNAL 4 MHZ`, `CLOCK CRYSTAL 20 MHZ` o `CLOCK EXTERNAL 20 MHZ`: la fuente y la frecuencia del reloj. Con un oscilador externo RA6 y RA7 son del oscilador.",
+  symbol: "`SYMBOL k = 5` (constante), `SYMBOL x = b3` (otro nombre para una variable) o `SYMBOL led = D.0` (un pin).",
+  dim: "`DIM x AS BYTE|WORD|BIT` y `DIM t(16) AS BYTE` (arreglo). Las variables `b0`..`b27` (BYTE) y `w0`..`w13` (WORD) existen sin declarar y no se solapan.",
+  high: "`HIGH pin`: pone el pin en alto. El pin pasa a ser salida al empezar el programa.",
+  low: "`LOW pin`: pone el pin en bajo.",
+  toggle: "`TOGGLE pin`: invierte el pin.",
+  pause: "`PAUSE ms`: espera exacta al ciclo, con una constante o una variable.",
+  pauseus: "`PAUSEUS us`: espera en microsegundos (una constante).",
+  readadc: "`READADC canal, b0`: lee el canal ANn y guarda los 8 bits de arriba de los 10.",
+  readadc10: "`READADC10 canal, w3`: lee los 10 bits en una variable WORD.",
+  read: "`READ direccion, b0`: lee un byte de la EEPROM de datos.",
+  write: "`WRITE direccion, valor`: escribe un byte en la EEPROM de datos (espera hasta 6 ms).",
+  pwmout: "`PWMOUT C.2, periodo, ciclo`: PWM1 en C.2 o PWM2 en C.1; el periodo es PR2 (0 a 255) y el ciclo de trabajo tiene 10 bits.",
+  sertxd: "`SERTXD(\"x = \", #b0, CR, LF)`: envia por la UART (9600 8N1): textos, #valor en decimal, CR, LF y bytes.",
+  serrxd: "`SERRXD(b0)`: espera un byte por la UART y lo guarda en una variable BYTE.",
+  gosub: "`GOSUB etiqueta`: llama a una subrutina (la etiqueta termina en `RETURN`); cuenta en la pila de hardware.",
+  select: "`SELECT CASE variable ... CASE 1, 2 ... CASE 5 TO 9 ... CASE ELSE ... END SELECT`.",
+};
+
 const members = {
   ADC: ["start", "select", "go", "done", "result", "read"],
   EEPROM: ["read", "write", "start_write", "busy", "failed"],
@@ -65,6 +87,16 @@ const members = {
   PWM2: ["start", "duty", "stop"],
   UART: ["start", "write", "read", "send", "recv", "tx_ready", "rx_ready", "sending", "overrun", "framing_error", "clear_overrun", "write_text", "write9", "send9", "read9", "recv9"],
 };
+
+/** Palabras que se sugieren en un programa BASIC; despues de `OBJETO.` van los metodos del SDK. */
+const basicWords = ["DEVICE", "CLOCK", "SYMBOL", "DIM", "AS", "BYTE", "WORD", "BIT", "LET", "IF", "THEN", "ELSE", "ELSEIF", "ENDIF", "FOR", "TO", "STEP", "NEXT", "DO", "LOOP", "WHILE", "WEND", "UNTIL", "SELECT CASE", "CASE", "END SELECT", "GOTO", "GOSUB", "RETURN", "EXIT", "END", "HIGH", "LOW", "TOGGLE", "OUTPUT", "INPUT", "PAUSE", "PAUSEUS", "READADC", "READADC10", "READ", "WRITE", "PWMOUT", "SERTXD", "SERRXD", "AND", "OR", "XOR", "NOT", "MOD", "INTERNAL", "CRYSTAL", "EXTERNAL", "MHZ", "KHZ", "HZ", "CR", "LF", "TAB"];
+
+function basicCompletions(prefix) {
+  const match = /\b(ADC|UART|EEPROM|PWM[12])\.\w*$/i.exec(prefix);
+  if (match) return members[match[1].toUpperCase()];
+  if (/\.\w*$/.test(prefix)) return [];
+  return basicWords;
+}
 
 function completions(prefix) {
   const match = /\b(ADC|UART|EEPROM|PWM[12])\.\w*$/.exec(prefix);
@@ -78,8 +110,9 @@ function isPyPic(text) {
 }
 
 function declaredDevice(text) {
-  const match = /^\s*from\s+pypic\.device\s+import\s+(PIC\d+[A-Z]\d+)\s*$/m.exec(text);
-  return match ? match[1] : undefined;
+  // Python: from pypic.device import PIC16F887; BASIC: DEVICE PIC16F887
+  const match = /^\s*from\s+pypic\.device\s+import\s+(PIC\d+[A-Z]\d+)\s*$/m.exec(text) || /^\s*DEVICE\s+(PIC\d+[A-Z]\d+)\s*(?:'.*)?$/im.exec(text);
+  return match ? match[1].toUpperCase() : undefined;
 }
 
 function diagnostics(text, file) {
@@ -90,4 +123,4 @@ function diagnostics(text, file) {
   });
 }
 
-module.exports = { info, isPyPic, diagnostics, completions, projectTools, declaredDevice };
+module.exports = { info, basicInfo, isPyPic, diagnostics, completions, basicCompletions, projectTools, declaredDevice };

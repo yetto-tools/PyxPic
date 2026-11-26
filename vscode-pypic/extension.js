@@ -25,6 +25,9 @@ const welcomeCommands = Object.freeze({
   selectPicAs: "pypic.selectPicAs",
 });
 
+/** Lenguajes de programa de PyPIC: Python (`.py`, detectado como pypic al importar el SDK) y PyPIC BASIC (`.bas`). */
+const SOURCE_LANGUAGES = ["python", "pypic", "pypic-basic"];
+
 function activate(context) {
   const output = vscode.window.createOutputChannel("PyPIC");
   const diagnostics = vscode.languages.createDiagnosticCollection("PyPIC");
@@ -59,7 +62,7 @@ function activate(context) {
   function refreshStatus() {
     const editor = vscode.window.activeTextEditor;
     const document = editor && editor.document;
-    if (!document || document.uri.scheme !== "file" || !["python", "pypic"].includes(document.languageId)) {
+    if (!document || document.uri.scheme !== "file" || !SOURCE_LANGUAGES.includes(document.languageId)) {
       statusBar.hide();
       buttons.forEach((button) => button.hide());
       return;
@@ -89,7 +92,7 @@ function activate(context) {
     vscode.workspace.onDidChangeTextDocument((event) => { diagnostics.delete(event.document.uri); detect(event.document); }),
     vscode.workspace.onDidCloseTextDocument((document) => { diagnostics.delete(document.uri); checks.delete(document.uri.toString()); }),
     vscode.workspace.onDidSaveTextDocument((document) => {
-      if (document.languageId === "pypic" && vscode.workspace.getConfiguration("pypic", document.uri).get("checkOnSave", true)) void run("check", document, true);
+      if (["pypic", "pypic-basic"].includes(document.languageId) && vscode.workspace.getConfiguration("pypic", document.uri).get("checkOnSave", true)) void run("check", document, true);
       pinoutView.refresh();
     }),
     vscode.languages.registerHoverProvider("pypic", {
@@ -99,12 +102,31 @@ function activate(context) {
         return word && Object.hasOwn(language.info, word) ? new vscode.Hover(language.info[word]) : undefined;
       },
     }),
+    vscode.languages.registerHoverProvider("pypic-basic", {
+      provideHover(document, position) {
+        const range = document.getWordRangeAtPosition(position);
+        const word = range && document.getText(range);
+        const key = word && word.toLowerCase();
+        if (key && Object.hasOwn(language.basicInfo, key)) return new vscode.Hover(language.basicInfo[key]);
+        return word && Object.hasOwn(language.info, word.toUpperCase()) ? new vscode.Hover(language.info[word.toUpperCase()]) : undefined;
+      },
+    }),
     vscode.languages.registerCompletionItemProvider("pypic", {
       provideCompletionItems(document, position) {
         const prefix = document.lineAt(position.line).text.slice(0, position.character);
         return language.completions(prefix).map((name) => {
           const item = new vscode.CompletionItem(name);
           item.detail = language.info[name] || "PyPIC";
+          return item;
+        });
+      },
+    }, "."),
+    vscode.languages.registerCompletionItemProvider("pypic-basic", {
+      provideCompletionItems(document, position) {
+        const prefix = document.lineAt(position.line).text.slice(0, position.character);
+        return language.basicCompletions(prefix).map((name) => {
+          const item = new vscode.CompletionItem(name);
+          item.detail = language.basicInfo[name.toLowerCase()] || language.info[name] || "PyPIC BASIC";
           return item;
         });
       },
@@ -190,8 +212,8 @@ function activate(context) {
     }
     const editor = vscode.window.activeTextEditor;
     const document = targetDocument || (editor && editor.document);
-    if (!document || document.uri.scheme !== "file" || !["python", "pypic"].includes(document.languageId)) {
-      void vscode.window.showErrorMessage("Abre un archivo Python local de PyPIC antes de continuar.");
+    if (!document || document.uri.scheme !== "file" || !SOURCE_LANGUAGES.includes(document.languageId)) {
+      void vscode.window.showErrorMessage("Abre un archivo PyPIC local (Python o BASIC) antes de continuar.");
       return;
     }
     if (document.isDirty && !(await document.save())) return;
