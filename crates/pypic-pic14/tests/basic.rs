@@ -407,3 +407,42 @@ fn the_interrupt_and_asm_examples_work() {
     let sent: Vec<u8> = s.uart_tx.iter().map(|(b, _)| *b).collect();
     assert_eq!(sent, vec![0x5A], "SWAPF 0xA5 = 0x5A");
 }
+
+// ---- BAUD: la velocidad de la UART se declara en el encabezado ----
+
+fn uart_report(baud: Option<u32>) -> (u32, f64) {
+    let directive = baud.map(|b| format!("BAUD {b}\n")).unwrap_or_default();
+    let (_, c) = build(&format!("{HEAD}{directive}b0 = 65\nSERTXD(b0)\nEND\n"));
+    let u = c.uart.expect("el programa usa la UART");
+    (u.baud, u.error_pct)
+}
+
+#[test]
+fn baud_sets_the_uart_speed_and_defaults_to_9600() {
+    for baud in [1200u32, 4800, 9600, 19200] {
+        let (asked, error) = uart_report(Some(baud));
+        assert_eq!(asked, baud, "la velocidad pedida es la de BAUD");
+        assert!(error.abs() < 3.0, "{baud} baudios a 4 MHz: error de {error} %");
+    }
+    assert_eq!(uart_report(None).0, 9600, "sin BAUD son 9600");
+    // BAUD tambien inicia la UART cuando el programa la usa con sus metodos
+    let (_, c) = build(&format!("{HEAD}BAUD 4800\nUART.write 65\nEND\n"));
+    assert_eq!(c.uart.expect("UART iniciada por BAUD").baud, 4800);
+    // con otra velocidad el generador de baudios (SPBRG) queda distinto
+    let spbrg = |baud| {
+        let (_, c) = build(&format!("{HEAD}BAUD {baud}\nSERTXD(\"a\")\nEND\n"));
+        let mut s = Sim::new(&c.image);
+        s.run_until(2_000, |_| false);
+        s.read(0x99)
+    };
+    assert_ne!(spbrg(9600), spbrg(4800));
+}
+
+#[test]
+fn baud_errors_are_clear() {
+    expect(&format!("{HEAD}BAUD 9600\nBAUD 4800\nSERTXD(\"a\")\n"), "PYB0107"); // repetido
+    expect(&format!("{HEAD}BAUD b0\nSERTXD(\"a\")\n"), "PYB0108"); // no es una constante
+    expect(&format!("{HEAD}BAUD 0\n"), "PYB0108");
+    expect(&format!("{HEAD}BAUD 9600\nUART.start baud = 4800\nSERTXD(\"a\")\n"), "PYB0109");
+    // dos veces la velocidad
+}

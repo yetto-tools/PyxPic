@@ -92,6 +92,8 @@ struct Lw<'a> {
     /// Periodo (PR2) pedido con PWMOUT: los dos PWM comparten Timer2 y por eso el periodo.
     pwm_period: Option<(i128, Span)>,
     pwm_used: BTreeSet<&'static str>,
+    /// `BAUD n`: la velocidad de la UART.
+    baud: Option<(i128, Span)>,
     /// La etiqueta de `ON INTERRUPT` y los bloques `ASM`.
     isr: Option<(String, Span)>,
 }
@@ -119,6 +121,7 @@ pub fn lower(stmts: &[BStmt], d: &mut Diagnostics) -> Module {
         uses_adc: false,
         pwm_period: None,
         pwm_used: BTreeSet::new(),
+        baud: None,
         isr: None,
     };
     lw.run(stmts)
@@ -627,7 +630,7 @@ impl<'a> Lw<'a> {
             BStmtKind::OnInterrupt(_) | BStmtKind::Asm { .. } => {
                 self.err("PYB0104", sp, "ON INTERRUPT y los bloques ASM van en el nivel principal del programa, fuera de IF, FOR, DO...");
             }
-            BStmtKind::Device(_) | BStmtKind::Clock { .. } | BStmtKind::Import { .. } | BStmtKind::Symbol { .. } | BStmtKind::Dim { .. } => {
+            BStmtKind::Device(_) | BStmtKind::Baud(_) | BStmtKind::Clock { .. } | BStmtKind::Import { .. } | BStmtKind::Symbol { .. } | BStmtKind::Dim { .. } => {
                 self.err("PYB0052", sp, "DEVICE, CLOCK, FROM...IMPORT, SYMBOL y DIM van al principio del programa, fuera de los bloques");
             }
         }
@@ -1025,6 +1028,15 @@ impl<'a> Lw<'a> {
                     }
                     device = Some((n.clone(), s.span));
                 }
+                BStmtKind::Baud(e) => {
+                    if self.baud.is_some() {
+                        self.err("PYB0107", s.span, "BAUD ya esta declarado");
+                    }
+                    match self.const_eval(e) {
+                        Some(v) if v > 0 => self.baud = Some((v, s.span)),
+                        _ => self.err("PYB0108", e.span, "BAUD es un numero positivo de baudios: BAUD 9600"),
+                    }
+                }
                 BStmtKind::Clock { kind, amount, unit } => {
                     let Some(v) = self.const_eval(amount) else {
                         self.err("PYB0071", amount.span, "la cantidad del reloj es un numero: CLOCK INTERNAL 4 MHZ");
@@ -1151,8 +1163,13 @@ impl<'a> Lw<'a> {
             let c = self.method(sp0, "ADC", "start", Vec::new(), Vec::new());
             prologue.push(self.st(sp0, StmtKind::Expr(c)));
         }
-        if self.uses_uart && !self.explicit_uart_start {
-            let baud = self.int(sp0, 9600);
+        // la UART se inicia sola con BAUD (9600 si no se declara) cuando el programa la usa por SERTXD/SERRXD o por sus metodos; un UART.start propio manda y BAUD no se combina con el
+        let uart_used = self.uses_uart || self.auto.contains_key("pypic.periph.uart") || (self.baud.is_some() && self.explicit_names.contains("uart"));
+        if let (Some((_, sp)), true) = (self.baud, self.explicit_uart_start) {
+            self.err("PYB0109", sp, "BAUD y UART.start a la vez: la velocidad se declara una sola vez (BAUD, o el argumento baud de UART.start)");
+        }
+        if uart_used && !self.explicit_uart_start {
+            let baud = self.int(sp0, self.baud.map_or(9600, |(v, _)| v));
             let c = self.method(sp0, "UART", "start", Vec::new(), vec![Kwarg { name: "baud".into(), name_span: sp0, value: baud }]);
             prologue.push(self.st(sp0, StmtKind::Expr(c)));
         }

@@ -10,7 +10,7 @@
     { "name": "constant.numeric.decimal.pypic-basic", "match": "\\b[0-9][0-9_]*\\b" },
     { "name": "entity.name.label.pypic-basic", "match": "^\\s*[A-Za-z_][A-Za-z0-9_]*(?=\\s*:)" },
     { "name": "keyword.control.pypic-basic", "match": "(?i)\\b(if|then|else|elseif|endif|end\\s+if|for|to|step|next|do|loop|while|wend|until|select|case|end\\s+select|goto|gosub|return|exit|end|on|interrupt|interrupts|asm|enable|disable)\\b" },
-    { "name": "keyword.declaration.pypic-basic", "match": "(?i)\\b(device|clock|symbol|dim|as|let|from|import)\\b" },
+    { "name": "keyword.declaration.pypic-basic", "match": "(?i)\\b(device|clock|baud|symbol|dim|as|let|from|import)\\b" },
     { "name": "storage.type.pypic-basic", "match": "(?i)\\b(byte|word|bit)\\b" },
     { "name": "support.function.command.pypic-basic", "match": "(?i)\\b(high|low|toggle|output|input|pause|pauseus|readadc|readadc10|read|write|pwmout|sertxd|serrxd)\\b" },
     { "name": "keyword.operator.word.pypic-basic", "match": "(?i)\\b(and|or|xor|not|mod)\\b" },

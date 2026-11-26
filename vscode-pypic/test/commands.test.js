@@ -197,7 +197,7 @@ test("PyPIC BASIC (.bas): lenguaje, gramatica, ayuda, completado y dispositivo d
   assert.deepEqual(language.basicCompletions("EEPROM."), ["read", "write", "start_write", "busy", "failed"]);
   assert.deepEqual(language.basicCompletions("adc.re"), language.basicCompletions("ADC."), "el objeto no distingue mayusculas");
   assert.deepEqual(language.basicCompletions("x = b0."), []);
-  for (const word of ["device", "clock", "symbol", "dim", "high", "pause", "readadc10", "read", "write", "pwmout", "sertxd", "serrxd"]) assert.ok(language.basicInfo[word], word);
+  for (const word of ["device", "clock", "baud", "symbol", "dim", "high", "pause", "readadc10", "read", "write", "pwmout", "sertxd", "serrxd"]) assert.ok(language.basicInfo[word], word);
   const d = language.diagnostics("t.bas:3:6: error[PYB0040]: 300 no cabe en un BYTE (0 a 255)\n", "t.bas");
   assert.deepEqual(d, [{ line: 2, column: 5, severity: "error", code: "PYB0040", message: "300 no cabe en un BYTE (0 a 255)" }]);
 });

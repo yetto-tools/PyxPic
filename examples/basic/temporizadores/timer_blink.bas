@@ -2,11 +2,13 @@
 ' Equivale a examples/python/temporizadores/timer_blink.py.
 DEVICE PIC16F887
 CLOCK INTERNAL 4 MHZ
+BAUD 9600             ' velocidad de la UART (8N1) de SERTXD
 
 SYMBOL led = D.0
 
 b0 = 0
 TMR2.every_ms 20
+
 main:
   IF TMR2.expired THEN
     TMR2.clear
@@ -14,6 +16,8 @@ main:
     IF b0 = 25 THEN
       b0 = 0
       TOGGLE led
+      SERTXD("ESTADO: " , #led, CR, LF)
     ENDIF
   ENDIF
+
   GOTO main

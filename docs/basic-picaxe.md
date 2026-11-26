@@ -53,6 +53,7 @@ PyPIC BASIC parte del BASIC de PICAXE para que sus programas se reconozcan, pero
 ```basic
 DEVICE PIC16F887            ' obligatorio: dice para qué PIC está escrito el programa
 CLOCK INTERNAL 4 MHZ        ' INTERNAL, CRYSTAL o EXTERNAL; MHZ, KHZ o HZ (como CLOCK: Internal[4 * MHz] en Python)
+BAUD 9600                   ' velocidad de la UART (8N1): la de SERTXD, SERRXD y UART.write; sin esta línea son 9600
 ```
 
 **No hay importaciones.** Los periféricos del SDK (`ADC`, `UART`, `EEPROM`, `PWM1`, `CMP1`, `CVREF`, `TMR2`...) y sus constantes (`AN0`, `FOSC_8`, `C12IN0`, `REF_PIN`...) se importan solos cuando el programa los usa, y no distinguen mayúsculas (`adc`, `an0`). Los pines y las pausas también. Solo los módulos que no son periféricos (`pypic.regs`) se importan con `FROM pypic.regs IMPORT STATUS`; hacerlo con un periférico sigue funcionando.
@@ -134,7 +135,7 @@ El `FOR` suma o resta una constante y **no puede desbordar**: `FOR b0 = 0 TO 255
 | `READADC10 canal, w3` | lee los 10 bits en una variable WORD; el ADC se enciende solo al empezar |
 | `READ dirección, b0` / `WRITE dirección, valor` | lee y escribe un byte de la **EEPROM de datos** (256 bytes); `WRITE` espera hasta 6 ms a que el chip termine |
 | `PWMOUT C.2, periodo, ciclo` | PWM por el pin del módulo CCP (`C.2` es PWM1 y `C.1` es PWM2); `periodo` es PR2 (constante de 0 a 255, prescaler 1: periodo de PR2 + 1 ciclos de instrucción) y `ciclo` el ciclo de trabajo de 10 bits (0 a 1023). Los dos módulos comparten Timer2: un solo periodo por programa |
-| `SERTXD("x = ", #b0, CR, LF, b1)` | envía por la UART (9600 baudios 8N1, RC6/TX, se inicia sola): textos, `#valor` en decimal, `CR`, `LF`, `TAB`, un byte constante y un valor de 8 bits suelto (se envía tal cual) |
+| `SERTXD("x = ", #b0, CR, LF, b1)` | envía por la UART (`BAUD`, 9600 por defecto, 8N1, RC6/TX; se inicia sola): textos, `#valor` en decimal, `CR`, `LF`, `TAB`, un byte constante y un valor de 8 bits suelto (se envía tal cual) |
 | `SERRXD(b0)` | espera un byte por la UART (RC7/RX) y lo guarda en una variable BYTE |
 | `pinB.0`, `B.0` | en una condición o expresión lee el pin (0 o 1): `IF pinB.0 = 1 THEN ...` |
 
@@ -181,7 +182,7 @@ Lo que no tiene un comando PICAXE (comparadores, CVREF, temporizadores, el resto
 CVREF.start step = 8                                  ' equivale a CVREF.start(step = 8)
 CMP1.start negative = C12IN0, positive = REF_CVREF
 TMR2.every_ms 20
-UART.start baud = 4800                                ' cambia los 9600 por defecto de SERTXD
+UART.start baud = 4800                                ' en vez de BAUD, con UART.start la velocidad va aquí (no se combinan: PYB0109)
 IF CMP1.out THEN HIGH led                             ' sin paréntesis también en una condición
 IF TMR2.expired THEN
   TMR2.clear
@@ -204,6 +205,7 @@ Los errores propios de BASIC son `PYB0001`–`PYB0106` y salen con `archivo.bas:
 | `PYB0050` / `PYB0072` / `PYB0073` | `RETURN` fuera de una subrutina; `GOSUB` a una etiqueta que no existe; subrutina sin `RETURN` |
 | `PYB0054` | el `FOR` desborda su variable |
 | `PYB0062` | `HIGH`, `LOW`... necesitan un pin (`B.0`, o un nombre de `SYMBOL`) |
+| `PYB0107`–`PYB0109` | `BAUD` repetido, no constante o combinado con `UART.start` |
 | `PYB0074` | uso a la vez de `wN` y `b(2N)`/`b(2N+1)` (se solapan en PICAXE) |
 | `PYP2230` / `PYP2231` | `GOTO` a una etiqueta que no está en la función / etiqueta repetida |
 

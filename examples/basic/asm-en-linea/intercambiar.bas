@@ -3,6 +3,7 @@
 ' Equivale a la idea de examples/python/asm-en-linea/inline_asm.py: el escape de rendimiento cuando el lenguaje no alcanza.
 DEVICE PIC16F887
 CLOCK INTERNAL 4 MHZ
+BAUD 9600             ' velocidad de la UART (8N1) de SERTXD
 
 b0 = $A5
 GOSUB intercambiar        ' b0 = $5A

@@ -2,6 +2,7 @@
 ' Variante con contador de examples/python/uart/saludo_texto.py. SERTXD acepta textos, #valor (en decimal), CR, LF y bytes sueltos.
 DEVICE PIC16F887
 CLOCK INTERNAL 4 MHZ
+BAUD 9600             ' velocidad de la UART (8N1); sin esta linea son 9600
 
 b0 = 0
 main:

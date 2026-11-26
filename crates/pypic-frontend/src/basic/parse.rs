@@ -77,6 +77,8 @@ pub enum CaseItem {
 #[derive(Clone, Debug)]
 pub enum BStmtKind {
     Device(String),
+    /// `BAUD 9600`: la velocidad de la UART (la que usan SERTXD y SERRXD y la que inicia el programa); 8N1.
+    Baud(BExpr),
     /// `CLOCK INTERNAL 4 MHZ`: la fuente (`Internal`, `Crystal`, `ExternalClock`), la cantidad y la unidad.
     Clock {
         kind: String,
@@ -571,6 +573,10 @@ impl<'a> Parser<'a> {
                 let (n, _) = self.ident("el nombre del PIC (DEVICE PIC16F887)")?;
                 BStmtKind::Device(n)
             }
+            "BAUD" => {
+                self.bump();
+                BStmtKind::Baud(self.expr()?)
+            }
             "CLOCK" => {
                 self.bump();
                 let (kind, ksp) = self.ident("la fuente del reloj: INTERNAL, CRYSTAL o EXTERNAL")?;
@@ -1045,6 +1051,7 @@ fn is_keyword(upper: &str) -> bool {
         upper,
         "ON" | "ASM"
             | "DEVICE"
+            | "BAUD"
             | "CLOCK"
             | "FROM"
             | "IMPORT"

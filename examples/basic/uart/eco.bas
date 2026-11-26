@@ -2,6 +2,7 @@
 ' Equivale a examples/python/uart/eco.py, salvo que no trata el desbordamiento del receptor (OERR): con UART.overrun y UART.clear_overrun si.
 DEVICE PIC16F887
 CLOCK INTERNAL 4 MHZ
+BAUD 9600             ' velocidad de la UART (8N1); sin esta linea son 9600
 
 main:
   SERRXD(b0)            ' espera un byte
