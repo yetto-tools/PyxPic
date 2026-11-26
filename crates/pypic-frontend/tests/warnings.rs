@@ -91,7 +91,11 @@ fn a_local_that_is_read_in_any_way_does_not_warn() {
     assert!(read("    x: uint8 = 5\n    x += 1\n    g = x\n").is_empty());
     assert!(read("    c: uint8 = 0\n    c += 1\n").is_empty(), "un contador que solo se incrementa es un uso");
     assert!(read("    x: uint8 = 5\n    if x > 2:\n        g = 1\n").is_empty(), "leida en una condicion");
-    assert!(codes("from pypic.periph.uart import UART\nCLOCK_HZ: Const[uint32] = 4_000_000\n\n\ndef main() -> None:\n    UART.start(baud=9600)\n    v: uint8 = 7\n    UART.write_text(f\"{v}\")\n").is_empty(), "leida en un campo de f-string");
+    assert!(
+        codes("from pypic.periph.uart import UART\nCLOCK_HZ: Const[uint32] = 4_000_000\n\n\ndef main() -> None:\n    UART.start(baud=9600)\n    v: uint8 = 7\n    UART.write_text(f\"{v}\")\n")
+            .is_empty(),
+        "leida en un campo de f-string"
+    );
     // la variable bool donde parse_dec anota el error: se escribe y despues se lee
     let parse = "buf: uint8[4]\n\n\ndef main() -> None:\n    bad: bool = False\n    v: uint16 = parse_dec(buf, 2, bad)\n    if bad:\n        v = 0\n    w: uint16 = v\n    w += 1\n";
     assert!(codes(parse).is_empty(), "{:?}", codes(parse));

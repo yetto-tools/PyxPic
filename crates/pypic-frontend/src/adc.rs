@@ -55,12 +55,20 @@ impl Default for AdcConfig {
 impl AdcConfig {
     /// TAD minimo de AD130: 1,6 us con VREF >= 3,0 V y 3,0 us con VREF de rango completo.
     pub fn tad_min_ns(&self) -> u64 {
-        if self.low_voltage { 3_000 } else { 1_600 }
+        if self.low_voltage {
+            3_000
+        } else {
+            1_600
+        }
     }
 
     /// Ventana recomendada (tablas 9-1 y 17-18, VDD > 3,0 V): hasta 6,0 us; con VDD baja, hasta el maximo de 9,0 us.
     pub fn tad_recommended_max_ns(&self) -> u64 {
-        if self.low_voltage { TAD_MAX_NS } else { 6_000 }
+        if self.low_voltage {
+            TAD_MAX_NS
+        } else {
+            6_000
+        }
     }
 }
 

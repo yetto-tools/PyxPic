@@ -170,7 +170,10 @@ fn an_interrupt_using_arrays_at_any_instruction_leaves_main_untouched() {
     assert!(hits > 0, "la interrupcion si escribio en su arreglo");
     // una interrupcion que no usa arreglos no gasta el byte de FSR en su prologo
     let (_, plain) = build(&format!("{}from pypic import interrupt\nn: uint8 = 0\n\n\n@interrupt\ndef isr() -> None:\n    global n\n    n += 1\n\n\ndef main() -> None:\n    pass\n", head()));
-    let (_, with_fsr) = build(&format!("{}from pypic import interrupt\nb: uint8[8]\nn: uint8 = 0\n\n\n@interrupt\ndef isr() -> None:\n    global n\n    n += 1\n    b[0] = n\n\n\ndef main() -> None:\n    pass\n", head()));
+    let (_, with_fsr) = build(&format!(
+        "{}from pypic import interrupt\nb: uint8[8]\nn: uint8 = 0\n\n\n@interrupt\ndef isr() -> None:\n    global n\n    n += 1\n    b[0] = n\n\n\ndef main() -> None:\n    pass\n",
+        head()
+    ));
     assert!(with_fsr.listing.contains("FSR") || with_fsr.flash_words > plain.flash_words);
 }
 
@@ -216,14 +219,20 @@ fn bad_arrays_are_located_errors() {
 fn an_array_that_does_not_fit_in_ram_is_a_codegen_error_not_silent() {
     let r = analyze(&format!("{}big: uint8[255]\n\n\ndef main() -> None:\n    big[0] = 1\n", head()), &pack().target_profile());
     let m = lower(&r.program.expect("el frontend lo acepta: la capacidad cabe en un indice uint8"));
-    let err = compile(&m, &Options::default()).err().expect("no cabe en el banco 0").to_string();
+    let err = match compile(&m, &Options::default()) {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("no cabe en el banco 0"),
+    };
     assert!(err.contains("RAM"), "{err}");
 }
 
 // ---- costo ---------------------------------------------------------------------------------------------------------
 
 fn cycles_of(stmt: &str) -> u64 {
-    let src = format!("{}from pypic.periph.gpio import RD0\nbuf: uint8[16]\nidx: uint8 = 5\nv: uint8 = 0\n\n\ndef main() -> None:\n    global v\n    RD0.output()\n    RD0.on()\n    {stmt}\n    RD0.off()\n", head());
+    let src = format!(
+        "{}from pypic.periph.gpio import RD0\nbuf: uint8[16]\nidx: uint8 = 5\nv: uint8 = 0\n\n\ndef main() -> None:\n    global v\n    RD0.output()\n    RD0.on()\n    {stmt}\n    RD0.off()\n",
+        head()
+    );
     let (_, c) = build(&src);
     let mut s = Sim::new(&c.image);
     let (mut up, mut down, mut last) = (None, None, None);

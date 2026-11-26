@@ -254,7 +254,9 @@ fn a_warning_names_each_routine_once() {
 
 /// Ciclos del operador entre el BSF y el BCF de RD0 (sin el BCF final).
 fn cycles(ty: &str, op: &str, a: i64, b: i64) -> u64 {
-    let src = format!("{HEAD}from pypic.periph.gpio import RD0\nr: {ty} = 0\nx: {ty} = {a}\ny: {ty} = {b}\ndef main() -> None:\n    global r\n    RD0.output()\n    RD0.on()\n    r = x {op} y\n    RD0.off()\n");
+    let src = format!(
+        "{HEAD}from pypic.periph.gpio import RD0\nr: {ty} = 0\nx: {ty} = {a}\ny: {ty} = {b}\ndef main() -> None:\n    global r\n    RD0.output()\n    RD0.on()\n    r = x {op} y\n    RD0.off()\n"
+    );
     let (_, c) = build(&src);
     let mut s = Sim::new(&c.image);
     let (mut up, mut down, mut last) = (None, None, None);
@@ -311,7 +313,9 @@ fn the_documented_costs_are_what_the_simulator_measures() {
 
 #[test]
 fn the_routines_are_small() {
-    let src = format!("{HEAD}a: u8 = 3\nb: u16 = 5\nc: i8 = -3\nd: i16 = -5\nr: u16 = 0\ndef main() -> None:\n    global r\n    r = u16(a * a) + b * b + u16(c // c) + u16(d // d) + u16(a // a) + u16(b // b)\n");
+    let src = format!(
+        "{HEAD}a: u8 = 3\nb: u16 = 5\nc: i8 = -3\nd: i16 = -5\nr: u16 = 0\ndef main() -> None:\n    global r\n    r = u16(a * a) + b * b + u16(c // c) + u16(d // d) + u16(a // a) + u16(b // b)\n"
+    );
     let (_, c) = build(&src);
     let mut starts: Vec<(String, u32)> = Vec::new();
     let (mut last, mut pending) = (0u32, None::<String>);

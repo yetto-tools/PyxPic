@@ -3,7 +3,11 @@ use std::path::PathBuf;
 use pypic_device::DevicePack;
 use pypic_pic14::samples::{self, BLINK_CONFIG1, BLINK_CONFIG2, CONFIG1, CONFIG2};
 use pypic_pic14::sim::{Sim, STATUS};
-use pypic_pic14::{Dest::{F, W}, Image, Inst, Inst::*};
+use pypic_pic14::{
+    Dest::{F, W},
+    Image, Inst,
+    Inst::*,
+};
 
 fn sim(prog: &[Inst]) -> Sim {
     let mut img = Image::new();
@@ -89,7 +93,7 @@ fn skip_instructions_cost_two_cycles_when_taken() {
     }
     assert_eq!(s.w, 0xBB);
     assert_eq!(s.cycles, 1 + 1 + 2 + 1); // el salto cuesta un ciclo extra
-    // no salta si el resultado no es 0
+                                         // no salta si el resultado no es 0
     let s = run(&[Movlw(2), Movwf(0x20), Decfsz(0x20, F), Movlw(0xAA)], 4);
     assert_eq!(s.w, 0xAA);
     // BTFSC / BTFSS
@@ -169,7 +173,7 @@ fn banks_mirrors_and_common_ram() {
 fn trisd_resets_to_input_and_pin_follows_latch() {
     let s = sim(&[]);
     assert_eq!(s.pin('D', 0), None); // entrada (alta impedancia)
-    // 08h en banco 1 es TRISD: BCF lo vuelve salida
+                                     // 08h en banco 1 es TRISD: BCF lo vuelve salida
     let s = run(&[Bsf(STATUS as u8, 5), Bcf(0x08, 0), Bcf(STATUS as u8, 5), Bsf(0x08, 0)], 4);
     assert_eq!(s.pin('D', 0), Some(true));
 }
@@ -211,7 +215,7 @@ fn blink_toggles_rd0_with_cycle_exact_timing() {
     let ev = rd0_events(&samples::blink_rd0(), 5);
     let levels: Vec<bool> = ev.iter().map(|e| e.1).collect();
     assert_eq!(levels, [false, true, false, true, false]); // RD0 pasa a salida en bajo, luego parpadea
-    // Alto -> bajo: CALL..RETURN (592 142 ciclos, calculados a mano) + BCF (1)
+                                                           // Alto -> bajo: CALL..RETURN (592 142 ciclos, calculados a mano) + BCF (1)
     assert_eq!(ev[2].0 - ev[1].0, 592_143);
     // Bajo -> alto: delay (592 142) + GOTO (2) + BSF (1)
     assert_eq!(ev[3].0 - ev[2].0, 592_145);
@@ -248,8 +252,7 @@ fn blink_config_words_match_the_device_pack_fields() {
         assert!(f.values.contains_key(&v.to_string()), "{name}={v} no existe en el pack");
         v
     };
-    let c1 = [("DEBUG", 1), ("LVP", 0), ("FCMEN", 0), ("IESO", 0), ("BOREN", 0), ("CPD", 1), ("CP", 1),
-              ("MCLRE", 0), ("PWRTE", 1), ("WDTE", 0), ("FOSC", 4)];
+    let c1 = [("DEBUG", 1), ("LVP", 0), ("FCMEN", 0), ("IESO", 0), ("BOREN", 0), ("CPD", 1), ("CP", 1), ("MCLRE", 0), ("PWRTE", 1), ("WDTE", 0), ("FOSC", 4)];
     for (name, want) in c1 {
         assert_eq!(field(BLINK_CONFIG1, name), want, "CONFIG1.{name}");
     }

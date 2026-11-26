@@ -29,7 +29,8 @@ fn value_returns_u8_and_accepts_u8_bool_or_literal() {
     ok(&format!("{HEAD}x: u8 = 0\ndef main() -> None:\n    global x\n    RB0.input()\n    RD0.output()\n    x = RB0.value()\n    RD0.value(x)\n    RD0.value(1)\n    RD0.value(True)\n"));
     err(&format!("{HEAD}def main() -> None:\n    RB0.input()\n    b: bool = RB0.value()\n"), "PYP2041"); // u8 no es bool
     err(&format!("{HEAD}def main() -> None:\n    RD0.output()\n    RD0.value(u16(1))\n"), "PYP2041");
-    err(&format!("{HEAD}def main() -> None:\n    RD0.output()\n    x: u8 = RD0.on()\n"), "PYP2041"); // None no es u8
+    err(&format!("{HEAD}def main() -> None:\n    RD0.output()\n    x: u8 = RD0.on()\n"), "PYP2041");
+    // None no es u8
 }
 
 #[test]
@@ -37,7 +38,8 @@ fn pins_must_be_imported_and_exist() {
     err("def main() -> None:\n    RD0.output()\n", "PYP2078");
     err("from pypic.periph.gpio import LED\ndef main() -> None:\n    pass\n", "PYP2074");
     err("from pypic.periph.gpio import RD0\nfrom pypic.foo import x\n", "PYP1002");
-    err("from pypic.periph.gpio import RD0\ndef main() -> None:\n    RB0.output()\n", "PYP2078"); // RB0 no importado
+    err("from pypic.periph.gpio import RD0\ndef main() -> None:\n    RB0.output()\n", "PYP2078");
+    // RB0 no importado
 }
 
 #[test]

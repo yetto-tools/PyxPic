@@ -356,7 +356,7 @@ impl<'m> Machine<'m> {
                         let cur = v.unwrap();
                         self.write(f, fr, *p, if matches!(op, BitsOp::BitSet(_)) { cur | (1i128 << n) } else { cur & !(1i128 << n) });
                     }
-                    BitsOp::BitTest(n) => self.write(f, fr, dst.unwrap(), (v.unwrap() >> n & 1) as i128),
+                    BitsOp::BitTest(n) => self.write(f, fr, dst.unwrap(), (v.unwrap() >> n) & 1),
                 }
             }
             Inst::Reg { call, dst, arg } => {

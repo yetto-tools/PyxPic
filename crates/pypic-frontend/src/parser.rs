@@ -9,11 +9,8 @@ use crate::lexer::{lex, Tok, Token};
 
 type R<T> = Result<T, ()>;
 
-const UNSUPPORTED_KEYWORDS: &[&str] = &[
-    "class", "try", "except", "finally", "with", "del", "assert", "raise", "yield", "async",
-    "await", "match", "nonlocal", "lambda", "import", "from", "def", "else", "elif", "is", "in",
-    "as",
-];
+const UNSUPPORTED_KEYWORDS: &[&str] =
+    &["class", "try", "except", "finally", "with", "del", "assert", "raise", "yield", "async", "await", "match", "nonlocal", "lambda", "import", "from", "def", "else", "elif", "is", "in", "as"];
 
 fn aug_op(op: &str) -> BinOp {
     match op {
@@ -215,11 +212,7 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 let sp = self.span();
-                return self.err(
-                    "PYP1001",
-                    sp,
-                    "a nivel de modulo solo se permiten declaraciones tipadas (x: u8 = 0), funciones e imports de 'pypic'",
-                );
+                return self.err("PYP1001", sp, "a nivel de modulo solo se permiten declaraciones tipadas (x: u8 = 0), funciones e imports de 'pypic'");
             }
         }
         Ok(())
@@ -291,11 +284,7 @@ impl<'a> Parser<'a> {
         }
         self.expect(Tok::RParen, "')'")?;
         let ret = if self.eat(&Tok::Arrow) { Some(self.type_expr(true)?) } else { None };
-        let (body, asm) = if decorators.iter().any(|d| d.name == "asm_function") {
-            (Vec::new(), Some(self.asm_body()?))
-        } else {
-            (self.block(true)?, None)
-        };
+        let (body, asm) = if decorators.iter().any(|d| d.name == "asm_function") { (Vec::new(), Some(self.asm_body()?)) } else { (self.block(true)?, None) };
         let span = start.to(self.prev_span());
         Ok(FuncDef { span, name, decorators, params, ret, body, asm })
     }

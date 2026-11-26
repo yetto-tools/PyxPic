@@ -60,9 +60,10 @@ fn first_entry(c: &Compiled, name: &str) -> u32 {
 
 #[test]
 fn a_table_is_read_with_a_runtime_index() {
-    let src = format!("{HEAD}T: Rom[u8] = [10, 20, 30, 40, 50]\nsum: u16 = 0\nx: u8 = 0\ndef main() -> None:\n    global sum, x\n    for i in range(5):\n        sum += u16(T[i])\n        x = x ^ T[i]\n");
+    let src =
+        format!("{HEAD}T: Rom[u8] = [10, 20, 30, 40, 50]\nsum: u16 = 0\nx: u8 = 0\ndef main() -> None:\n    global sum, x\n    for i in range(5):\n        sum += u16(T[i])\n        x = x ^ T[i]\n");
     let (g, ..) = differential(&src);
-    assert_eq!((g["sum"], g["x"]), (150, 10 ^ 20 ^ 30 ^ 40 ^ 50));
+    assert_eq!((g["sum"], g["x"]), (150, 26)); // 26 = 10 ^ 20 ^ 30 ^ 40 ^ 50
 }
 
 #[test]

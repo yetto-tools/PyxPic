@@ -72,7 +72,21 @@ pub struct TargetProfile {
 
 impl TargetProfile {
     pub fn new(name: impl Into<String>, native_bits: u32, max_int_bits: u32) -> Self {
-        TargetProfile { name: name.into(), native_bits, max_int_bits, stack_levels: None, pins: None, device: None, max_clock_hz: None, clocks_per_cycle: None, default_clock_hz: None, peripherals: None, registers: None, pin_claims: None, project_clock: None }
+        TargetProfile {
+            name: name.into(),
+            native_bits,
+            max_int_bits,
+            stack_levels: None,
+            pins: None,
+            device: None,
+            max_clock_hz: None,
+            clocks_per_cycle: None,
+            default_clock_hz: None,
+            peripherals: None,
+            registers: None,
+            pin_claims: None,
+            project_clock: None,
+        }
     }
 
     pub fn with_pin_claims(mut self, c: BTreeMap<String, Vec<PinClaim>>) -> Self {

@@ -4,8 +4,8 @@
 use std::path::PathBuf;
 
 use pypic_device::DevicePack;
-use pypic_frontend::text::{parse, TextOp};
 use pypic_frontend::analyze;
+use pypic_frontend::text::{parse, TextOp};
 use pypic_ir::{lower, verify, Machine, Module};
 use pypic_pic14::codegen::Compiled;
 use pypic_pic14::sim::Sim;
@@ -65,20 +65,54 @@ fn the_reference_parser_is_what_the_documentation_says() {
     let d = |t: &str| parse(TextOp::ParseDec, t.as_bytes());
     assert_eq!((d("0"), d("0042"), d("65535"), d("65536"), d(""), d("12a"), d(" 7"), d("-5"), d("+5")), (Some(0), Some(42), Some(65535), None, None, None, None, None, None));
     let h = |t: &str| parse(TextOp::ParseHex, t.as_bytes());
-    assert_eq!((h("FF"), h("ff"), h("0x1F"), h("0X7fff"), h("FFFF"), h("10000"), h("0x"), h("G"), h("00001F")), (Some(255), Some(255), Some(31), Some(0x7FFF), Some(0xFFFF), None, None, None, Some(31)));
+    assert_eq!(
+        (h("FF"), h("ff"), h("0x1F"), h("0X7fff"), h("FFFF"), h("10000"), h("0x"), h("G"), h("00001F")),
+        (Some(255), Some(255), Some(31), Some(0x7FFF), Some(0xFFFF), None, None, None, Some(31))
+    );
     assert_eq!((h("0"), h("0x0"), h("x1F")), (Some(0), Some(0), None));
 }
 
 #[test]
 fn decimal_matches_the_reference_for_valid_edge_and_invalid_text() {
-    for t in ["0", "7", "10", "99", "255", "256", "6553", "6554", "65530", "65535", "65536", "65539", "99999", "655350", "0042", "0000000000065535", "", "12a", "a12", " 7", "7 ", "-5", "+5", "1.5", "1,5", "\u{0}", "\u{7f}"] {
+    for t in [
+        "0",
+        "7",
+        "10",
+        "99",
+        "255",
+        "256",
+        "6553",
+        "6554",
+        "65530",
+        "65535",
+        "65536",
+        "65539",
+        "99999",
+        "655350",
+        "0042",
+        "0000000000065535",
+        "",
+        "12a",
+        "a12",
+        " 7",
+        "7 ",
+        "-5",
+        "+5",
+        "1.5",
+        "1,5",
+        "\u{0}",
+        "\u{7f}",
+    ] {
         assert_eq!(convert("parse_dec", t.as_bytes()), expected(TextOp::ParseDec, t.as_bytes()), "{t:?}");
     }
 }
 
 #[test]
 fn hexadecimal_matches_the_reference_with_or_without_the_prefix_and_in_any_case() {
-    for t in ["0", "F", "f", "FF", "ff", "Ab", "1F", "0x1F", "0X1f", "0xFFFF", "0XffFf", "FFFF", "10000", "0x10000", "00001F", "0x0001", "0x", "0X", "x1F", "G", "0xG", "1G", "1F ", "-1", "\u{0}", "0x 1", "fg", "9", "A", "0a", "0xa"] {
+    for t in [
+        "0", "F", "f", "FF", "ff", "Ab", "1F", "0x1F", "0X1f", "0xFFFF", "0XffFf", "FFFF", "10000", "0x10000", "00001F", "0x0001", "0x", "0X", "x1F", "G", "0xG", "1G", "1F ", "-1", "\u{0}", "0x 1",
+        "fg", "9", "A", "0a", "0xa",
+    ] {
         assert_eq!(convert("parse_hex", t.as_bytes()), expected(TextOp::ParseHex, t.as_bytes()), "{t:?}");
     }
 }
@@ -133,7 +167,9 @@ fn the_error_variable_can_be_a_local_and_the_call_can_be_a_statement() {
 
 #[test]
 fn bad_calls_are_located_errors() {
-    let prog = |decl: &str, body: &str| diagnostics(&format!("{HEAD}buf: uint8[8]\nflag: bool = False\nm: uint16 = 0\nnum: uint8 = 0\n{decl}\n\n\ndef main() -> None:\n    global flag, m, num\n    x: uint16 = 0\n{body}"));
+    let prog = |decl: &str, body: &str| {
+        diagnostics(&format!("{HEAD}buf: uint8[8]\nflag: bool = False\nm: uint16 = 0\nnum: uint8 = 0\n{decl}\n\n\ndef main() -> None:\n    global flag, m, num\n    x: uint16 = 0\n{body}"))
+    };
     for (body, code, frag) in [
         ("    x = parse_dec(buf, 4)\n", "PYP2055", "parse_dec(buf, n, error)"),
         ("    x = parse_hex(buf, 4, flag, 1)\n", "PYP2055", "parse_hex(buf, n, error)"),

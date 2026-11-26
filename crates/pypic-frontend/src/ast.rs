@@ -89,7 +89,11 @@ pub enum ExprKind {
     Binary(BinOp, Box<Expr>, Box<Expr>),
     Compare(CmpOp, Box<Expr>, Box<Expr>),
     Bool_(BoolOp, Vec<Expr>),
-    Call { func: String, func_span: Span, args: Vec<Expr> },
+    Call {
+        func: String,
+        func_span: Span,
+        args: Vec<Expr>,
+    },
     /// `pin.metodo(args)`, p. ej. `RD0.toggle()`.
     /// Con `attr`, es `REG.BIT.metodo(args)` (p. ej. `STATUS.RP0.set()`).
     /// `[a, b, c]`: solo como valor de una tabla `Rom[u8]`.
@@ -99,8 +103,19 @@ pub enum ExprKind {
     /// `f"texto {nombre:formato}"`: solo como argumento de `UART.write_text`.
     FStr(Vec<FPart>),
     /// `TABLA[indice]`.
-    Index { obj: String, obj_span: Span, index: Box<Expr> },
-    MethodCall { obj: String, obj_span: Span, attr: Option<Ident>, method: String, args: Vec<Expr>, kwargs: Vec<Kwarg> },
+    Index {
+        obj: String,
+        obj_span: Span,
+        index: Box<Expr>,
+    },
+    MethodCall {
+        obj: String,
+        obj_span: Span,
+        attr: Option<Ident>,
+        method: String,
+        args: Vec<Expr>,
+        kwargs: Vec<Kwarg>,
+    },
 }
 
 /// Una parte de una f-string: texto literal (con sus escapes sin decodificar) o un campo `{nombre:formato}`.
@@ -176,14 +191,38 @@ pub struct Stmt {
 #[derive(Clone, Debug)]
 pub enum StmtKind {
     Decl(VarDecl),
-    Assign { target: Ident, value: Expr },
+    Assign {
+        target: Ident,
+        value: Expr,
+    },
     /// `buf[i] = v` (con `op`: `buf[i] += v`): escritura en un arreglo de RAM.
-    IndexAssign { target: Ident, index: Expr, op: Option<BinOp>, value: Expr },
-    AugAssign { target: Ident, op: BinOp, value: Expr },
-    If { test: Expr, body: Vec<Stmt>, orelse: Vec<Stmt> },
-    While { test: Expr, body: Vec<Stmt> },
+    IndexAssign {
+        target: Ident,
+        index: Expr,
+        op: Option<BinOp>,
+        value: Expr,
+    },
+    AugAssign {
+        target: Ident,
+        op: BinOp,
+        value: Expr,
+    },
+    If {
+        test: Expr,
+        body: Vec<Stmt>,
+        orelse: Vec<Stmt>,
+    },
+    While {
+        test: Expr,
+        body: Vec<Stmt>,
+    },
     /// `for var in range(args...)`
-    For { var: Ident, iter_span: Span, args: Vec<Expr>, body: Vec<Stmt> },
+    For {
+        var: Ident,
+        iter_span: Span,
+        args: Vec<Expr>,
+        body: Vec<Stmt>,
+    },
     Return(Option<Expr>),
     Break,
     Continue,
@@ -238,7 +277,11 @@ pub enum Item {
     Func(FuncDef),
     Var(VarDecl),
     /// `from pypic import a, b`
-    Import { span: Span, module: String, names: Vec<Ident> },
+    Import {
+        span: Span,
+        module: String,
+        names: Vec<Ident>,
+    },
 }
 
 #[derive(Clone, Debug, Default)]

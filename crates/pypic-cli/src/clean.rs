@@ -146,5 +146,9 @@ pub fn clean(args: &[String]) -> ExitCode {
     }
     let verb = if dry { "se borrarian" } else { "borrados" };
     println!("Limpieza: {deleted} archivo(s) {verb}, {missing} no existian{}", if failed > 0 { format!(", {failed} con error") } else { String::new() });
-    if failed > 0 { ExitCode::from(1) } else { ExitCode::SUCCESS }
+    if failed > 0 {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
 }

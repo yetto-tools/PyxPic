@@ -1,0 +1,133 @@
+# Publicacion de PyPIC: al subir una etiqueta vX.Y.Z que esta en la rama `release`, compila la CLI en Linux y Windows, empaqueta la extension de
+# VS Code y crea una Release de GitHub con los archivos y sus sumas SHA-256. Ver docs/release.md.
+#
+# Una etiqueta que no este en `release`, o cuya version no coincida con la del espacio de trabajo (Cargo.toml), detiene el proceso antes de compilar.
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Etiqueta a publicar (ya existente, p. ej. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: "1.97.1"
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  verify:
+    name: Comprobar etiqueta y rama
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+      - name: La etiqueta esta en la rama release
+        run: |
+          git fetch origin release
+          if ! git merge-base --is-ancestor "$(git rev-parse HEAD)" origin/release; then
+            echo "::error::la etiqueta $TAG no esta en la rama release: mezcla main en release y vuelve a etiquetar"
+            exit 1
+          fi
+      - name: La version de la etiqueta es la del espacio de trabajo
+        run: |
+          version="$(sed -n '/^\[workspace.package\]/,/^\[/{s/^version *= *"\(.*\)"/\1/p}' Cargo.toml | head -n1)"
+          if [ "v$version" != "${TAG%%-*}" ]; then
+            echo "::error::la etiqueta $TAG no coincide con la version $version de Cargo.toml: sube la version en main antes de publicar"
+            exit 1
+          fi
+
+  cli:
+    name: CLI (${{ matrix.name }})
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { os: ubuntu-latest, name: linux-x64, ext: tar.gz }
+          - { os: windows-latest, name: windows-x64, ext: zip }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Pruebas
+        run: cargo test --workspace
+      - name: Compilar la CLI
+        run: cargo build --release -p pypic-cli
+      - name: Empaquetar
+        shell: bash
+        run: |
+          dir="pypic-${TAG}-${{ matrix.name }}"
+          mkdir "$dir"
+          cp target/release/pypic* "$dir/" 2>/dev/null || true
+          rm -f "$dir"/*.d "$dir"/*.pdb
+          cp -r devices examples LICENSE README.md "$dir/"
+          if [ "${{ matrix.ext }}" = "zip" ]; then
+            7z a "$dir.zip" "$dir" > /dev/null
+          else
+            tar czf "$dir.tar.gz" "$dir"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.name }}
+          path: pypic-${{ env.TAG }}-${{ matrix.name }}.${{ matrix.ext }}
+
+  extension:
+    name: Extension de VS Code
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p pypic-cli
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Pruebas
+        working-directory: vscode-pypic
+        run: npm test
+      - name: Empaquetar el .vsix
+        working-directory: vscode-pypic
+        run: npx --yes @vscode/vsce package --allow-missing-repository --skip-license
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: vscode-pypic/*.vsix
+
+  publish:
+    name: Crear la Release
+    needs: [cli, extension]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Sumas SHA-256
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS.txt
+      - name: Release de GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=""
+          case "$TAG" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "PyPIC $TAG" --generate-notes $prerelease

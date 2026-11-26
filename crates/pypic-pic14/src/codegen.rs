@@ -8,12 +8,20 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 
-use pypic_ir::ir::{CmpRef, CompCall, CompOp, CvrefOp, EepromCall, EepromOp, PwmCall, PwmOp, AdcCall, AdcOp, BitsOp, UartCall, UartOp, BinOp, CmpOp, DelayUnit, Function, Module, Operand, Pin, Place, RegCall, RegOp, Terminator, TimerCall, TimerId, TimerOp, TimerStart, Type, UnaryOp};
 use pypic_frontend::timer::{GateSource, TimerSource};
+use pypic_ir::ir::{
+    AdcCall, AdcOp, BinOp, BitsOp, CmpOp, CmpRef, CompCall, CompOp, CvrefOp, DelayUnit, EepromCall, EepromOp, Function, Module, Operand, Pin, Place, PwmCall, PwmOp, RegCall, RegOp, Terminator,
+    TimerCall, TimerId, TimerOp, TimerStart, Type, UartCall, UartOp, UnaryOp,
+};
 
 use crate::asm::{assemble_fragment, AsmError, FragItem};
 use crate::hex::Image;
-use crate::isa::{disassemble, Dest::{F, W}, Inst, Inst::*};
+use crate::isa::{
+    disassemble,
+    Dest::{F, W},
+    Inst,
+    Inst::*,
+};
 use crate::samples::{BLINK_CONFIG1, BLINK_CONFIG2, CONFIG1, CONFIG2};
 
 // ---- registros y zonas de memoria (DS40001291H p.27-28; reparto en docs/abi-pic14.md) ----------
@@ -55,10 +63,18 @@ fn port_reg(p: &Pin) -> Result<(u8, u8), CodegenError> {
 pub enum CodegenError {
     NoMain,
     Unsupported(String),
-    OutOfRam { needed: usize, available: usize },
-    TooLarge { words: usize },
+    OutOfRam {
+        needed: usize,
+        available: usize,
+    },
+    TooLarge {
+        words: usize,
+    },
     /// Una funcion no cabe en una pagina de 2048 palabras: `CALL`/`GOTO` solo alcanzan 11 bits y no puede partirse.
-    FunctionTooLarge { name: String, words: usize },
+    FunctionTooLarge {
+        name: String,
+        words: usize,
+    },
     /// El dispositivo no es compatible con este backend o con el programa.
     Device(String),
     /// Errores del ensamblador de una funcion `@asm_function` (con la linea del fuente).
@@ -70,10 +86,9 @@ impl fmt::Display for CodegenError {
         match self {
             CodegenError::NoMain => f.write_str("falta la funcion 'main'"),
             CodegenError::Unsupported(s) => write!(f, "no soportado todavia por el backend PIC14: {s}"),
-            CodegenError::OutOfRam { needed, available } => write!(
-                f,
-                "la RAM del banco 0 no alcanza ({needed} bytes necesarios, {available} disponibles); el uso de otros bancos y el solapamiento de locales aun no estan implementados"
-            ),
+            CodegenError::OutOfRam { needed, available } => {
+                write!(f, "la RAM del banco 0 no alcanza ({needed} bytes necesarios, {available} disponibles); el uso de otros bancos y el solapamiento de locales aun no estan implementados")
+            }
             CodegenError::Device(s) => f.write_str(s),
             CodegenError::Asm(errs) => {
                 let lines: Vec<String> = errs.iter().map(|e| format!("linea {}:{}: error[{}]: {}", e.line, e.col, e.code, e.message)).collect();
@@ -119,9 +134,24 @@ fn builtin_registers() -> pypic_device::Registers {
 
 /// Canales analogicos del PIC16F887 (DS40001291H p.7); una prueba comprueba que coinciden con `pins.json`.
 pub fn builtin_analog_pins() -> BTreeMap<u8, (char, u8)> {
-    [(0, ('A', 0)), (1, ('A', 1)), (2, ('A', 2)), (3, ('A', 3)), (4, ('A', 5)), (5, ('E', 0)), (6, ('E', 1)), (7, ('E', 2)), (8, ('B', 2)), (9, ('B', 3)), (10, ('B', 1)), (11, ('B', 4)), (12, ('B', 0)), (13, ('B', 5))]
-        .into_iter()
-        .collect()
+    [
+        (0, ('A', 0)),
+        (1, ('A', 1)),
+        (2, ('A', 2)),
+        (3, ('A', 3)),
+        (4, ('A', 5)),
+        (5, ('E', 0)),
+        (6, ('E', 1)),
+        (7, ('E', 2)),
+        (8, ('B', 2)),
+        (9, ('B', 3)),
+        (10, ('B', 1)),
+        (11, ('B', 4)),
+        (12, ('B', 0)),
+        (13, ('B', 5)),
+    ]
+    .into_iter()
+    .collect()
 }
 
 impl Default for Options {
@@ -324,7 +354,18 @@ fn allocate(m: &Module, live: &[usize], isr_ctx: &HashSet<usize>, opts: &Options
         temps.insert(fi, f.temps.iter().map(|&t| size(t).map(&mut take)).collect::<Result<Vec<_>, _>>()?);
     }
     // ADC.read espera la adquisicion con la misma espera exacta que `delay_cycles`
-    let uses_delay = live.iter().any(|&fi| m.functions[fi].blocks.iter().any(|b| b.insts.iter().any(|i| matches!(i, pypic_ir::ir::Inst::Delay { .. } | pypic_ir::ir::Inst::Adc { call: AdcCall { op: AdcOp::Read(_) }, .. } | pypic_ir::ir::Inst::Comp { call: CompCall::Cmp(_, CompOp::Start { .. }) | CompCall::Cvref(CvrefOp::Start { .. } | CvrefOp::Set(_)), .. }))));
+    let uses_delay = live.iter().any(|&fi| {
+        m.functions[fi].blocks.iter().any(|b| {
+            b.insts.iter().any(|i| {
+                matches!(
+                    i,
+                    pypic_ir::ir::Inst::Delay { .. }
+                        | pypic_ir::ir::Inst::Adc { call: AdcCall { op: AdcOp::Read(_) }, .. }
+                        | pypic_ir::ir::Inst::Comp { call: CompCall::Cmp(_, CompOp::Start { .. }) | CompCall::Cvref(CvrefOp::Start { .. } | CvrefOp::Set(_)), .. }
+                )
+            })
+        })
+    });
     let delay_ws = if uses_delay { take(5) } else { 0 };
     // cada contexto que use una rutina de runtime (`*`, `//`, `%`) tiene su propio bloque de 9 bytes
     let uses_rt = |isr: bool| {
@@ -348,11 +389,7 @@ fn allocate(m: &Module, live: &[usize], isr_ctx: &HashSet<usize>, opts: &Options
 
 // ---- grafo de llamadas -----------------------------------------------------------------------
 fn callees(f: &Function) -> HashSet<usize> {
-    f.blocks
-        .iter()
-        .flat_map(|b| b.insts.iter())
-        .filter_map(|i| if let pypic_ir::ir::Inst::Call { func, .. } = i { Some(*func) } else { None })
-        .collect()
+    f.blocks.iter().flat_map(|b| b.insts.iter()).filter_map(|i| if let pypic_ir::ir::Inst::Call { func, .. } = i { Some(*func) } else { None }).collect()
 }
 
 fn reach(m: &Module, roots: &[usize]) -> HashSet<usize> {
@@ -449,11 +486,19 @@ impl<'a> Gen<'a> {
     }
 
     fn scratch(&self) -> u8 {
-        if self.in_isr() { SCRATCH_ISR } else { SCRATCH_MAIN }
+        if self.in_isr() {
+            SCRATCH_ISR
+        } else {
+            SCRATCH_MAIN
+        }
     }
 
     fn retv(&self) -> u8 {
-        if self.in_isr() { RETV_ISR } else { RETV_MAIN }
+        if self.in_isr() {
+            RETV_ISR
+        } else {
+            RETV_MAIN
+        }
     }
 
     fn place_addr(&self, p: Place) -> u8 {
@@ -1015,7 +1060,8 @@ impl<'a> Gen<'a> {
         let f = &m.functions[fi];
         let a = f.asm.as_ref().expect("funcion de ensamblador");
         // los simbolos de <xc.inc>: registros por su direccion completa, REG_CAMPO_POSN... y macros de campo (RB5)
-        let regs: Vec<crate::asm::EnvReg> = self.registers.registers.iter().filter(|r| r.physical).map(|r| crate::asm::EnvReg { name: r.name.clone(), addr: r.addresses[0].0, bits: r.bits.clone() }).collect();
+        let regs: Vec<crate::asm::EnvReg> =
+            self.registers.registers.iter().filter(|r| r.physical).map(|r| crate::asm::EnvReg { name: r.name.clone(), addr: r.addresses[0].0, bits: r.bits.clone() }).collect();
         let (syms, macros) = crate::asm::xc_inc(&regs);
         let mut ext: BTreeMap<String, i64> = syms.clone();
         ext.insert("RETV".into(), RETV_MAIN as i64);
@@ -1040,7 +1086,11 @@ impl<'a> Gen<'a> {
                 line: a.first_line,
                 col: 1,
                 code: "ASM005",
-                message: format!("en '{}': {} coincide(n) con nombres que el ensamblador en linea predefine (los registros y bits del pack, y RETV) y que el bloque usa: renombra el parametro o el global", f.name, clashes.join(", ")),
+                message: format!(
+                    "en '{}': {} coincide(n) con nombres que el ensamblador en linea predefine (los registros y bits del pack, y RETV) y que el bloque usa: renombra el parametro o el global",
+                    f.name,
+                    clashes.join(", ")
+                ),
             }]));
         }
         let frag = assemble_fragment(&a.text, a.first_line, &ext, &macros).map_err(CodegenError::Asm)?;
@@ -1132,11 +1182,7 @@ pub fn compile(m: &Module, opts: &Options) -> Result<Compiled, CodegenError> {
 
 fn compile_mode(m: &Module, opts: &Options, multi: bool) -> Result<Compiled, CodegenError> {
     if !SUPPORTED_DEVICES.iter().any(|d| d.eq_ignore_ascii_case(&opts.device)) {
-        return Err(CodegenError::Device(format!(
-            "el backend PIC14 aun no soporta '{}' (soportados: {}): falta su mapa de registros (#22)",
-            opts.device,
-            SUPPORTED_DEVICES.join(", ")
-        )));
+        return Err(CodegenError::Device(format!("el backend PIC14 aun no soporta '{}' (soportados: {}): falta su mapa de registros (#22)", opts.device, SUPPORTED_DEVICES.join(", "))));
     }
     if let Some(d) = &m.device {
         if !d.eq_ignore_ascii_case(&opts.device) {
@@ -1144,10 +1190,7 @@ fn compile_mode(m: &Module, opts: &Options, multi: bool) -> Result<Compiled, Cod
         }
     }
     if opts.ram_start > opts.ram_end || opts.ram_end >= W_TEMP as u16 {
-        return Err(CodegenError::Device(format!(
-            "rango de RAM invalido {:#x}-{:#x}: debe terminar antes de la zona comun que usa la ABI ({:#x})",
-            opts.ram_start, opts.ram_end, W_TEMP
-        )));
+        return Err(CodegenError::Device(format!("rango de RAM invalido {:#x}-{:#x}: debe terminar antes de la zona comun que usa la ABI ({:#x})", opts.ram_start, opts.ram_end, W_TEMP)));
     }
     let main = m.functions.iter().position(|f| f.name == "main").ok_or(CodegenError::NoMain)?;
     let isrs: Vec<usize> = (0..m.functions.len()).filter(|&i| m.functions[i].is_interrupt).collect();
@@ -1161,8 +1204,31 @@ fn compile_mode(m: &Module, opts: &Options, multi: bool) -> Result<Compiled, Cod
     let isr_ctx = reach(m, &isrs);
 
     let al = allocate(m, &live, &isr_ctx, opts)?;
-    let saves_fsr = live.iter().filter(|fi| isr_ctx.contains(fi)).any(|&fi| m.functions[fi].blocks.iter().any(|b| b.insts.iter().any(|i| matches!(i, pypic_ir::ir::Inst::ArrGet { .. } | pypic_ir::ir::Inst::ArrSet { .. }))));
-    let mut g = Gen { m, al, asm: Asm::default(), fn_labels: HashMap::new(), isr_ctx, saves_fsr, cur: main, clock_hz: m.clock_hz, cpc: opts.clocks_per_cycle, timing: Vec::new(), registers: opts.registers.clone(), analog_pins: opts.analog_pins.clone(), uart_report: None, rom_labels: HashMap::new(), rom_order: Vec::new(), rt_labels: HashMap::new(), rt_order: Vec::new(), force_isr: None, multi };
+    let saves_fsr = live
+        .iter()
+        .filter(|fi| isr_ctx.contains(fi))
+        .any(|&fi| m.functions[fi].blocks.iter().any(|b| b.insts.iter().any(|i| matches!(i, pypic_ir::ir::Inst::ArrGet { .. } | pypic_ir::ir::Inst::ArrSet { .. }))));
+    let mut g = Gen {
+        m,
+        al,
+        asm: Asm::default(),
+        fn_labels: HashMap::new(),
+        isr_ctx,
+        saves_fsr,
+        cur: main,
+        clock_hz: m.clock_hz,
+        cpc: opts.clocks_per_cycle,
+        timing: Vec::new(),
+        registers: opts.registers.clone(),
+        analog_pins: opts.analog_pins.clone(),
+        uart_report: None,
+        rom_labels: HashMap::new(),
+        rom_order: Vec::new(),
+        rt_labels: HashMap::new(),
+        rt_order: Vec::new(),
+        force_isr: None,
+        multi,
+    };
     for &fi in &live {
         let l = g.asm.label(m.functions[fi].name.clone());
         g.fn_labels.insert(fi, l);
@@ -1366,7 +1432,11 @@ fn compile_mode(m: &Module, opts: &Options, multi: bool) -> Result<Compiled, Cod
                     _ => *a >> 11 & 3,
                 };
                 let (bit, n) = page_bit(page);
-                if bit == 1 { Bsf(PCLATH, n) } else { Bcf(PCLATH, n) }
+                if bit == 1 {
+                    Bsf(PCLATH, n)
+                } else {
+                    Bcf(PCLATH, n)
+                }
             }
             Item::HighOf(l) => Movlw(((addr_of[*l].expect("etiqueta sin colocar") + 1) >> 8 & 0x1F) as u8),
             _ => unreachable!(),
@@ -1393,12 +1463,7 @@ fn compile_mode(m: &Module, opts: &Options, multi: bool) -> Result<Compiled, Cod
         listing.push_str(&disassemble(&[*w], *a));
     }
 
-    let globals = m
-        .globals
-        .iter()
-        .enumerate()
-        .map(|(i, gl)| GlobalSym { name: gl.name.clone(), addr: g.al.globals[i], ty: gl.ty, is_const: gl.is_const })
-        .collect();
+    let globals = m.globals.iter().enumerate().map(|(i, gl)| GlobalSym { name: gl.name.clone(), addr: g.al.globals[i], ty: gl.ty, is_const: gl.is_const }).collect();
     let functions = live.iter().map(|&fi| (m.functions[fi].name.clone(), addr_of[g.fn_labels[&fi]].unwrap())).collect();
     let arrays = m.arrays.iter().enumerate().map(|(i, (n, len))| ArraySym { name: n.clone(), addr: g.al.arrays[i], len: *len }).collect();
     Ok(Compiled { timing: g.timing, uart: g.uart_report, image, globals, arrays, functions, listing, flash_words, ram_bytes: g.al.used })
@@ -2079,7 +2144,11 @@ impl<'a> Gen<'a> {
 
     /// Base del bloque de 9 bytes de rutinas del contexto actual: A (2) B (2) R (2) CNT M SGN.
     fn rt_base(&self) -> u8 {
-        if self.in_isr() { self.al.rt[1] } else { self.al.rt[0] }
+        if self.in_isr() {
+            self.al.rt[1]
+        } else {
+            self.al.rt[0]
+        }
     }
 
     fn rt_label(&mut self, isr: bool, kind: u8, n: usize) -> Label {
@@ -2187,7 +2256,10 @@ impl<'a> Gen<'a> {
             match op {
                 BinOp::Mul => {
                     // el operando constante es 0 o 2^k: se borra o se desplaza
-                    let (c, other) = if lk.is_some() { (lk.unwrap(), rhs) } else { (rk.unwrap(), lhs) };
+                    let (c, other) = match lk {
+                        Some(c) => (c, rhs),
+                        None => (rk.expect("uno de los dos operandos es constante"), lhs),
+                    };
                     let o = self.bytes(other)?;
                     match pypic_frontend::pow2_exp(c) {
                         Some(k) if k < bits => {

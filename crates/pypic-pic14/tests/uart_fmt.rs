@@ -137,7 +137,8 @@ fn constant_fields_are_resolved_at_compile_time() {
     let folded = words("    UART.write_text(f\"X={K} {K:04X} {K:016b}\\r\\n\")\n", "K: Const[uint16] = 1234\n");
     let plain = words("    UART.write_text(\"X=1234 04D2 0000010011010010\\r\\n\")\n", "");
     assert_eq!(folded, plain, "una f-string de constantes cuesta lo mismo que el texto escrito a mano");
-    let (_, c) = build(&format!("{}K: Const[uint16] = 1234\ndef main() -> None:\n    UART.start(baud=19200)\n    UART.write_text(f\"X={{K}} {{K:04X}}\")\n    while UART.sending():\n        pass\n", head()));
+    let (_, c) =
+        build(&format!("{}K: Const[uint16] = 1234\ndef main() -> None:\n    UART.start(baud=19200)\n    UART.write_text(f\"X={{K}} {{K:04X}}\")\n    while UART.sending():\n        pass\n", head()));
     let mut s = Sim::new(&c.image);
     s.fosc_hz = FOSC;
     s.run_until(8_000_000, |s| s.halted);

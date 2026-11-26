@@ -22,7 +22,8 @@ fn text(o: &Output) -> String {
     format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))
 }
 
-const PROGRAM: &str = "from pypic.device import PIC16F887\nfrom pypic.periph.gpio import RD0\n\nCLOCK: Internal[4 * MHz]\n\n\ndef main() -> None:\n    RD0.output()\n    while True:\n        RD0.toggle()\n";
+const PROGRAM: &str =
+    "from pypic.device import PIC16F887\nfrom pypic.periph.gpio import RD0\n\nCLOCK: Internal[4 * MHz]\n\n\ndef main() -> None:\n    RD0.output()\n    while True:\n        RD0.toggle()\n";
 
 fn project(dir: &Path, targets: &str) {
     std::fs::write(dir.join("pypic.toml"), format!("[project]\nname = \"p\"\nmain = \"main.py\"\ndevices_dir = {:?}\n{targets}", root().join("devices").to_string_lossy().replace('\\', "/"))).unwrap();
@@ -70,7 +71,10 @@ fn dry_run_lists_without_deleting() {
 #[test]
 fn a_project_cleans_every_profile_output_or_just_the_asked_one() {
     let dir = tmp("project");
-    project(&dir, "default_target = \"a\"\n\n[target.a]\ndevice = \"PIC16F887\"\noutput = \"build/a.hex\"\n\n[target.b]\ndevice = \"PIC16F887\"\nclock = \"Crystal[20 * MHz]\"\noutput = \"build/b.hex\"\n");
+    project(
+        &dir,
+        "default_target = \"a\"\n\n[target.a]\ndevice = \"PIC16F887\"\noutput = \"build/a.hex\"\n\n[target.b]\ndevice = \"PIC16F887\"\nclock = \"Crystal[20 * MHz]\"\noutput = \"build/b.hex\"\n",
+    );
     for t in ["a", "b"] {
         let r = pypic(&dir, &["build", "--target", t]);
         assert!(r.status.success(), "{}", text(&r));

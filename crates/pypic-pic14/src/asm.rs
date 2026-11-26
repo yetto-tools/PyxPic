@@ -10,6 +10,7 @@
 //!     PAGESEL IF/ELSIF/ELSE/ENDIF`, mas `fcall` y `ljmp`; `#include <xc.inc>`, `#define`, `#ifdef`...
 //!   * un mini-enlazador: los psects absolutos van en la direccion 0 + `ORG`, los demas se colocan por
 //!     `-pNOMBRE=dir` o, sin eso, dentro del rango de su clase (`CODE`, `BANK0`...).
+//!
 //! Todo corre en el host; el resultado es codigo maquina nativo.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -129,7 +130,15 @@ impl AsmEnv {
         all.push((m.common.start.0, m.common.end.0));
         all.sort();
         classes.insert("RAM".into(), all);
-        AsmEnv { device: Some(pack.device.name.clone()), regs, config, id_locations: pack.config.id_locations.clone(), program_words: pack.memory.program.words, data_classes: classes, ..AsmEnv::default() }
+        AsmEnv {
+            device: Some(pack.device.name.clone()),
+            regs,
+            config,
+            id_locations: pack.config.id_locations.clone(),
+            program_words: pack.memory.program.words,
+            data_classes: classes,
+            ..AsmEnv::default()
+        }
     }
 
     /// Interpreta las opciones del enlazador (`-presetVec=0h`, `-pintentry=4h,init`...) y las anade a `placements`.
@@ -183,8 +192,8 @@ enum Tok {
 type T = (Tok, usize); // token y su columna (1-based)
 
 const MNEMONICS: &[&str] = &[
-    "ADDWF", "ANDWF", "CLRF", "CLRW", "COMF", "DECF", "DECFSZ", "INCF", "INCFSZ", "IORWF", "MOVF", "MOVWF", "NOP", "RLF", "RRF", "SUBWF", "SWAPF", "XORWF", "BCF", "BSF",
-    "BTFSC", "BTFSS", "ADDLW", "ANDLW", "CALL", "CLRWDT", "GOTO", "IORLW", "MOVLW", "RETFIE", "RETLW", "RETURN", "SLEEP", "SUBLW", "XORLW",
+    "ADDWF", "ANDWF", "CLRF", "CLRW", "COMF", "DECF", "DECFSZ", "INCF", "INCFSZ", "IORWF", "MOVF", "MOVWF", "NOP", "RLF", "RRF", "SUBWF", "SWAPF", "XORWF", "BCF", "BSF", "BTFSC", "BTFSS", "ADDLW",
+    "ANDLW", "CALL", "CLRWDT", "GOTO", "IORLW", "MOVLW", "RETFIE", "RETLW", "RETURN", "SLEEP", "SUBLW", "XORLW",
 ];
 /// Instrucciones que existen en otras familias (PIC16F1xxx, "enhanced mid-range") pero no en el PIC16 clasico.
 const ENHANCED_ONLY: &[&str] = &["MOVLB", "MOVLP", "BRA", "BRW", "CALLW", "ADDWFC", "ASRF", "LSLF", "LSRF", "SUBWFB", "MOVIW", "MOVWI", "RESET"];
@@ -192,8 +201,32 @@ const ENHANCED_ONLY: &[&str] = &["MOVLB", "MOVLP", "BRA", "BRW", "CALLW", "ADDWF
 const MPASM_PSEUDO: &[&str] = &["MOVFW", "CLRC", "SETC", "CLRZ", "SETZ", "SKPC", "SKPNC", "SKPZ", "SKPNZ", "TSTF", "BC", "BNC", "BZ", "BNZ", "NEGF", "ADDCF", "SUBCF", "LCALL", "LGOTO"];
 /// Directivas de pic-as que no cambian el codigo y se aceptan sin efecto.
 const IGNORED_DIRECTIVES: &[&str] = &[
-    "LIST", "NOLIST", "TITLE", "SUBTITLE", "PAGELEN", "PAGEWIDTH", "EXPAND", "NOEXPAND", "COND", "NOCOND", "ASMOPT", "LINE", "FILE", "DEBUG_SOURCE", "CALLSTACK", "FNCALL", "FNROOT", "FNARG",
-    "FNBREAK", "FNCONF", "FNINDIR", "FNSIZE", "FNADDR", "SIGNAT", "ERRORLEVEL", "RADIX_NOP",
+    "LIST",
+    "NOLIST",
+    "TITLE",
+    "SUBTITLE",
+    "PAGELEN",
+    "PAGEWIDTH",
+    "EXPAND",
+    "NOEXPAND",
+    "COND",
+    "NOCOND",
+    "ASMOPT",
+    "LINE",
+    "FILE",
+    "DEBUG_SOURCE",
+    "CALLSTACK",
+    "FNCALL",
+    "FNROOT",
+    "FNARG",
+    "FNBREAK",
+    "FNCONF",
+    "FNINDIR",
+    "FNSIZE",
+    "FNADDR",
+    "SIGNAT",
+    "ERRORLEVEL",
+    "RADIX_NOP",
 ];
 /// Directivas de pic-as que el ensamblador todavia no implementa.
 const UNSUPPORTED_DIRECTIVES: &[&str] = &["DABS", "DLABS", "DDW", "DQW"];
@@ -227,8 +260,8 @@ pub fn parse_number(text: &str) -> Result<i64, String> {
         i64::from_str_radix(h, 16)
     } else if let Some(h) = lower.strip_suffix('h') {
         i64::from_str_radix(h, 16)
-    } else if text.ends_with('B') {
-        i64::from_str_radix(&text[..text.len() - 1], 2)
+    } else if let Some(b) = text.strip_suffix('B') {
+        i64::from_str_radix(b, 2)
     } else if let Some(o) = lower.strip_suffix('o').or_else(|| lower.strip_suffix('q')) {
         i64::from_str_radix(o, 8)
     } else if let Some(d) = lower.strip_suffix('d') {
@@ -509,7 +542,55 @@ fn split_operands(toks: &[T]) -> Vec<&[T]> {
 fn is_reserved(name: &str) -> bool {
     let u = name.to_ascii_uppercase();
     MNEMONICS.contains(&u.as_str())
-        || ["W", "F", "PSECT", "ORG", "DB", "DW", "DS", "EQU", "SET", "GLOBAL", "PUBLIC", "EXTRN", "END", "CONFIG", "BANKSEL", "BANKISEL", "PAGESEL", "ALIGN", "FCALL", "LJMP", "PROCESSOR", "INCLUDE", "MACRO", "ENDM", "REPT", "IRP", "IRPC", "LOCAL", "RADIX", "IF", "ELSIF", "ELSE", "ENDIF", "NOT", "LOW", "HIGH", "HIGHWORD", "MOD", "AND", "SHL", "SHR", "EQ", "NE", "GT", "GE", "LT", "LE"]
+        || [
+            "W",
+            "F",
+            "PSECT",
+            "ORG",
+            "DB",
+            "DW",
+            "DS",
+            "EQU",
+            "SET",
+            "GLOBAL",
+            "PUBLIC",
+            "EXTRN",
+            "END",
+            "CONFIG",
+            "BANKSEL",
+            "BANKISEL",
+            "PAGESEL",
+            "ALIGN",
+            "FCALL",
+            "LJMP",
+            "PROCESSOR",
+            "INCLUDE",
+            "MACRO",
+            "ENDM",
+            "REPT",
+            "IRP",
+            "IRPC",
+            "LOCAL",
+            "RADIX",
+            "IF",
+            "ELSIF",
+            "ELSE",
+            "ENDIF",
+            "NOT",
+            "LOW",
+            "HIGH",
+            "HIGHWORD",
+            "MOD",
+            "AND",
+            "SHL",
+            "SHR",
+            "EQ",
+            "NE",
+            "GT",
+            "GE",
+            "LT",
+            "LE",
+        ]
         .contains(&u.as_str())
 }
 
@@ -732,7 +813,12 @@ impl Pre<'_> {
                     "define" | "undef" | "include" => {}
                     other => {
                         if active {
-                            self.errors.push(AsmError { line, col: 1, code: "ASM008", message: format!("directiva del preprocesador '#{other}' no soportada (se admiten #include, #define, #undef, #if, #ifdef, #ifndef, #elif, #else, #endif)") });
+                            self.errors.push(AsmError {
+                                line,
+                                col: 1,
+                                code: "ASM008",
+                                message: format!("directiva del preprocesador '#{other}' no soportada (se admiten #include, #define, #undef, #if, #ifdef, #ifndef, #elif, #else, #endif)"),
+                            });
                         }
                     }
                 }
@@ -847,7 +933,10 @@ fn predefined_psect(name: &str, env: &AsmEnv) -> Option<Psect> {
 enum Kind {
     Inst(String, Vec<Vec<T>>),
     /// DB (`bytes`) o DW: una palabra por valor y por caracter de cada cadena.
-    Data { ops: Vec<Vec<T>>, bytes: bool },
+    Data {
+        ops: Vec<Vec<T>>,
+        bytes: bool,
+    },
     /// BANKSEL, BANKISEL, PAGESEL, FCALL, LJMP.
     Special(String, Vec<Vec<T>>),
     /// `nombre SET valor` evaluado en orden.
@@ -1122,7 +1211,11 @@ impl Asm1<'_> {
             "IF" | "ELSIF" => {
                 let active = self.cond.last().is_none_or(|c| c.0);
                 let v = if upper == "IF" {
-                    if active { self.const_eval(&rest[1..], line, *hcol, "IF").unwrap_or(0) != 0 } else { false }
+                    if active {
+                        self.const_eval(&rest[1..], line, *hcol, "IF").unwrap_or(0) != 0
+                    } else {
+                        false
+                    }
                 } else {
                     match self.cond.last() {
                         Some(c) if c.2 && !c.1 => self.const_eval(&rest[1..], line, *hcol, "ELSIF").unwrap_or(0) != 0,
@@ -1394,11 +1487,14 @@ fn expand_block(lines: &[(usize, String)], defs: &mut BTreeMap<String, MacroDef>
                 let args = rest[second.len()..].trim();
                 if is_reserved(&name) {
                     err(errors, line, format!("'{name}' es una palabra reservada y no puede ser el nombre de una macro"));
-                } else if defs.contains_key(&name) {
-                    err(errors, line, format!("la macro '{name}' ya esta definida"));
                 } else {
-                    let params: Vec<String> = args.split(',').map(str::trim).filter(|p| !p.is_empty()).map(String::from).collect();
-                    defs.insert(name, MacroDef { params, body });
+                    match defs.entry(name.clone()) {
+                        std::collections::btree_map::Entry::Occupied(_) => err(errors, line, format!("la macro '{name}' ya esta definida")),
+                        std::collections::btree_map::Entry::Vacant(slot) => {
+                            let params: Vec<String> = args.split(',').map(str::trim).filter(|p| !p.is_empty()).map(String::from).collect();
+                            slot.insert(MacroDef { params, body });
+                        }
+                    }
                 }
             } else {
                 let args = split_macro_args(&rest);
@@ -1557,7 +1653,7 @@ fn link(psects: &[Psect], env: &AsmEnv, errors: &mut Vec<AsmError>) -> Vec<u32> 
                     break 'outer;
                 }
                 // salta al final del psect que estorba
-                let end = used[sp].iter().filter(|&&(a, b)| at <= b && a <= at + p.loc - 1).map(|&(_, b)| b).max().unwrap_or(at);
+                let end = used[sp].iter().filter(|&&(a, b)| at <= b && a < at + p.loc).map(|&(_, b)| b).max().unwrap_or(at);
                 at = (end + 1).div_ceil(p.reloc.max(1)) * p.reloc.max(1);
             }
         }
@@ -1566,7 +1662,10 @@ fn link(psects: &[Psect], env: &AsmEnv, errors: &mut Vec<AsmError>) -> Vec<u32> 
                 base[i] = Some(at);
                 claim(&mut used, errors, p, at);
             }
-            None => err_at(errors, format!("el psect '{}' ({} unidades) no cabe en la clase {class}: no hay un hueco libre en un solo rango (los psects de codigo no cruzan paginas de 0x800 palabras)", p.name, p.loc)),
+            None => err_at(
+                errors,
+                format!("el psect '{}' ({} unidades) no cabe en la clase {class}: no hay un hueco libre en un solo rango (los psects de codigo no cruzan paginas de 0x800 palabras)", p.name, p.loc),
+            ),
         }
     }
     base.into_iter().map(|b| b.unwrap_or(0)).collect()
@@ -1640,9 +1739,7 @@ pub fn assemble_with(src: &str, env: &AsmEnv) -> Result<Assembled, Vec<AsmError>
         if matches!(toks.first(), Some((Tok::Ident(w), _)) if w.eq_ignore_ascii_case("CONFIG")) {
             for idx in 3..toks.len() {
                 let (left, right) = toks.split_at_mut(idx);
-                if let (Some((Tok::Ident(field), _)), Some((Tok::Eq, _)), Some((Tok::Num(_), col))) =
-                    (left.get(idx - 2), left.get(idx - 1), right.first())
-                {
+                if let (Some((Tok::Ident(field), _)), Some((Tok::Eq, _)), Some((Tok::Num(_), col))) = (left.get(idx - 2), left.get(idx - 1), right.first()) {
                     let raw = text.get(col.saturating_sub(1)..).unwrap_or("").split(|c: char| !c.is_ascii_alphanumeric()).next().unwrap_or("");
                     if env.config.iter().flat_map(|w| &w.fields).any(|f| f.name == *field && f.names.contains_key(raw)) {
                         right[0].0 = Tok::Str(raw.to_string());
@@ -1712,7 +1809,11 @@ pub fn assemble_with(src: &str, env: &AsmEnv) -> Result<Assembled, Vec<AsmError>
                 continue;
             }
             _ if p.space != 0 || p.delta != 2 => {
-                let why = if p.space != 0 { "es de datos (usa DS para reservar memoria; una instruccion o DB/DW van en la memoria de programa)" } else { "la memoria de programa de este dispositivo exige delta=2" };
+                let why = if p.space != 0 {
+                    "es de datos (usa DS para reservar memoria; una instruccion o DB/DW van en la memoria de programa)"
+                } else {
+                    "la memoria de programa de este dispositivo exige delta=2"
+                };
                 errors.push(AsmError { line: it.line, col: it.col, code: "ASM010", message: format!("el psect '{}' {why}", p.name) });
                 continue;
             }
@@ -1822,7 +1923,12 @@ fn apply_config(sets: &[ConfigSet], env: &AsmEnv, syms: &BTreeMap<String, i64>, 
     let mut words: BTreeMap<u32, (u16, BTreeSet<String>)> = BTreeMap::new();
     for c in sets {
         if env.config.is_empty() && env.id_locations.is_empty() {
-            errors.push(AsmError { line: c.line, col: c.col, code: "ASM013", message: "CONFIG necesita un dispositivo (-mcpu=16F887, --device o PROCESSOR) para conocer sus palabras de configuracion".into() });
+            errors.push(AsmError {
+                line: c.line,
+                col: c.col,
+                code: "ASM013",
+                message: "CONFIG necesita un dispositivo (-mcpu=16F887, --device o PROCESSOR) para conocer sus palabras de configuracion".into(),
+            });
             return;
         }
         let ctx = Ctx { syms, pc: None, line: c.line };
@@ -1833,10 +1939,11 @@ fn apply_config(sets: &[ConfigSet], env: &AsmEnv, syms: &BTreeMap<String, i64>, 
                     if truncated != v as u64 {
                         warnings.push(AsmError { line: c.line, col: c.col, code: "ASMW001", message: format!("{} = {v} excede la mascara {:#x}: se usa {truncated}", id.name, id.mask.0) });
                     }
-                    if words.contains_key(&id.address.0) {
-                        errors.push(AsmError { line: c.line, col: c.col, code: "ASM013", message: format!("{} se configura dos veces", id.name) });
-                    } else {
-                        words.insert(id.address.0, (truncated as u16, BTreeSet::new()));
+                    match words.entry(id.address.0) {
+                        std::collections::btree_map::Entry::Occupied(_) => errors.push(AsmError { line: c.line, col: c.col, code: "ASM013", message: format!("{} se configura dos veces", id.name) }),
+                        std::collections::btree_map::Entry::Vacant(slot) => {
+                            slot.insert((truncated as u16, BTreeSet::new()));
+                        }
                     }
                 }
                 Ok(v) => errors.push(AsmError { line: c.line, col: c.col, code: "ASM004", message: format!("{} = {v}: valor fuera de la mascara {:#x}", id.name, id.mask.0) }),
@@ -1865,7 +1972,12 @@ fn apply_config(sets: &[ConfigSet], env: &AsmEnv, syms: &BTreeMap<String, i64>, 
         }
         let Some((w, f)) = env.config.iter().find_map(|w| w.fields.iter().find(|f| f.name == c.name).map(|f| (w, f))) else {
             let all: Vec<&str> = env.config.iter().flat_map(|w| w.fields.iter().map(|f| f.name.as_str())).collect();
-            errors.push(AsmError { line: c.line, col: c.col, code: "ASM013", message: format!("'{}' no es un ajuste de configuracion de {} (ajustes: {})", c.name, env.device.as_deref().unwrap_or("este dispositivo"), all.join(", ")) });
+            errors.push(AsmError {
+                line: c.line,
+                col: c.col,
+                code: "ASM013",
+                message: format!("'{}' no es un ajuste de configuracion de {} (ajustes: {})", c.name, env.device.as_deref().unwrap_or("este dispositivo"), all.join(", ")),
+            });
             continue;
         };
         // el valor es primero un nombre predefinido (ON, OFF, INTRC_NOCLKOUT...) y solo si no lo es, una constante
@@ -1992,7 +2104,11 @@ fn build(m: &str, ops: &[Vec<T>], ctx: &Ctx, col: usize, ignore: bool) -> Result
         Shape::F => {
             want(1, &format!("{m} f"))?;
             let f = file_reg(val(0)?, line, opcol(0), ignore)?;
-            if m == "CLRF" { Clrf(f) } else { Movwf(f) }
+            if m == "CLRF" {
+                Clrf(f)
+            } else {
+                Movwf(f)
+            }
         }
         Shape::Fd => {
             if ops.is_empty() || ops.len() > 2 {
@@ -2054,9 +2170,17 @@ fn build(m: &str, ops: &[Vec<T>], ctx: &Ctx, col: usize, ignore: bool) -> Result
             want(1, &format!("{m} etiqueta"))?;
             let a = val(0)?;
             if (0..=0x7FF).contains(&a) {
-                if m == "CALL" { Call(a as u16) } else { Goto(a as u16) }
+                if m == "CALL" {
+                    Call(a as u16)
+                } else {
+                    Goto(a as u16)
+                }
             } else if ignore && a >= 0 {
-                if m == "CALL" { Call((a & 0x7FF) as u16) } else { Goto((a & 0x7FF) as u16) }
+                if m == "CALL" {
+                    Call((a & 0x7FF) as u16)
+                } else {
+                    Goto((a & 0x7FF) as u16)
+                }
             } else {
                 return err(
                     line,
@@ -2170,12 +2294,7 @@ pub fn assemble_fragment(src: &str, first_line: usize, externals: &BTreeMap<Stri
                 code: "ASM007",
                 message: format!("{upper} aun no se admite dentro de una funcion @asm_function: el compilador gestiona el banco y la pagina; usa BSF/BCF sobre STATUS y restablece el banco 0"),
             }),
-            "RETFIE" => errors.push(AsmError {
-                line,
-                col: *hcol,
-                code: "ASM007",
-                message: "RETFIE solo vuelve de una interrupcion y una funcion @asm_function no lo es: usa RETURN o RETLW".into(),
-            }),
+            "RETFIE" => errors.push(AsmError { line, col: *hcol, code: "ASM007", message: "RETFIE solo vuelve de una interrupcion y una funcion @asm_function no lo es: usa RETURN o RETLW".into() }),
             m if MNEMONICS.contains(&m) => {
                 stmts.push(FStmt::Inst { line, col: *hcol, pc, mnemonic: m.to_string(), ops });
                 pc += 1;
@@ -2192,7 +2311,9 @@ pub fn assemble_fragment(src: &str, first_line: usize, externals: &BTreeMap<Stri
                 code: "ASM002",
                 message: format!("'{m}' es una pseudoinstruccion de MPASM y pic-as no la implementa: escribe la instruccion real (p. ej. BSF STATUS,0 en vez de SETC)"),
             }),
-            _ if rest.len() == 1 => errors.push(AsmError { line, col: *hcol, code: "ASM002", message: format!("'{head}' no es una instruccion; si es una etiqueta, en PIC-AS termina en ':' ({head}:)") }),
+            _ if rest.len() == 1 => {
+                errors.push(AsmError { line, col: *hcol, code: "ASM002", message: format!("'{head}' no es una instruccion; si es una etiqueta, en PIC-AS termina en ':' ({head}:)") })
+            }
             _ => errors.push(AsmError { line, col: *hcol, code: "ASM002", message: format!("instruccion o directiva desconocida '{head}'") }),
         }
     }
@@ -2220,7 +2341,9 @@ pub fn assemble_fragment(src: &str, first_line: usize, externals: &BTreeMap<Stri
                         line: *line,
                         col: *c,
                         code: "ASM005",
-                        message: format!("'{name}' es un dato, no una etiqueta de esta funcion: {mnemonic} solo salta a etiquetas locales (llamar a otras funciones desde ensamblador aun no esta soportado)"),
+                        message: format!(
+                            "'{name}' es un dato, no una etiqueta de esta funcion: {mnemonic} solo salta a etiquetas locales (llamar a otras funciones desde ensamblador aun no esta soportado)"
+                        ),
                     });
                     continue;
                 }
@@ -2248,10 +2371,18 @@ pub fn assemble_fragment(src: &str, first_line: usize, externals: &BTreeMap<Stri
             Ok(inst) => {
                 match inst {
                     Inst::Bsf(0x03, b @ (5 | 6)) => {
-                        if b == 5 { rp0 = true } else { rp1 = true }
+                        if b == 5 {
+                            rp0 = true
+                        } else {
+                            rp1 = true
+                        }
                     }
                     Inst::Bcf(0x03, b @ (5 | 6)) => {
-                        if b == 5 { rp0 = false } else { rp1 = false }
+                        if b == 5 {
+                            rp0 = false
+                        } else {
+                            rp1 = false
+                        }
                     }
                     Inst::Return | Inst::Retlw(_) if rp0 || rp1 => errors.push(AsmError {
                         line: *line,

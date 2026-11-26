@@ -4,6 +4,9 @@
 //! palabras de 14 bits, desensamblador (verificado contra DS40001291H p.227) y
 //! escritor/lector de Intel HEX.
 
+// Los generadores de codigo recorren varios arreglos por indice a la vez (bytes de origen y destino): un iterador no lo hace mas claro.
+#![allow(clippy::needless_range_loop)]
+
 pub mod asm;
 pub mod codegen;
 pub mod hex;
@@ -11,7 +14,7 @@ pub mod isa;
 pub mod samples;
 pub mod sim;
 
-pub use asm::{assemble, assemble_fragment, assemble_with, declared_processor, render_errors, xc_inc, AsmEnv, EnvReg, AsmError, Assembled, FragItem, Fragment};
+pub use asm::{assemble, assemble_fragment, assemble_with, declared_processor, render_errors, xc_inc, AsmEnv, AsmError, Assembled, EnvReg, FragItem, Fragment};
 pub use codegen::{compile, CodegenError, Compiled, DelayReport, Options};
 pub use hex::{HexError, Image};
 pub use isa::{disassemble, Cycles, Dest, EncodeError, Flag, Inst};

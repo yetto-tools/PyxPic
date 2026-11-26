@@ -63,6 +63,9 @@ struct Fn {
     is_sub: bool,
 }
 
+/// `FROM modulo IMPORT nombres`: el modulo, su posicion y los nombres con la suya.
+type Import = (String, Span, Vec<(String, Span)>);
+
 struct Lw<'a> {
     d: &'a mut Diagnostics,
     next_id: u32,
@@ -74,7 +77,7 @@ struct Lw<'a> {
     pins: HashMap<String, (char, u8)>,
     /// Objetos del SDK que el programa importo (para aceptar `adc.read` y `ADC.read`).
     sdk_names: HashMap<String, String>,
-    explicit: Vec<(String, Span, Vec<(String, Span)>)>,
+    explicit: Vec<Import>,
     /// Direccion de cada pin que el programa usa: `true` si se escribe, `false` si solo se lee.
     pin_out: BTreeMap<(char, u8), bool>,
     uses_pause: bool,
@@ -778,7 +781,11 @@ impl<'a> Lw<'a> {
                     return;
                 }
                 let us = upper == "PAUSEUS";
-                if us { self.uses_pause_us = true } else { self.uses_pause = true }
+                if us {
+                    self.uses_pause_us = true
+                } else {
+                    self.uses_pause = true
+                }
                 let arg = &args[0].value;
                 let value = match self.const_eval(arg) {
                     Some(v) => self.int(arg.span, v),
@@ -1071,7 +1078,11 @@ impl<'a> Lw<'a> {
         }
         for g in &gosubs {
             if !labels.contains(g.as_str()) {
-                self.err("PYB0072", stmts.iter().find(|s| matches!(&s.kind, BStmtKind::Gosub(x) if x == g)).map_or(Span::new(0, 0), |s| s.span), format!("GOSUB {g}: no hay una etiqueta '{g}:' al principio del programa"));
+                self.err(
+                    "PYB0072",
+                    stmts.iter().find(|s| matches!(&s.kind, BStmtKind::Gosub(x) if x == g)).map_or(Span::new(0, 0), |s| s.span),
+                    format!("GOSUB {g}: no hay una etiqueta '{g}:' al principio del programa"),
+                );
             }
         }
         let mut main_body: Vec<&BStmt> = Vec::new();
@@ -1173,7 +1184,7 @@ impl<'a> Lw<'a> {
 
         // modulos: dispositivo, gpio (pines), system.time (pausas), los del programa y las declaraciones
         let mut gpio: BTreeSet<String> = self.pin_out.keys().map(|p| Self::pin_ident(*p)).collect();
-        let mut explicit: Vec<(String, Span, Vec<(String, Span)>)> = Vec::new();
+        let mut explicit: Vec<Import> = Vec::new();
         for (m, sp, names) in std::mem::take(&mut self.explicit) {
             if m == "pypic.periph.gpio" {
                 gpio.extend(names.into_iter().map(|(n, _)| n));

@@ -110,7 +110,11 @@ fn equal_literals_share_their_bytes_in_flash() {
 // ---- costo --------------------------------------------------------------------------------------------------------
 
 fn cycles_of(text_len: usize) -> u64 {
-    let src = format!("{}from pypic.periph.gpio import RD0\ndef main() -> None:\n    RD0.output()\n    UART.start(baud=9600)\n    RD0.on()\n    UART.write_text(\"{}\")\n    RD0.off()\n", head(), "A".repeat(text_len));
+    let src = format!(
+        "{}from pypic.periph.gpio import RD0\ndef main() -> None:\n    RD0.output()\n    UART.start(baud=9600)\n    RD0.on()\n    UART.write_text(\"{}\")\n    RD0.off()\n",
+        head(),
+        "A".repeat(text_len)
+    );
     let (_, c) = build(&src);
     let mut s = Sim::new(&c.image);
     s.fosc_hz = FOSC;

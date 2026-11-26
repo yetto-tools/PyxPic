@@ -138,7 +138,7 @@ fn errores_discards_a_framing_error_and_reports_an_overrun() {
     let mut s = sim(&c);
     s.uart_feed(0x41, 2_000, true);
     s.uart_feed(0x42, 12_000, false); // sin bit de parada
-    // tres bytes juntos mientras el programa duerme 5 ms: el tercero desborda
+                                      // tres bytes juntos mientras el programa duerme 5 ms: el tercero desborda
     for (i, b) in [0x51u8, 0x52, 0x53].iter().enumerate() {
         s.uart_feed(*b, 40_000 + i as u64 * 5, true);
     }
@@ -257,9 +257,6 @@ fn convertidor_converts_between_decimal_and_hexadecimal_and_reports_errors() {
         }
     }
     run(&mut s, 3_000 + lines.len() as u64 * gap);
-    assert_eq!(
-        String::from_utf8(sent(&s)).unwrap(),
-        "31 = 0x001F\r\n0x001F = 31\r\n65535 = 0xFFFF\r\n0xFFFF = 65535\r\nERR\r\nERR\r\nERR\r\n7 = 0x0007\r\n"
-    );
+    assert_eq!(String::from_utf8(sent(&s)).unwrap(), "31 = 0x001F\r\n0x001F = 31\r\n65535 = 0xFFFF\r\n0xFFFF = 65535\r\nERR\r\nERR\r\nERR\r\n7 = 0x0007\r\n");
     assert!(s.uart_violations.is_empty(), "{:?}", s.uart_violations);
 }

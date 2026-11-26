@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use pypic_frontend::ast::*;
 use pypic_frontend::Program;
 
-use crate::ir::{Block, BlockId, Inst, Operand, Place, Terminator, UnaryOp};
 use crate::ir::{AsmBlock, Function, Global, Local, Module, Pin, RegOp, TimerOp, Type};
+use crate::ir::{Block, BlockId, Inst, Operand, Place, Terminator, UnaryOp};
 use pypic_frontend::BitsOp;
 
 /// El programa tipado a IR, **con las optimizaciones** de `opt` (docs/ir-optimizaciones.md). Es lo que usa el compilador.
@@ -17,6 +17,7 @@ pub fn lower(prog: &Program) -> Module {
 }
 
 /// El programa tipado a IR tal como sale del frontend, sin optimizar: el oraculo con el que se comprueban las optimizaciones.
+#[allow(clippy::field_reassign_with_default)]
 pub fn lower_unoptimized(prog: &Program) -> Module {
     let mut m = Module::default();
     m.device = prog.device.clone();
@@ -67,7 +68,14 @@ pub fn lower_unoptimized(prog: &Program) -> Module {
                 fl.declare_local(name, *ty, true);
             }
             fl.block(&f.body);
-            m.functions.push(fl.finish(info.name.clone(), info.is_interrupt, info.is_init, info.params.len(), info.ret, f.asm.as_ref().map(|a| AsmBlock { text: a.text.clone(), first_line: a.first_line })));
+            m.functions.push(fl.finish(
+                info.name.clone(),
+                info.is_interrupt,
+                info.is_init,
+                info.params.len(),
+                info.ret,
+                f.asm.as_ref().map(|a| AsmBlock { text: a.text.clone(), first_line: a.first_line }),
+            ));
         }
     }
     m
@@ -103,14 +111,7 @@ fn ann_type(te: &TypeExpr) -> Type {
 
 impl<'a> FnLower<'a> {
     fn finish(self, name: String, is_interrupt: bool, is_init: bool, num_params: usize, ret: Type, asm: Option<AsmBlock>) -> Function {
-        let blocks = self
-            .blocks
-            .into_iter()
-            .map(|(insts, term)| Block {
-                insts,
-                term: term.unwrap_or(if ret == Type::Void { Terminator::Return(None) } else { Terminator::Unreachable }),
-            })
-            .collect();
+        let blocks = self.blocks.into_iter().map(|(insts, term)| Block { insts, term: term.unwrap_or(if ret == Type::Void { Terminator::Return(None) } else { Terminator::Unreachable }) }).collect();
         Function { name, is_interrupt, is_init, num_params, ret, locals: self.locals, temps: self.temps, blocks, asm }
     }
 
@@ -255,7 +256,8 @@ impl<'a> FnLower<'a> {
                     self.write_fmt(&args[0], &parts);
                     return;
                 }
-                let arg = matches!(call.op, pypic_frontend::UartOp::Write | pypic_frontend::UartOp::Send | pypic_frontend::UartOp::Write9 | pypic_frontend::UartOp::Send9).then(|| self.value(&args[0]));
+                let arg =
+                    matches!(call.op, pypic_frontend::UartOp::Write | pypic_frontend::UartOp::Send | pypic_frontend::UartOp::Write9 | pypic_frontend::UartOp::Send9).then(|| self.value(&args[0]));
                 // las consultas de bandera sin usar no hacen nada; read/recv sacan un byte del FIFO aunque se descarte
                 if call.op.is_pure_read() && dst.is_none() {
                     return;
@@ -550,7 +552,8 @@ impl<'a> FnLower<'a> {
         let byte = self.pooled("byte", u8t);
         let c = self.pooled("cond", Type::Bool);
         self.emit(Inst::Copy { dst: n, src: Operand::Const { value: 0, ty: u8t } });
-        let (header, clear, flush, flush_take, poll, take, not_nl, not_cr, store, exit) = (self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block());
+        let (header, clear, flush, flush_take, poll, take, not_nl, not_cr, store, exit) =
+            (self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block());
         self.terminate(Terminator::Jump(header));
         // espera activa con las primitivas: comprueba el desbordamiento y la llegada de un byte
         self.cur = header;
@@ -643,8 +646,17 @@ impl<'a> FnLower<'a> {
         let (cap, i, v, bad) = (self.pooled("p_cap", u8t), self.pooled("idx", u8t), self.pooled("p_val", u16t), self.pooled("p_bad", Type::Bool));
         let (ch, d, d16) = (self.pooled("byte", u8t), self.pooled("digit", u8t), self.pooled("p_d16", u16t));
         let (clamp, after, header, body, digit, ovf, ok_b, notdigit, done, zero, join) = (
-            self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block(),
-            self.new_block(), self.new_block(), self.new_block(), self.new_block(),
+            self.new_block(),
+            self.new_block(),
+            self.new_block(),
+            self.new_block(),
+            self.new_block(),
+            self.new_block(),
+            self.new_block(),
+            self.new_block(),
+            self.new_block(),
+            self.new_block(),
+            self.new_block(),
         );
         // cap = min(n, capacidad); i = 0; v = 0; bad = False
         self.emit(Inst::Copy { dst: cap, src: n_op });
@@ -955,8 +967,7 @@ impl<'a> FnLower<'a> {
         let step = args.get(2).and_then(|a| self.info(a).konst).unwrap_or(1);
         let up = step > 0;
 
-        let (header, bodyb, latch, stepb, exit) =
-            (self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block());
+        let (header, bodyb, latch, stepb, exit) = (self.new_block(), self.new_block(), self.new_block(), self.new_block(), self.new_block());
         self.terminate(Terminator::Jump(header));
         self.cur = header;
         let c = self.new_temp(Type::Bool);
@@ -978,21 +989,11 @@ impl<'a> FnLower<'a> {
         let udiff = self.new_temp(ut);
         self.emit(Inst::Cast { dst: udiff, src: Operand::Place(diff) });
         let last = self.new_temp(Type::Bool);
-        self.emit(Inst::Compare {
-            dst: last,
-            op: CmpOp::Le,
-            lhs: Operand::Place(udiff),
-            rhs: Operand::Const { value: step.abs(), ty: ut },
-        });
+        self.emit(Inst::Compare { dst: last, op: CmpOp::Le, lhs: Operand::Place(udiff), rhs: Operand::Const { value: step.abs(), ty: ut } });
         self.terminate(Terminator::Branch { cond: Operand::Place(last), then_bb: exit, else_bb: stepb });
 
         self.cur = stepb;
-        self.emit(Inst::Binary {
-            dst: place,
-            op: BinOp::Add,
-            lhs: Operand::Place(place),
-            rhs: Operand::Const { value: step, ty: vt },
-        });
+        self.emit(Inst::Binary { dst: place, op: BinOp::Add, lhs: Operand::Place(place), rhs: Operand::Const { value: step, ty: vt } });
         self.terminate(Terminator::Jump(bodyb));
         self.cur = exit;
     }

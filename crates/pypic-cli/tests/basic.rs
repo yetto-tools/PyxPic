@@ -49,7 +49,14 @@ fn a_basic_error_names_the_bas_file_and_line() {
 fn a_project_can_use_a_bas_main_and_clean_removes_its_hex() {
     let dir = tmp("project");
     std::fs::write(dir.join("main.bas"), std::fs::read_to_string(root().join("examples/basic/gpio/parpadeo.bas")).unwrap()).unwrap();
-    std::fs::write(dir.join("pypic.toml"), format!("[project]\nname = \"b\"\nmain = \"main.bas\"\ndevices_dir = {:?}\n\n[target.x]\ndevice = \"PIC16F887\"\noutput = \"build/b.hex\"\n", root().join("devices").to_string_lossy().replace(std::path::MAIN_SEPARATOR, "/"))).unwrap();
+    std::fs::write(
+        dir.join("pypic.toml"),
+        format!(
+            "[project]\nname = \"b\"\nmain = \"main.bas\"\ndevices_dir = {:?}\n\n[target.x]\ndevice = \"PIC16F887\"\noutput = \"build/b.hex\"\n",
+            root().join("devices").to_string_lossy().replace(std::path::MAIN_SEPARATOR, "/")
+        ),
+    )
+    .unwrap();
     let r = pypic(&dir, &["build"]);
     assert!(r.status.success(), "{}", text(&r));
     assert!(dir.join("build/b.hex").is_file());

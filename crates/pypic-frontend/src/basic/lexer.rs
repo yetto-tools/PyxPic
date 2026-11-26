@@ -53,7 +53,11 @@ pub fn lex(src: &str, d: &mut Diagnostics) -> Vec<Token> {
         match c {
             b' ' | b'\t' | b'\r' => i += 1,
             // `_` al final de la linea une la linea siguiente
-            b'_' if b[i + 1..].iter().take_while(|x| **x != b'\n').all(|x| matches!(x, b' ' | b'\t' | b'\r')) && i + 1 <= b.len() && b[i + 1..].contains(&b'\n') && out.last().is_some_and(|t| t.t != T::Newline) => {
+            b'_' if b[i + 1..].iter().take_while(|x| **x != b'\n').all(|x| matches!(x, b' ' | b'\t' | b'\r'))
+                && i < b.len()
+                && b[i + 1..].contains(&b'\n')
+                && out.last().is_some_and(|t| t.t != T::Newline) =>
+            {
                 while i < b.len() && b[i] != b'\n' {
                     i += 1;
                 }

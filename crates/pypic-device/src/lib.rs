@@ -133,6 +133,10 @@ impl Range {
     pub fn len(&self) -> u32 {
         self.end.0 + 1 - self.start.0
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -306,14 +310,19 @@ impl Config {
         };
         let slot = |addr: u32, words: &mut [(u32, u16)]| words.iter().position(|w| w.0 == addr);
         if let Some(w) = self.words.iter().find(|w| w.name == setting) {
-            let v = num(value).filter(|v| *v < (1 << self.word_bits)).ok_or_else(|| format!("{setting} = {value}: la palabra de configuracion es un numero de {} bits (p. ej. 0x20D4)", self.word_bits))?;
+            let v =
+                num(value).filter(|v| *v < (1 << self.word_bits)).ok_or_else(|| format!("{setting} = {value}: la palabra de configuracion es un numero de {} bits (p. ej. 0x20D4)", self.word_bits))?;
             let i = slot(w.address.0, words).ok_or_else(|| format!("{setting} no esta entre las palabras a programar"))?;
             words[i].1 = v as u16;
             return Ok(());
         }
         let Some((w, f)) = self.words.iter().find_map(|w| w.fields.iter().find(|f| f.name == setting).map(|f| (w, f))) else {
             let all: Vec<&str> = self.words.iter().flat_map(|w| w.fields.iter().map(|f| f.name.as_str())).collect();
-            return Err(format!("'{setting}' no es un ajuste de configuracion de este dispositivo (ajustes: {}; o una palabra entera: {})", all.join(", "), self.words.iter().map(|w| w.name.as_str()).collect::<Vec<_>>().join(", ")));
+            return Err(format!(
+                "'{setting}' no es un ajuste de configuracion de este dispositivo (ajustes: {}; o una palabra entera: {})",
+                all.join(", "),
+                self.words.iter().map(|w| w.name.as_str()).collect::<Vec<_>>().join(", ")
+            ));
         };
         let v = match f.names.get(value) {
             Some(n) => n.parse::<u64>().map_err(|_| format!("{setting}: valor del pack invalido"))?,
@@ -587,10 +596,7 @@ impl DevicePack {
             e.push(format!("device.json: cpu.data_bits {} no es 8, 16 ni 32", d.cpu.data_bits));
         }
         if d.pypic.max_int_bits < d.cpu.data_bits || !matches!(d.pypic.max_int_bits, 8 | 16 | 32) {
-            e.push(format!(
-                "device.json: pypic.max_int_bits {} debe ser 8, 16 o 32 y no menor que cpu.data_bits {}",
-                d.pypic.max_int_bits, d.cpu.data_bits
-            ));
+            e.push(format!("device.json: pypic.max_int_bits {} debe ser 8, 16 o 32 y no menor que cpu.data_bits {}", d.pypic.max_int_bits, d.cpu.data_bits));
         }
         const LEVELS: [&str; 5] = ["experimental", "compila", "simula", "probado en hardware", "depuracion fisica"];
         if !LEVELS.contains(&d.pypic.support_level.as_str()) {
@@ -679,9 +685,7 @@ impl DevicePack {
             let mut next = base;
             for (s, en, what) in &parts {
                 if *s != next || *en < *s || *en > top {
-                    e.push(format!(
-                        "memory.json: banco {b}: {what} {s:#05x}..{en:#05x} deja un hueco, se solapa o sale del banco (se esperaba desde {next:#05x})"
-                    ));
+                    e.push(format!("memory.json: banco {b}: {what} {s:#05x}..{en:#05x} deja un hueco, se solapa o sale del banco (se esperaba desde {next:#05x})"));
                     break;
                 }
                 next = en + 1;
@@ -860,7 +864,13 @@ impl DevicePack {
                             e.push(format!("registers.json: falta {prefix}{port} (lo usa el pin {})", p.name));
                         }
                     }
-                    let bit_ok = |reg: &str| rg.get(&format!("{reg}{port}")).is_some_and(|r| p.bit.is_some_and(|b| r.bits.get(b as usize).is_some_and(|x| x.as_deref() == Some(format!("{reg}{port}{b}").as_str()) || reg == "PORT" && x.as_deref() == Some(p.name.as_str()))));
+                    let bit_ok = |reg: &str| {
+                        rg.get(&format!("{reg}{port}")).is_some_and(|r| {
+                            p.bit.is_some_and(|b| {
+                                r.bits.get(b as usize).is_some_and(|x| x.as_deref() == Some(format!("{reg}{port}{b}").as_str()) || reg == "PORT" && x.as_deref() == Some(p.name.as_str()))
+                            })
+                        })
+                    };
                     if !bit_ok("PORT") || !bit_ok("TRIS") {
                         e.push(format!("registers.json: el pin {} no tiene su bit con nombre en PORT{port}/TRIS{port}", p.name));
                     }

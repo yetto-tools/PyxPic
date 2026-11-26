@@ -3,8 +3,8 @@
 use pypic_frontend::{analyze, TargetProfile};
 use pypic_ir::{lower, verify, Machine, Trap};
 use pypic_pic14::codegen::{CodegenError, Compiled, Options};
-use pypic_pic14::sim::Sim;
 use pypic_pic14::compile;
+use pypic_pic14::sim::Sim;
 
 fn try_build(src: &str) -> Result<Compiled, CodegenError> {
     let r = analyze(src, &TargetProfile::generic());
@@ -25,7 +25,11 @@ fn run(src: &str) -> (Compiled, Sim) {
 fn global(c: &Compiled, s: &Sim, name: &str) -> u16 {
     let g = c.globals.iter().find(|g| g.name == name).unwrap();
     let lo = s.read(g.addr as usize) as u16;
-    if g.ty.bits() == 16 { lo | (s.read(g.addr as usize + 1) as u16) << 8 } else { lo }
+    if g.ty.bits() == 16 {
+        lo | (s.read(g.addr as usize + 1) as u16) << 8
+    } else {
+        lo
+    }
 }
 
 fn frontend_codes(src: &str) -> Vec<String> {
@@ -75,9 +79,7 @@ fn banks_other_than_zero_are_reachable_when_the_function_returns_to_bank_zero() 
 
 #[test]
 fn the_inline_assembly_words_are_in_the_final_image_and_the_listing() {
-    let src = format!(
-        "{HEAD}r: u8 = 0\n\n\n@asm_function\ndef swap(x: u8) -> u8:\n    \"\"\"\n    SWAPF x,W\n    RETURN\n    \"\"\"\n\n\ndef main() -> None:\n    global r\n    r = swap(1)\n"
-    );
+    let src = format!("{HEAD}r: u8 = 0\n\n\n@asm_function\ndef swap(x: u8) -> u8:\n    \"\"\"\n    SWAPF x,W\n    RETURN\n    \"\"\"\n\n\ndef main() -> None:\n    global r\n    r = swap(1)\n");
     let c = try_build(&src).unwrap();
     assert!(c.listing.contains("swap:\n") && c.listing.contains("SWAPF"), "{}", c.listing);
 }
@@ -166,7 +168,9 @@ fn strings_are_still_rejected_anywhere_else() {
 
 #[test]
 fn an_asm_function_cannot_be_reached_from_an_interrupt() {
-    let src = format!("{HEAD}from pypic import interrupt\n\n\n@asm_function\ndef f() -> None:\n    \"\"\"\n    RETURN\n    \"\"\"\n\n\n@interrupt\ndef isr() -> None:\n    f()\n\n\ndef main() -> None:\n    pass\n");
+    let src = format!(
+        "{HEAD}from pypic import interrupt\n\n\n@asm_function\ndef f() -> None:\n    \"\"\"\n    RETURN\n    \"\"\"\n\n\n@interrupt\ndef isr() -> None:\n    f()\n\n\ndef main() -> None:\n    pass\n"
+    );
     assert!(frontend_codes(&src).contains(&"PYP2111".to_string()));
 }
 

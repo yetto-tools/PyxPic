@@ -1,0 +1,63 @@
+# Integracion continua de PyPIC (#17): formato, clippy, pruebas y Device Packs en Linux y Windows, y la extension de VS Code.
+#
+# La version de Rust esta fijada (la misma con la que se limpio clippy) para que un aviso nuevo de una version posterior no ponga el CI en
+# rojo sin que cambie nada. Se sube a proposito: cambia RUST_VERSION, corre `cargo clippy --workspace --all-targets -- -D warnings` y
+# arregla lo que salga en el mismo cambio.
+name: CI
+
+on:
+  push:
+    branches: [main, release]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: "1.97.1"
+
+jobs:
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Formato (rustfmt.toml)
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Pruebas
+        run: cargo test --workspace
+      - name: Device Packs
+        shell: bash
+        run: |
+          for pack in devices/*/; do
+            cargo run -q -p pypic-cli -- device validate "$pack"
+          done
+
+  extension:
+    name: Extension de VS Code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+      - uses: Swatinem/rust-cache@v2
+      # las pruebas de la extension ejecutan la CLI real
+      - name: Compilar la CLI
+        run: cargo build -p pypic-cli
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Pruebas de la extension
+        working-directory: vscode-pypic
+        run: npm test

@@ -39,7 +39,15 @@ pub fn print(m: &Module) -> String {
     }
     for f in &m.functions {
         let params: Vec<String> = f.locals[..f.num_params].iter().map(|l| format!("{}: {}", l.name, l.ty)).collect();
-        let tag = if f.is_interrupt { "interrupt " } else if f.is_init { "init " } else if f.asm.is_some() { "asm " } else { "" };
+        let tag = if f.is_interrupt {
+            "interrupt "
+        } else if f.is_init {
+            "init "
+        } else if f.asm.is_some() {
+            "asm "
+        } else {
+            ""
+        };
         let _ = writeln!(out, "\n{tag}fn {}({}) -> {} {{", f.name, params.join(", "), f.ret);
         let locals: Vec<String> = f.locals[f.num_params..].iter().map(|l| format!("{}: {}", l.name, l.ty)).collect();
         if !locals.is_empty() {
@@ -51,14 +59,7 @@ pub fn print(m: &Module) -> String {
                 let line = match inst {
                     Inst::Copy { dst, src } => format!("{} = {}", place(m, f, *dst), operand(m, f, src)),
                     Inst::Unary { dst, op, src } => format!("{} = {} {}", place(m, f, *dst), unary_sym(*op), operand(m, f, src)),
-                    Inst::Binary { dst, op, lhs, rhs } => format!(
-                        "{}: {} = {} {} {}",
-                        place(m, f, *dst),
-                        m.place_ty(f, *dst),
-                        operand(m, f, lhs),
-                        op.symbol(),
-                        operand(m, f, rhs)
-                    ),
+                    Inst::Binary { dst, op, lhs, rhs } => format!("{}: {} = {} {} {}", place(m, f, *dst), m.place_ty(f, *dst), operand(m, f, lhs), op.symbol(), operand(m, f, rhs)),
                     Inst::Compare { dst, op, lhs, rhs } => {
                         format!("{} = {} {} {}", place(m, f, *dst), operand(m, f, lhs), op.symbol(), operand(m, f, rhs))
                     }

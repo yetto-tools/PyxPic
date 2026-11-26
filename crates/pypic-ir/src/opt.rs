@@ -30,12 +30,7 @@ pub struct Stats {
 
 impl Stats {
     pub fn total(&self) -> usize {
-        self.propagated
-            + self.folded
-            + self.branches_simplified
-            + self.blocks_removed
-            + self.insts_removed
-            + self.temps_removed
+        self.propagated + self.folded + self.branches_simplified + self.blocks_removed + self.insts_removed + self.temps_removed
     }
 }
 
@@ -84,9 +79,7 @@ fn operands_mut(inst: &mut Inst) -> Vec<&mut Operand> {
         Inst::Call { args, .. } => args.iter_mut().collect(),
         Inst::PinSet { value, .. } => vec![value],
         Inst::Delay { amount, .. } => vec![amount],
-        Inst::Timer { arg, .. } | Inst::Reg { arg, .. } | Inst::Uart { arg, .. } => {
-            arg.iter_mut().collect()
-        }
+        Inst::Timer { arg, .. } | Inst::Reg { arg, .. } | Inst::Uart { arg, .. } => arg.iter_mut().collect(),
         Inst::Pwm { hi, dc, .. } => hi.iter_mut().chain(dc.iter_mut()).collect(),
         Inst::Eeprom { addr, val, .. } => addr.iter_mut().chain(val.iter_mut()).collect(),
         Inst::Bits { src, .. } => src.iter_mut().collect(),
@@ -117,12 +110,7 @@ fn dsts_mut(inst: &mut Inst) -> Vec<&mut Place> {
         | Inst::Comp { dst, .. }
         | Inst::Eeprom { dst, .. }
         | Inst::Uart { dst, .. } => dst.iter_mut().collect(),
-        Inst::PinCfg { .. }
-        | Inst::PinSet { .. }
-        | Inst::PinToggle { .. }
-        | Inst::Delay { .. }
-        | Inst::Pwm { .. }
-        | Inst::ArrSet { .. } => vec![],
+        Inst::PinCfg { .. } | Inst::PinSet { .. } | Inst::PinToggle { .. } | Inst::Delay { .. } | Inst::Pwm { .. } | Inst::ArrSet { .. } => vec![],
     }
 }
 
@@ -130,11 +118,7 @@ fn dsts_mut(inst: &mut Inst) -> Vec<&mut Place> {
 fn written(inst: &Inst) -> Vec<Place> {
     let mut tmp = inst.clone();
     let mut out: Vec<Place> = dsts_mut(&mut tmp).into_iter().map(|p| *p).collect();
-    if let Inst::Bits {
-        src: Some(Operand::Place(p)),
-        ..
-    } = inst
-    {
+    if let Inst::Bits { src: Some(Operand::Place(p)), .. } = inst {
         out.push(*p);
     }
     out
@@ -143,16 +127,7 @@ fn written(inst: &Inst) -> Vec<Place> {
 /// Lugares que la instruccion lee.
 fn read_places(inst: &Inst) -> Vec<Place> {
     let mut tmp = inst.clone();
-    operands_mut(&mut tmp)
-        .into_iter()
-        .filter_map(|o| {
-            if let Operand::Place(p) = o {
-                Some(*p)
-            } else {
-                None
-            }
-        })
-        .collect()
+    operands_mut(&mut tmp).into_iter().filter_map(|o| if let Operand::Place(p) = o { Some(*p) } else { None }).collect()
 }
 
 fn term_operands_mut(t: &mut Terminator) -> Vec<&mut Operand> {
@@ -203,11 +178,7 @@ fn propagate_function(f: &mut Function, gty: &[Type], st: &mut Stats) {
                     Operand::Const { .. } => true,
                     Operand::Place(p) => trackable(*p),
                 };
-                if trackable(*dst)
-                    && src_ok
-                    && operand_ty(f, gty, src) == ty_of(f, gty, *dst)
-                    && *src != Operand::Place(*dst)
-                {
+                if trackable(*dst) && src_ok && operand_ty(f, gty, src) == ty_of(f, gty, *dst) && *src != Operand::Place(*dst) {
                     known.insert(*dst, *src);
                 }
             }
@@ -234,25 +205,15 @@ fn fold(f: &Function, gty: &[Type], inst: &mut Inst, st: &mut Stats) {
         }
     };
     let folded = match inst {
-        Inst::Binary { dst, op, lhs, rhs } => konst(lhs)
-            .zip(konst(rhs))
-            .map(|(a, b)| (*dst, eval::binary(*op, a, b))),
+        Inst::Binary { dst, op, lhs, rhs } => konst(lhs).zip(konst(rhs)).map(|(a, b)| (*dst, eval::binary(*op, a, b))),
         Inst::Unary { dst, op, src } => konst(src).map(|v| (*dst, eval::unary(*op, v))),
-        Inst::Compare { dst, op, lhs, rhs } => konst(lhs)
-            .zip(konst(rhs))
-            .map(|(a, b)| (*dst, eval::compare(*op, a, b) as i128)),
+        Inst::Compare { dst, op, lhs, rhs } => konst(lhs).zip(konst(rhs)).map(|(a, b)| (*dst, eval::compare(*op, a, b) as i128)),
         Inst::Cast { dst, src } => konst(src).map(|v| (*dst, v)),
         _ => None,
     };
     if let Some((dst, v)) = folded {
         let ty = ty_of(f, gty, dst);
-        *inst = Inst::Copy {
-            dst,
-            src: Operand::Const {
-                value: eval::stored(ty, v),
-                ty,
-            },
-        };
+        *inst = Inst::Copy { dst, src: Operand::Const { value: eval::stored(ty, v), ty } };
         st.folded += 1;
     }
 }
@@ -270,9 +231,7 @@ pub fn simplify_cfg(m: &mut Module, st: &mut Stats) {
 fn targets(t: &Terminator) -> Vec<usize> {
     match t {
         Terminator::Jump(b) => vec![*b],
-        Terminator::Branch {
-            then_bb, else_bb, ..
-        } => vec![*then_bb, *else_bb],
+        Terminator::Branch { then_bb, else_bb, .. } => vec![*then_bb, *else_bb],
         _ => vec![],
     }
 }
@@ -282,16 +241,9 @@ fn simplify_function(f: &mut Function, st: &mut Stats) {
         let mut changed = false;
         // ramas con condicion constante o con los dos destinos iguales
         for b in &mut f.blocks {
-            if let Terminator::Branch {
-                cond,
-                then_bb,
-                else_bb,
-            } = &b.term
-            {
+            if let Terminator::Branch { cond, then_bb, else_bb } = &b.term {
                 let to = match cond {
-                    Operand::Const { value, .. } => {
-                        Some(if *value != 0 { *then_bb } else { *else_bb })
-                    }
+                    Operand::Const { value, .. } => Some(if *value != 0 { *then_bb } else { *else_bb }),
                     _ if then_bb == else_bb => Some(*then_bb),
                     _ => None,
                 };
@@ -336,9 +288,7 @@ fn simplify_function(f: &mut Function, st: &mut Stats) {
                         changed = true;
                     }
                 }
-                Terminator::Branch {
-                    then_bb, else_bb, ..
-                } => {
+                Terminator::Branch { then_bb, else_bb, .. } => {
                     for t in [then_bb, else_bb] {
                         let n = forward(*t);
                         if n != *t {
@@ -352,12 +302,7 @@ fn simplify_function(f: &mut Function, st: &mut Stats) {
         }
         // fundir un bloque con su unico sucesor
         let mut preds = vec![0usize; f.blocks.len()];
-        for b in reachable(f)
-            .iter()
-            .enumerate()
-            .filter(|(_, r)| **r)
-            .map(|(i, _)| i)
-        {
+        for b in reachable(f).iter().enumerate().filter(|(_, r)| **r).map(|(i, _)| i) {
             for t in targets(&f.blocks[b].term) {
                 preds[t] += 1;
             }
@@ -373,8 +318,7 @@ fn simplify_function(f: &mut Function, st: &mut Stats) {
                 }
                 let moved = std::mem::take(&mut f.blocks[t].insts);
                 f.blocks[b].insts.extend(moved);
-                f.blocks[b].term =
-                    std::mem::replace(&mut f.blocks[t].term, Terminator::Unreachable);
+                f.blocks[b].term = std::mem::replace(&mut f.blocks[t].term, Terminator::Unreachable);
                 preds[t] = 0;
                 changed = true;
             }
@@ -422,9 +366,7 @@ fn remove_unreachable(f: &mut Function, st: &mut Stats) -> bool {
         .map(|(_, mut b)| {
             match &mut b.term {
                 Terminator::Jump(t) => *t = new_id[*t],
-                Terminator::Branch {
-                    then_bb, else_bb, ..
-                } => {
+                Terminator::Branch { then_bb, else_bb, .. } => {
                     *then_bb = new_id[*then_bb];
                     *else_bb = new_id[*else_bb];
                 }
@@ -447,11 +389,7 @@ pub fn eliminate_dead(m: &mut Module, st: &mut Stats) {
                     for i in &b.insts {
                         read.extend(read_places(i));
                         // BitSet y BitClear modifican su variable: la leen y la escriben
-                        if let Inst::Bits {
-                            src: Some(Operand::Place(p)),
-                            ..
-                        } = i
-                        {
+                        if let Inst::Bits { src: Some(Operand::Place(p)), .. } = i {
                             read.insert(*p);
                         }
                     }
@@ -479,12 +417,9 @@ pub fn eliminate_dead(m: &mut Module, st: &mut Stats) {
 /// Una instruccion pura cuyo resultado (temporal o local) nadie lee. Las lecturas de arreglos no se quitan: el interprete anota sus accesos.
 fn is_dead(i: &Inst, read: &HashSet<Place>) -> bool {
     match i {
-        Inst::Copy { dst, .. }
-        | Inst::Unary { dst, .. }
-        | Inst::Binary { dst, .. }
-        | Inst::Compare { dst, .. }
-        | Inst::Cast { dst, .. }
-        | Inst::RomGet { dst, .. } => trackable(*dst) && !read.contains(dst),
+        Inst::Copy { dst, .. } | Inst::Unary { dst, .. } | Inst::Binary { dst, .. } | Inst::Compare { dst, .. } | Inst::Cast { dst, .. } | Inst::RomGet { dst, .. } => {
+            trackable(*dst) && !read.contains(dst)
+        }
         _ => false,
     }
 }

@@ -19,7 +19,12 @@ cargo test --workspace        # tests unitarios y diferenciales (intérprete de 
 cd vscode-pypic && npm test   # extensión de VS Code (necesita la CLI compilada)
 ```
 
-Todo cambio debe dejar **`cargo test --workspace` en verde**.
+Todo cambio debe dejar **`cargo test --workspace` en verde**, y pasar el formato y `clippy` (lo mismo que comprueba el CI):
+
+```
+cargo fmt --all                                         # rustfmt.toml: ancho 200, el codigo usa lineas anchas a proposito
+cargo clippy --workspace --all-targets -- -D warnings
+```
 
 ## Qué se espera de cada cambio
 
@@ -49,6 +54,7 @@ Todo cambio debe dejar **`cargo test --workspace` en verde**.
 - Mensajes de commit **en español**, con una descripción simple de qué cambia y por qué.
 - Haz el commit cuando una pieza esté **terminada y con sus pruebas**, no a medias.
 - Los cambios grandes de formato se hacen **solos**, en su propio commit.
+- El trabajo entra en `main`; lo publicable vive en `release` y se etiqueta `vX.Y.Z` (ramas, CI y publicaciones: [`docs/release.md`](docs/release.md)).
 
 ## Licencia
 

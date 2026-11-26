@@ -47,8 +47,8 @@ pub fn blink_rd0() -> Image {
         // delay: 3 x 256 x 256 iteraciones
         (0x0010, Movlw(3)),
         (0x0011, Movwf(C3)),
-        (0x0012, Clrf(C2)), // d3
-        (0x0013, Clrf(C1)), // d2
+        (0x0012, Clrf(C2)),      // d3
+        (0x0013, Clrf(C1)),      // d2
         (0x0014, Decfsz(C1, F)), // d1
         (0x0015, Goto(0x0014)),
         (0x0016, Decfsz(C2, F)),

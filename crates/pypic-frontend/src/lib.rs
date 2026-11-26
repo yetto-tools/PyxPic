@@ -7,11 +7,10 @@
 pub mod adc;
 pub mod ast;
 pub mod basic;
-pub mod text;
-pub mod clock;
-pub mod comparator;
 pub mod bits;
 pub mod check;
+pub mod clock;
+pub mod comparator;
 pub mod diag;
 pub mod eeprom;
 pub mod lexer;
@@ -20,25 +19,26 @@ pub mod pwm;
 pub mod regs;
 pub mod runtime;
 pub mod target;
+pub mod text;
 pub mod timer;
 pub mod types;
 pub mod uart;
 
-pub use check::{time_unit, DelayUnit, PinDecl, Program};
-pub use diag::{Diagnostic, Diagnostics, Severity, Span};
 pub use adc::{AdcCall, AdcClock, AdcConfig, AdcOp};
 pub use bits::BitsOp;
+pub use check::{time_unit, DelayUnit, PinDecl, Program};
 pub use clock::{ClockKind, ClockSource};
-pub use text::{TextCall, TextOp};
-pub use uart::{format_uint, FmtPart, UartBrg, UartCall, UartOp, UartStart};
 pub use comparator::{CmpId, CmpRef, CompCall, CompOp, CvrefOp};
+pub use diag::{Diagnostic, Diagnostics, Severity, Span};
 pub use eeprom::{EepromCall, EepromOp};
 pub use pwm::{PwmCall, PwmId, PwmOp, PwmTiming};
 pub use regs::{RegCall, RegOp};
 pub use runtime::{pow2_exp, routine_for, RtKind};
 pub use target::{PinClaim, PinInfo, RegInfo, TargetProfile};
+pub use text::{TextCall, TextOp};
 pub use timer::{TimerCall, TimerId, TimerOp, TimerStart};
 pub use types::Type;
+pub use uart::{format_uint, FmtPart, UartBrg, UartCall, UartOp, UartStart};
 
 pub struct Analysis {
     /// `Some` solo si no hubo errores.
@@ -94,7 +94,11 @@ pub enum Language {
 impl Language {
     /// Por la extension del archivo: `.bas` es BASIC; cualquier otra cosa, Python.
     pub fn from_path(path: &str) -> Language {
-        if std::path::Path::new(path).extension().is_some_and(|e| e.eq_ignore_ascii_case("bas")) { Language::Basic } else { Language::Python }
+        if std::path::Path::new(path).extension().is_some_and(|e| e.eq_ignore_ascii_case("bas")) {
+            Language::Basic
+        } else {
+            Language::Python
+        }
     }
 }
 
@@ -148,6 +152,32 @@ fn analyze_parsed(source: &str, mut module: ast::Module, mut d: Diagnostics, tar
         return Analysis { program: None, diagnostics: d };
     }
     let c = check::check(&module, target, &mut d);
-    let program = (!d.has_errors()).then_some(Program { module, info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, clock_source: c.clock_source, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, arrays: c.arrays, array_inits: c.array_inits, array_gets: c.array_gets, adc_calls: c.adc_calls, adc_config: c.adc_config, pwm_calls: c.pwm_calls, eeprom_calls: c.eeprom_calls, comp_calls: c.comp_calls, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt, text_calls: c.text_calls });
+    let program = (!d.has_errors()).then_some(Program {
+        module,
+        info: c.info,
+        globals: c.globals,
+        functions: c.functions,
+        pins: c.pins,
+        device: c.device,
+        clock_hz: c.clock_hz,
+        clock_defaulted: c.clock_defaulted,
+        clock_source: c.clock_source,
+        timer_calls: c.timer_calls,
+        reg_calls: c.reg_calls,
+        bits_calls: c.bits_calls,
+        roms: c.roms,
+        rom_gets: c.rom_gets,
+        arrays: c.arrays,
+        array_inits: c.array_inits,
+        array_gets: c.array_gets,
+        adc_calls: c.adc_calls,
+        adc_config: c.adc_config,
+        pwm_calls: c.pwm_calls,
+        eeprom_calls: c.eeprom_calls,
+        comp_calls: c.comp_calls,
+        uart_calls: c.uart_calls,
+        uart_fmt: c.uart_fmt,
+        text_calls: c.text_calls,
+    });
     Analysis { program, diagnostics: d }
 }
