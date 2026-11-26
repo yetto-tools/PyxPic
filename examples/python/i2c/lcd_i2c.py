@@ -66,7 +66,7 @@ def enviar(b: uint8, rs: uint8) -> None:
 
 
 def pantalla_iniciar() -> None:
-    pause(50)                             # el HD44780 necesita mas de 40 ms tras alimentarse
+    pause(200)                            # el HD44780 pide mas de 40 ms tras alimentarse; algunos modelos (Proteus JHD-2X16-I2C) tardan mas
     nibble(3, 0)                          # secuencia de arranque a 4 bits (datasheet del HD44780)
     pause(5)
     nibble(3, 0)
