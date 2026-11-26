@@ -232,3 +232,38 @@ fn the_ack_led_diagnostic_shows_the_bus_answer_on_rd0() {
         .collect();
     assert!(levels.contains(&Some(true)) && levels.contains(&Some(false)), "{levels:?}");
 }
+
+#[test]
+fn the_mapping_diagnostic_writes_its_text_under_both_pcf8574_layouts() {
+    let src = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/python/i2c/lcd_mapas.py")).unwrap().replace(
+        "
+", "
+",
+    );
+    let c = build(&src);
+    let mut s = Sim::new(&c.image);
+    s.i2c.slaves.push(0x27);
+    // la primera disposicion termina antes de 0,5 s; la segunda empieza tras los 3 s de pausa
+    s.run_until(1_500_000, |_| false);
+    let first = s.i2c.received_by(0x27);
+    s.run_until(2_500_000, |_| false);
+    let all = s.i2c.received_by(0x27);
+    let second = all[first.len()..].to_vec();
+    assert!(s.i2c.violations.is_empty(), "{:?}", s.i2c.violations);
+    // lo que entiende cada disposicion: de donde sale el nibble, el bit de RS y el de E
+    let decode = |bytes: &[u8], nib: &dyn Fn(u8) -> u8, rs: u8, e: u8| -> String {
+        let mut out = Vec::new();
+        let mut prev = false;
+        for b in bytes {
+            let high = b & e != 0;
+            if prev && !high {
+                out.push((u8::from(b & rs != 0), nib(*b)));
+            }
+            prev = high;
+        }
+        let pairs: Vec<(u8, u8)> = out[4..].chunks(2).filter(|p| p.len() == 2).map(|p| (p[0].0, p[0].1 << 4 | p[1].1)).collect();
+        pairs.iter().filter(|(r, _)| *r == 1).map(|(_, b)| *b as char).collect()
+    };
+    assert_eq!(decode(&first, &|b| b >> 4, 0x01, 0x04), "MAPA 1");
+    assert_eq!(decode(&second, &|b| b & 0x0F, 0x10, 0x40), "MAPA 2");
+}
