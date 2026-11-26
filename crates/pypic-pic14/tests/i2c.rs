@@ -27,6 +27,14 @@ fn lcd_source() -> String {
     std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/python/i2c/lcd_i2c.py")).unwrap().replace("\r\n", "\n")
 }
 
+/// La direccion de 7 bits que declara el ejemplo del LCD (`DIRECCION` ya viene desplazada: 0x4E es la 0x27).
+fn lcd_addr() -> u8 {
+    let src = lcd_source();
+    let line = src.lines().find(|l| l.starts_with("DIRECCION")).expect("el ejemplo declara DIRECCION");
+    let value = line.split('=').nth(1).unwrap().split('#').next().unwrap().trim().trim_start_matches("0x");
+    u8::from_str_radix(value, 16).unwrap() >> 1
+}
+
 /// Lo que el HD44780 entiende de lo que llega a la mochila: cada subida y bajada de E (P2) toma el nibble de P7..P4 con RS en P0. Devuelve
 /// (RS, nibble) en orden.
 fn nibbles(bytes: &[u8]) -> Vec<(u8, u8)> {
@@ -46,16 +54,16 @@ fn nibbles(bytes: &[u8]) -> Vec<(u8, u8)> {
 fn the_lcd_example_writes_both_lines_through_the_i2c_bus() {
     let c = build(&lcd_source());
     let mut s = Sim::new(&c.image);
-    s.i2c.slaves.push(0x27);
+    s.i2c.slaves.push(lcd_addr());
     s.run_until(2_000_000, |_| false);
     assert!(s.i2c.violations.is_empty(), "{:?}", s.i2c.violations);
 
-    // cada transaccion es START, direccion 0x27 + escritura con ACK, un dato con ACK y STOP (4 eventos)
+    // cada transaccion es START, la direccion del ejemplo + escritura con ACK, un dato con ACK y STOP (4 eventos)
     let ev = &s.i2c.events;
     assert!(ev.len().is_multiple_of(4) && !ev.is_empty());
     for t in ev.chunks(4) {
         assert_eq!(t[0], I2cEvent::Start);
-        assert_eq!(t[1], I2cEvent::Address { addr: 0x27, read: false, ack: true });
+        assert_eq!(t[1], I2cEvent::Address { addr: lcd_addr(), read: false, ack: true });
         assert!(matches!(t[2], I2cEvent::Data { ack: true, .. }));
         assert_eq!(t[3], I2cEvent::Stop, "{t:?}");
     }
@@ -65,9 +73,9 @@ fn the_lcd_example_writes_both_lines_through_the_i2c_bus() {
 fn the_lcd_example_sends_the_hd44780_init_and_the_text() {
     let c = build(&lcd_source());
     let mut s = Sim::new(&c.image);
-    s.i2c.slaves.push(0x27);
+    s.i2c.slaves.push(lcd_addr());
     s.run_until(2_000_000, |_| false);
-    let bytes = s.i2c.received_by(0x27);
+    let bytes = s.i2c.received_by(lcd_addr());
     assert!(bytes.iter().all(|b| b & 0x08 != 0), "la luz de fondo (P3) va encendida en todos los bytes");
     let n = nibbles(&bytes);
     // arranque a 4 bits: 3, 3, 3 y 2 como nibbles sueltos
@@ -88,10 +96,10 @@ fn the_lcd_example_sends_the_hd44780_init_and_the_text() {
 fn an_absent_address_gets_no_ack_and_acknowledges_nothing() {
     let c = build(&lcd_source());
     let mut s = Sim::new(&c.image);
-    s.i2c.slaves.push(0x3F); // la mochila esta en otra direccion
+    s.i2c.slaves.push(lcd_addr() + 1); // la mochila esta en otra direccion
     s.run_until(300_000, |_| false);
-    assert!(s.i2c.events.iter().any(|e| matches!(e, I2cEvent::Address { addr: 0x27, ack: false, .. })));
-    assert!(s.i2c.received_by(0x27).is_empty());
+    assert!(s.i2c.events.iter().any(|e| matches!(e, I2cEvent::Address { addr, ack: false, .. } if *addr == lcd_addr())));
+    assert!(s.i2c.received_by(lcd_addr()).is_empty());
     assert!(s.i2c.events.iter().all(|e| !matches!(e, I2cEvent::Data { ack: true, .. })));
 }
 
@@ -262,4 +270,34 @@ fn the_mapping_diagnostic_writes_its_text_under_both_pcf8574_layouts() {
     };
     assert_eq!(decode(&first, &|b| b >> 4, 0x01, 0x04), "MAPA 1");
     assert_eq!(decode(&second, &|b| b & 0x0F, 0x10, 0x40), "MAPA 2");
+}
+
+#[test]
+fn the_address_search_shows_each_responding_address_on_its_own_screen_and_on_the_uart() {
+    let src = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/python/i2c/lcd_buscar.py")).unwrap().replace("\r\n", "\n");
+    let c = build(&src);
+    let mut s = Sim::new(&c.image);
+    s.fosc_hz = 4_000_000;
+    s.i2c.slaves.extend([0x26, 0x27, 0x3F]);
+    s.run_until(2_000_000, |_| false);
+    assert!(s.i2c.violations.is_empty(), "{:?}", s.i2c.violations);
+    let uart: String = s.uart_tx.iter().map(|(b, _)| *b as char).collect();
+    // recorre de menor a mayor y avisa de cada direccion que responde
+    let found: Vec<u8> = vec![0x26, 0x27, 0x3F];
+    let expected: String = found.iter().map(|a| format!("ACK {a:02X}\r\n")).collect();
+    assert_eq!(uart, expected);
+    // cada pantalla recibe su propia direccion en hexadecimal tras "DIR "
+    for a in found {
+        let n = nibbles(&s.i2c.received_by(a));
+        let pairs: Vec<(u8, u8)> = n[4..].chunks(2).filter(|p| p.len() == 2).map(|p| (p[0].0, p[0].1 << 4 | p[1].1)).collect();
+        let text: String = pairs.iter().filter(|(r, _)| *r == 1).map(|(_, b)| *b as char).collect();
+        assert_eq!(text, format!("DIR {a:02X}"));
+    }
+    // solo las direcciones declaradas responden ACK, y el recorrido llega a las 112 posibles (0x08 a 0x77)
+    let probed: std::collections::BTreeSet<u8> = s.i2c.events.iter().filter_map(|e| if let I2cEvent::Address { addr, .. } = e { Some(*addr) } else { None }).collect();
+    assert!((0x08..=0x77).all(|a| probed.contains(&a)));
+    assert!(s.i2c.events.iter().all(|e| match e {
+        I2cEvent::Address { addr, ack, .. } => *ack == [0x26, 0x27, 0x3F].contains(addr),
+        _ => true,
+    }));
 }
