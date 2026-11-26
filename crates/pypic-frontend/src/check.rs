@@ -168,6 +168,9 @@ pub struct Program {
     pub eeprom_calls: BTreeMap<u32, EepromCall>,
     /// Llamadas a metodos de `pypic.periph.comparator` y `pypic.periph.vref`, por id de expresion.
     pub comp_calls: BTreeMap<u32, CompCall>,
+    /// Niveles de la pila de hardware en el peor caso: (contexto principal, interrupcion), con la llamada de arranque y la entrada a la interrupcion incluidas.
+    /// `None` si el destino no declara su profundidad de pila.
+    pub stack_use: Option<(u32, u32)>,
     /// Llamadas a metodos de `pypic.periph.uart`, por id de expresion.
     pub uart_calls: BTreeMap<u32, UartCall>,
     /// Las partes de cada `UART.write_text(f"...")`, por id de expresion.
@@ -201,6 +204,7 @@ pub struct Checked {
     /// Llamadas a metodos de `pypic.periph.eeprom`, por id de expresion.
     pub eeprom_calls: BTreeMap<u32, EepromCall>,
     pub comp_calls: BTreeMap<u32, CompCall>,
+    pub stack_use: Option<(u32, u32)>,
     pub uart_calls: BTreeMap<u32, UartCall>,
     pub uart_fmt: BTreeMap<u32, Vec<FmtPart>>,
 }
@@ -257,6 +261,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         comp_consts: HashSet::new(),
         cvref_name: false,
         comp_calls: BTreeMap::new(),
+        stack_use: None,
         cvref_started: false,
         cvref_needed: None,
         pwm_calls: BTreeMap::new(),
@@ -308,6 +313,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         pwm_calls: c.pwm_calls,
         eeprom_calls: c.eeprom_calls,
         comp_calls: c.comp_calls,
+        stack_use: c.stack_use,
         uart_calls: c.uart_calls,
         uart_fmt: c.uart_fmt,
     }
@@ -403,6 +409,7 @@ struct Checker<'a> {
     comp_consts: HashSet<String>,
     cvref_name: bool,
     comp_calls: BTreeMap<u32, CompCall>,
+    stack_use: Option<(u32, u32)>,
     cvref_started: bool,
     cvref_needed: Option<Span>,
     pwm_calls: BTreeMap<u32, PwmCall>,
@@ -3239,6 +3246,7 @@ impl<'a> Checker<'a> {
         // la entrada a la interrupcion empuja el PC (1 nivel) y la ISR puede llamar a otras
         let isr = self.functions.iter().find(|f| f.is_interrupt).map(|f| f.name.clone());
         let isr_use = isr.as_ref().map_or(0, |n| 1 + self.call_depth(n, &mut visiting, &mut memo));
+        self.stack_use = Some((main_use, isr_use));
         let total = main_use + isr_use;
         if total > limit {
             let at = if main_use > 0 { &main_root } else { isr.as_ref().unwrap() };

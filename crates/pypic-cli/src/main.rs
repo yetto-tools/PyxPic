@@ -6,6 +6,7 @@ use pypic_frontend::TargetProfile;
 use pypic_pic14::{disassemble, Image};
 
 mod clean;
+mod memory;
 mod project;
 mod report;
 mod workflow;
@@ -14,6 +15,7 @@ const USAGE: &str = "uso:
   pypic check [archivo.py] [opciones]
   pypic ir [archivo.py] [opciones]
   pypic build [archivo.py] [-o salida.hex] [--listing] [--timing] [opciones]
+  pypic memory [archivo] [--details] [--format text|json] [opciones]   memoria usada por el programa (programa, RAM, pila), sin grabar nada
   pypic clean [archivo.py] [-o salida.hex] [--project pypic.toml] [--target perfil] [--dry-run]   borra el .hex que build escribe (solo ese archivo)
   pypic asm <archivo.s> [-mcpu=16F887] [-Wl,-pNOMBRE=dir,...] [-o salida.hex] [--listing]
   pypic disasm <archivo.hex> [--pic-as] [-mcpu=16F887] [--devices-dir <dir>]
@@ -145,7 +147,7 @@ fn main() -> ExitCode {
         Some("clean") => clean::clean(&args[1..]),
         Some("disasm") => disasm(&args[1..]),
         Some("asm") => asm_cmd(&args[1..]),
-        Some(c @ ("check" | "ir" | "build")) => compile(c, &args[1..]),
+        Some(c @ ("check" | "ir" | "build" | "memory")) => compile(c, &args[1..]),
         _ => usage(),
     }
 }
@@ -378,6 +380,7 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     let mut stack = None;
     let mut out_path: Option<String> = None;
     let mut listing = false;
+    let mut details = false;
     let mut timing = false;
     let mut optimize = true;
     let mut json = false;
@@ -391,6 +394,7 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
             "--project" => project_arg = it.next().cloned(),
             "--target" => target_arg = it.next().cloned(),
             "--listing" => listing = true,
+            "--details" => details = true,
             "--timing" => timing = true,
             "--no-opt" => optimize = false,
             "--format" => match it.next().map(String::as_str) {
@@ -544,16 +548,21 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
             format!("el programa no declara su dispositivo: se usa {} del perfil de pypic.toml; ponlo en la primera linea ('from pypic.device import {}') para que el codigo diga que PIC espera y se compruebe contra el perfil", device_name.as_deref().unwrap_or("?"), device_name.as_deref().unwrap_or("PIC16F887")),
         );
     }
-    if json {
+    if json && cmd != "memory" {
         if cmd != "check" {
-            eprintln!("--format json solo vale con check: build e ir imprimen texto");
+            eprintln!("--format json solo vale con check y memory: build e ir imprimen texto");
             return ExitCode::from(2);
         }
         // un solo documento JSON en la salida estandar, sin ninguna otra linea
         println!("{}", serde_json::to_string_pretty(&report::diagnostics_json(&file, &src, &res.diagnostics)).expect("el informe es JSON valido"));
         return if res.diagnostics.has_errors() { ExitCode::from(1) } else { ExitCode::SUCCESS };
     }
-    print!("{}", res.diagnostics.render(&src, &file));
+    // con `memory --format json` la salida estandar es un solo documento JSON: los avisos van a la salida de errores
+    if cmd == "memory" && json {
+        eprint!("{}", res.diagnostics.render(&src, &file));
+    } else {
+        print!("{}", res.diagnostics.render(&src, &file));
+    }
     let Some(program) = res.program else { return ExitCode::from(1) };
     if let (Some(c), true, Some((tn, _))) = (&profile_clock, source_clock, &profile) {
         if program.clock_source.as_ref() != Some(c) {
@@ -564,7 +573,7 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
         println!("{file}: ok");
         return ExitCode::SUCCESS;
     }
-    if cmd == "build" && (device_name.is_none() || pack.is_none()) {
+    if (cmd == "build" || cmd == "memory") && (device_name.is_none() || pack.is_none()) {
         eprintln!("{file}: error: falta el dispositivo: declaralo en la primera linea del programa ('from pypic.device import PIC16F887') o en el perfil de un pypic.toml ([target.NOMBRE] device = \"PIC16F887\")");
         return ExitCode::from(1);
     }
@@ -609,6 +618,9 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     if let Err(e) = compiled.image.check_bounds(pack.memory.program.words, zone) {
         eprintln!("{file}: error interno: {e}");
         return ExitCode::from(70);
+    }
+    if cmd == "memory" {
+        return memory::run(&memory::Inputs { file: &file, compiled: &compiled, program: &program, pack: &pack, opts: &opts, details }, json);
     }
     let out_path = out_path.unwrap_or_else(|| Path::new(&file).with_extension("hex").to_string_lossy().into_owned());
     // la carpeta de salida de un perfil (output = "build/x.hex") se crea si falta

@@ -175,6 +175,7 @@ fn analyze_parsed(source: &str, mut module: ast::Module, mut d: Diagnostics, tar
         pwm_calls: c.pwm_calls,
         eeprom_calls: c.eeprom_calls,
         comp_calls: c.comp_calls,
+        stack_use: c.stack_use,
         uart_calls: c.uart_calls,
         uart_fmt: c.uart_fmt,
         text_calls: c.text_calls,
