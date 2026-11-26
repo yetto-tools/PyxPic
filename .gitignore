@@ -7,3 +7,6 @@ skills-lock.json
 
 # proyecto de ejemplo: los .hex salen de pypic build
 examples/python/proyecto/build/
+
+# paquetes de la extension de VS Code (salen de vsce package)
+*.vsix
