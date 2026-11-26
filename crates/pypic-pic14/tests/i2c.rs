@@ -205,3 +205,30 @@ fn bus_timing_follows_sspadd() {
     let diff = (slow - fast) as i64 - 11 * 30;
     assert!(diff.abs() <= 12, "slow={slow} fast={fast}");
 }
+
+#[test]
+fn the_ack_led_diagnostic_shows_the_bus_answer_on_rd0() {
+    let src = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/python/i2c/ack_led.py")).unwrap().replace("\r\n", "\n");
+    let c = build(&src);
+    // con la mochila: tras el destello inicial, RD0 queda en alto y fijo
+    let mut s = Sim::new(&c.image);
+    s.i2c.slaves.push(0x27);
+    s.run_until(400_000, |_| false);
+    let levels: Vec<Option<bool>> = (0..5)
+        .map(|_| {
+            s.run_until(30_000, |_| false);
+            s.pin('D', 0)
+        })
+        .collect();
+    assert!(levels.iter().all(|l| *l == Some(true)), "{levels:?}");
+    // sin la mochila: parpadea
+    let mut s = Sim::new(&c.image);
+    s.run_until(400_000, |_| false);
+    let levels: Vec<Option<bool>> = (0..8)
+        .map(|_| {
+            s.run_until(100_000, |_| false);
+            s.pin('D', 0)
+        })
+        .collect();
+    assert!(levels.contains(&Some(true)) && levels.contains(&Some(false)), "{levels:?}");
+}
