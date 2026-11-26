@@ -1,18 +1,18 @@
 {
   "name": "pypic-ide",
   "displayName": "PyPIC IDE",
-  "description": "v0.1.22 · Comprueba y compila programas PyPIC desde VS Code.",
-  "version": "0.1.22",
+  "description": "v0.1.23 · Comprueba y compila programas PyPIC desde VS Code.",
+  "version": "0.1.23",
   "publisher": "pypic",
   "license": "MIT",
   "icon": "media/icon.png",
   "repository": { "type": "git", "url": "https://github.com/yetto-tools/PyPic.git" },
-  "files": ["extension.js", "language.js", "pinout.js", "resources.js", "project.js", "projectmode.js", "sidebar.js", "welcome.js", "spelling.js", "cspell", "README.md", "LICENSE", "media", "syntaxes", "language-configuration-basic.json"],
+  "files": ["extension.js", "language.js", "pinout.js", "resources.js", "serial.js", "project.js", "projectmode.js", "sidebar.js", "welcome.js", "spelling.js", "cspell", "README.md", "LICENSE", "media", "syntaxes", "language-configuration-basic.json"],
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Programming Languages"],
   "main": "./extension.js",
-  "scripts": { "test": "node --test test/commands.test.js test/projectmode.test.js test/pinout.test.js test/resources.test.js test/spelling.test.js" },
-  "activationEvents": ["onView:pypic.actions", "onView:pypic.resources", "onView:pypic.pinout", "onLanguage:python", "onLanguage:pypic", "onLanguage:pypic-basic", "workspaceContains:pypic.toml"],
+  "scripts": { "test": "node --test test/commands.test.js test/projectmode.test.js test/pinout.test.js test/resources.test.js test/serial.test.js test/spelling.test.js" },
+  "activationEvents": ["onView:pypic.actions", "onView:pypic.resources", "onView:pypic.pinout", "onView:pypic.serial", "onLanguage:python", "onLanguage:pypic", "onLanguage:pypic-basic", "workspaceContains:pypic.toml"],
   "capabilities": { "untrustedWorkspaces": { "supported": false } },
   "contributes": {
     "languages": [
@@ -29,7 +29,8 @@
     "views": { "pypic": [
       { "id": "pypic.actions", "name": "Acciones" },
       { "id": "pypic.resources", "name": "Recursos", "type": "webview" },
-      { "id": "pypic.pinout", "name": "Pinout", "type": "webview" }
+      { "id": "pypic.pinout", "name": "Pinout", "type": "webview" },
+      { "id": "pypic.serial", "name": "Terminal serial", "type": "webview" }
     ] },
     "commands": [
       { "command": "pypic.check", "title": "PyPIC: Verificar código", "icon": "$(check)" },

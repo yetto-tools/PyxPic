@@ -3,7 +3,7 @@
 const vscode = require("vscode");
 const fs = require("node:fs");
 const path = require("node:path");
-const { execFile } = require("node:child_process");
+const { execFile, spawn } = require("node:child_process");
 const language = require("./language");
 const project = require("./project");
 const modes = require("./projectmode");
@@ -11,6 +11,7 @@ const sidebar = require("./sidebar");
 const welcome = require("./welcome");
 const pinout = require("./pinout");
 const resources = require("./resources");
+const serial = require("./serial");
 const extensionVersion = require("./package.json").version;
 const { registerSpelling } = require("./spelling");
 
@@ -187,6 +188,25 @@ function activate(context) {
       return cli(tools, [...modes.invocation("memory", ctx, { devices: tools.devices }), "--format", "json"], cwd);
     },
   );
+  // la terminal serial: `pypic monitor` (la CLI abre el puerto; la extension solo lee sus eventos)
+  const serialTools = () => {
+    const document = vscode.window.activeTextEditor?.document;
+    const config = vscode.workspace.getConfiguration("pypic", document?.uri);
+    const folder = document && vscode.workspace.getWorkspaceFolder(document.uri);
+    const cwd = folder ? folder.uri.fsPath : document ? path.dirname(document.uri.fsPath) : process.cwd();
+    return { cwd, tools: language.projectTools(document?.uri.fsPath || cwd, cwd, config.get("executable", "pypic"), config.get("devicesDir", "").trim()) };
+  };
+  serial.register(vscode, context, {
+    listPorts: () => { const { cwd, tools } = serialTools(); return cli(tools, ["monitor", "--list", "--format", "json"], cwd); },
+    spawn: (args) => {
+      const { cwd, tools } = serialTools();
+      return spawn(tools.executable, tools.devices && args.includes("--sim") ? [...args, "--devices-dir", tools.devices] : args, { cwd });
+    },
+    activeSource: () => {
+      const document = vscode.window.activeTextEditor?.document;
+      return document && document.uri.scheme === "file" && SOURCE_LANGUAGES.includes(document.languageId) ? document.uri.fsPath : undefined;
+    },
+  });
   refreshStatus();
 
   // Limpiar solo borra los .hex que PyPIC dijo haber generado (el resumen de `pypic build`), nunca rutas adivinadas.

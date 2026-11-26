@@ -1,6 +1,6 @@
 # PyPIC IDE para VS Code
 
-**Versión de la extensión: 0.1.22.** VS Code muestra este número en el resumen y desde el manifiesto de la extensión en la vista Extensiones.
+**Versión de la extensión: 0.1.23.** VS Code muestra este número en el resumen y desde el manifiesto de la extensión en la vista Extensiones.
 
 Extensión para VS Code de escritorio. Usa el compilador PyPIC instalado en el host; no necesita GPASM ni XC8 para crear, comprobar y compilar proyectos.
 
@@ -49,3 +49,7 @@ Los archivos `.bas` son PyPIC BASIC (estilo PICAXE, `docs/basic-picaxe.md`): res
 ## Recursos del programa
 
 La sección **Recursos** muestra lo que el compilador mide con `pypic memory --format json` para el archivo activo (con el mismo dispositivo y perfil que **Compilar**): palabras de programa usadas y libres, RAM del compilador, pila de hardware, RAM por banco, periféricos y pines. Se mide sola al verificar o compilar sin errores y con el botón de actualizar (**PyPIC: Medir recursos del programa**). Si el archivo cambia después de medir, lo marca como **desactualizado**; si la medición falla (la CLI no está, un error de compilación), dice por qué y conserva la última medición correcta; si el resultado es **parcial** (funciones en ensamblador), lo dice con sus notas. Nada se graba en el PIC.
+
+## Terminal serial
+
+La sección **Terminal serial** usa `pypic monitor`: elige puerto y velocidad, muestra lo recibido en ASCII o hexadecimal con marcas de tiempo y filtro, envía texto (o bytes en hexadecimal) y copia el registro. **Simular archivo** muestra la salida por UART del archivo activo en el simulador, sin hardware. El puerto lo abre la CLI: detén la sesión antes de grabar el PIC. Detalles en `docs/monitor-serial.md`.

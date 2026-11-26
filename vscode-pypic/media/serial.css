@@ -1,0 +1,27 @@
+:root {
+  --surface: var(--vscode-sideBar-background); --raised: var(--vscode-sideBarSectionHeader-background);
+  --text: var(--vscode-sideBar-foreground); --muted: var(--vscode-descriptionForeground);
+  --border: var(--vscode-sideBar-border, var(--vscode-panel-border));
+  color: var(--text); font: 12px/1.45 var(--vscode-font-family);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface); }
+main { padding: 12px; }
+h1, p { margin: 0; }
+h1 { font-size: 17px; }
+header p, .hint, .footnote { color: var(--muted); }
+.controls { display: grid; gap: 8px; margin: 12px 0; }
+label { display: grid; gap: 3px; color: var(--muted); }
+label.check { display: flex; align-items: center; gap: 6px; }
+select, input[type="text"] { width: 100%; padding: 3px 5px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, var(--border)); font: inherit; }
+button { padding: 4px 9px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 0; font: inherit; cursor: pointer; }
+button:hover { background: var(--vscode-button-hoverBackground); }
+button[hidden] { display: none; }
+.buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.log { height: 240px; margin: 8px 0; padding: 6px; overflow: auto; background: var(--vscode-editor-background); border: 1px solid var(--border); font: 12px/1.4 var(--vscode-editor-font-family, monospace); white-space: pre-wrap; overflow-wrap: anywhere; }
+.log .error { color: var(--vscode-errorForeground); }
+.log .info { color: var(--muted); }
+.send { display: flex; gap: 6px; margin-top: 8px; }
+.notice { padding: 9px; background: var(--raised); color: var(--muted); }
+.notice.error { color: var(--vscode-errorForeground); }
+.footnote { margin-top: 12px; font-size: 10px; }
