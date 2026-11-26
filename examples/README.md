@@ -27,3 +27,23 @@ examples/
 ```
 
 Se compilan con `pypic build <ruta> -o salida.hex` (la extensión del archivo elige el lenguaje; `.s` va con `pypic asm`). Las pruebas del repositorio compilan y simulan estos ejemplos: al agregar uno, ponlo en la carpeta de su lenguaje y su funcionalidad, y si es un programa de Python, que declare su dispositivo (`from pypic.device import PIC16F887`).
+
+## Los mismos programas en los tres lenguajes
+
+Varios ejemplos existen en los tres lenguajes y hacen lo mismo (cada uno nombra a su contraparte en el comentario del principio). Las pruebas los simulan y comprueban que se comportan igual:
+
+| Programa | Python | BASIC | Ensamblador |
+|---|---|---|---|
+| Pulsador enciende un LED | `python/gpio/button_led.py` | `basic/gpio/boton_led.bas` | `asm/gpio/boton_led.s` |
+| Parpadeo | `python/gpio/blink.py` | `basic/gpio/parpadeo.bas` | `asm/gpio/blink_rd0.s` |
+| ADC: umbral en AN0 | `python/adc/adc.py` | `basic/adc/adc.bas` | `asm/adc/adc.s` |
+| Contador de arranques en la EEPROM | `python/eeprom/eeprom_arranques.py` | `basic/eeprom/eeprom_arranques.bas` | `asm/eeprom/eeprom_arranques.s` |
+| Eco por el puerto serie | `python/uart/eco.py` | `basic/uart/eco.bas` | `asm/uart/eco.s` |
+| PWM con un potenciometro | `python/pwm/pwm.py` | `basic/pwm/pwm.bas` | `asm/pwm/pwm.s` |
+| Media móvil del ADC | `python/adc/media_movil.py` | `basic/adc/media_movil.bas` | — |
+| Comparador contra CVREF | `python/comparadores/comparador.py` | `basic/comparadores/comparador.bas` | — |
+| Parpadeo con Timer2 | `python/temporizadores/timer_blink.py` | `basic/temporizadores/timer_blink.bas` | — |
+| Cristal de 20 MHz | `python/reloj/reloj_cristal.py` | `basic/reloj/reloj_cristal.bas` | — |
+
+Sin contraparte, porque el lenguaje todavía no lo soporta: tablas en flash, registros y bits, ensamblador en línea, contador con interrupción y los ejemplos de texto por la UART (BASIC: ver `docs/basic-picaxe.md`); y los de `python/hardware` y `python/proyecto`, que son pruebas con un programador real y un proyecto de dos perfiles.
+

@@ -146,3 +146,119 @@ fn errors_point_at_the_basic_source_with_their_own_codes() {
     let (_, d) = diagnostics(&format!("{HEAD}b0 = 1\nb1 = nada\n"));
     assert!(d.contains("t.bas:4:"), "{d}");
 }
+
+// ---- los ejemplos de examples/basic: cada uno compila y se comporta como su contraparte en Python ----
+
+fn example(rel: &str) -> String {
+    std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/basic").join(rel)).unwrap().replace("\r\n", "\n")
+}
+
+fn run_example(rel: &str, setup: impl Fn(&mut Sim), cycles: u64) -> (Sim, Compiled) {
+    let (_, c) = build(&example(rel));
+    let mut s = Sim::new(&c.image);
+    setup(&mut s);
+    s.run_until(cycles, |_| false);
+    (s, c)
+}
+
+#[test]
+fn every_basic_example_compiles() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/basic");
+    let mut n = 0;
+    let mut stack = vec![dir];
+    while let Some(d) = stack.pop() {
+        for e in std::fs::read_dir(d).unwrap().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.extension().is_some_and(|x| x == "bas") {
+                build(&std::fs::read_to_string(&p).unwrap().replace("\r\n", "\n"));
+                n += 1;
+            }
+        }
+    }
+    assert!(n >= 9, "se esperaban los ejemplos BASIC: {n}");
+}
+
+#[test]
+fn boton_led_follows_the_button() {
+    for (button, led) in [(0u8, false), (1, true)] {
+        // el arranque deja en cero los latches de los puertos: la entrada se aplica despues
+        let (mut s, _) = run_example("gpio/boton_led.bas", |_| {}, 200);
+        s.write(0x06, button);
+        s.run_until(s.cycles + 200, |_| false);
+        assert_eq!(s.pin('D', 0), Some(led), "RB0 = {button}");
+    }
+}
+
+#[test]
+fn adc_example_lights_the_led_above_half_scale() {
+    for (v, led) in [(100u16, false), (511, false), (512, true), (1000, true)] {
+        let (s, _) = run_example("adc/adc.bas", |s| s.adc_inputs[0] = v, 2_000);
+        assert_eq!(s.pin('D', 0), Some(led), "AN0 = {v}");
+    }
+}
+
+#[test]
+fn media_movil_averages_the_last_eight_readings() {
+    // con la entrada fija en 1000, tras 8 vueltas la media es 250 (> 127) y RD0 queda en alto; con 100, la media es 25
+    let (s, _) = run_example("adc/media_movil.bas", |s| s.adc_inputs[0] = 1000, 40_000);
+    assert_eq!(s.pin('D', 0), Some(true));
+    let (s, _) = run_example("adc/media_movil.bas", |s| s.adc_inputs[0] = 100, 40_000);
+    assert_eq!(s.pin('D', 0), Some(false));
+}
+
+#[test]
+fn eeprom_arranques_counts_boots_across_resets() {
+    let (_, c) = build(&example("eeprom/eeprom_arranques.bas"));
+    let mut s = Sim::new(&c.image);
+    for boot in 1..=3u8 {
+        s.reset();
+        s.run_until(s.cycles + 6_000 * 2 + 3_000_000, |_| false);
+        assert_eq!(s.eeprom[0], boot, "arranque {boot}");
+    }
+}
+
+#[test]
+fn comparador_example_follows_the_half_supply_reference() {
+    // CVREF = VDD/2 (511,5 cuentas): RA0 por encima -> C1OUT = 0 -> RD0 en alto; por debajo -> RD0 en bajo
+    for (v, led) in [(900u16, true), (100, false)] {
+        let (s, _) = run_example("comparadores/comparador.bas", |s| s.adc_inputs[0] = v, 3_000);
+        assert_eq!(s.pin('D', 0), Some(led), "RA0 = {v}");
+    }
+}
+
+#[test]
+fn pwm_example_takes_the_duty_from_the_adc() {
+    let (s, _) = run_example("pwm/pwm.bas", |s| s.adc_inputs[0] = 700, 6_000);
+    assert_eq!(s.read(0x15), (700 >> 2) as u8, "CCPR1L = los 8 bits altos de 700");
+    assert_eq!((s.read(0x17) >> 4) & 3, (700 & 3) as u8, "DC1B = los 2 bajos");
+}
+
+#[test]
+fn timer_blink_and_the_crystal_example_toggle_the_led() {
+    // Timer2 cada 20 ms x 25 = 500 ms: el primer cambio de RD0 llega a los 500 ms (500 000 ciclos a 4 MHz)
+    let (s, _) = run_example("temporizadores/timer_blink.bas", |_| {}, 520_000);
+    assert_eq!(s.pin('D', 0), Some(true), "tras 520 ms RD0 cambio una vez");
+    let (s, _) = run_example("temporizadores/timer_blink.bas", |_| {}, 480_000);
+    assert_eq!(s.pin('D', 0), Some(false), "a los 480 ms todavia no");
+    // cristal de 20 MHz: 2000 ms = 10 000 000 ciclos; RD0 sube al principio y baja a los 2 s
+    let (mut s, _) = run_example("reloj/reloj_cristal.bas", |_| {}, 1_000);
+    assert_eq!(s.pin('D', 0), Some(true));
+    s.run_until(10_000_100, |_| false);
+    assert_eq!(s.pin('D', 0), Some(false));
+}
+
+#[test]
+fn uart_eco_example_echoes_what_it_receives() {
+    let (_, c) = build(&example("uart/eco.bas"));
+    let mut s = Sim::new(&c.image);
+    s.run_until(2_000, |_| false);
+    // un byte cada 3 000 ciclos (un caracter a 9600 baudios dura ~1 040)
+    for (i, b) in [0x41u8, 0x00, 0xFF].iter().enumerate() {
+        s.uart_feed(*b, 3_000 + i as u64 * 3_000, true);
+    }
+    s.run_until(s.cycles + 40_000, |_| false);
+    let sent: Vec<u8> = s.uart_tx.iter().map(|(b, _)| *b).collect();
+    assert_eq!(sent, vec![0x41, 0x00, 0xFF]);
+}

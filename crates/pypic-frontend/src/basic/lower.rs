@@ -16,6 +16,9 @@ use super::parse::{is_command, BArg, BCmp, BExpr, BExprKind, BOp, BStmt, BStmtKi
 use crate::ast::*;
 use crate::diag::{Diagnostics, Span};
 
+/// Metodos del SDK que devuelven un booleano: se usan directamente como condicion (`IF CMP1.out() THEN`, `IF UART.rx_ready() THEN`).
+const BOOL_METHODS: &[&str] = &["out", "expired", "done", "busy", "failed", "rx_ready", "tx_ready", "sending", "overrun", "framing_error"];
+
 /// Objetos del SDK: se aceptan sin distinguir mayusculas y se escriben como el SDK los llama.
 const SDK_OBJECTS: &[&str] = &["ADC", "UART", "EEPROM", "PWM1", "PWM2", "CMP1", "CMP2", "CVREF", "TMR0", "TMR1", "TMR2"];
 
@@ -348,6 +351,7 @@ impl<'a> Lw<'a> {
     fn boolish(e: &BExpr) -> bool {
         match &e.kind {
             BExprKind::Cmp(..) => true,
+            BExprKind::Call { obj: Some(_), name, .. } => BOOL_METHODS.contains(&name.to_ascii_lowercase().as_str()),
             BExprKind::Not(x) => Self::boolish(x),
             BExprKind::Bin(BOp::And | BOp::Or | BOp::Xor, l, r) => Self::boolish(l) || Self::boolish(r),
             _ => false,
@@ -384,6 +388,10 @@ impl<'a> Lw<'a> {
             BExprKind::Bin(BOp::Xor, ..) if Self::boolish(e) => {
                 self.err("PYB0045", sp, "XOR entre condiciones no esta soportado: escribelo con AND, OR y NOT");
                 None
+            }
+            BExprKind::Call { obj: Some(_), name, .. } if BOOL_METHODS.contains(&name.to_ascii_lowercase().as_str()) => {
+                let (obj, method, args, kwargs) = self.call_parts(e)?;
+                Some(self.method(sp, &obj, &method, args, kwargs))
             }
             _ => {
                 let w = self.width(e).unwrap_or(8);
