@@ -1,6 +1,6 @@
 # PyPIC IDE para VS Code
 
-**Versión de la extensión: 0.1.21.** VS Code muestra este número en el resumen y desde el manifiesto de la extensión en la vista Extensiones.
+**Versión de la extensión: 0.1.22.** VS Code muestra este número en el resumen y desde el manifiesto de la extensión en la vista Extensiones.
 
 Extensión para VS Code de escritorio. Usa el compilador PyPIC instalado en el host; no necesita GPASM ni XC8 para crear, comprobar y compilar proyectos.
 
@@ -45,3 +45,7 @@ Para verificar las pruebas: `npm test` dentro de `vscode-pypic` (o `node --test 
 ## PyPIC BASIC (`.bas`)
 
 Los archivos `.bas` son PyPIC BASIC (estilo PICAXE, `docs/basic-picaxe.md`): resaltado, ayuda al pasar el cursor, completado de comandos y de métodos del SDK, comprobación al guardar con `PYB....` y `PYP....` en Problemas, y los botones Verificar, Compilar y Limpiar. El PIC se detecta de `DEVICE PIC16F887`. Si otra extensión ya reclama `.bas` (por ejemplo una de Visual Basic o de VBA), asócialo con `"files.associations": { "*.bas": "pypic-basic" }`.
+
+## Recursos del programa
+
+La sección **Recursos** muestra lo que el compilador mide con `pypic memory --format json` para el archivo activo (con el mismo dispositivo y perfil que **Compilar**): palabras de programa usadas y libres, RAM del compilador, pila de hardware, RAM por banco, periféricos y pines. Se mide sola al verificar o compilar sin errores y con el botón de actualizar (**PyPIC: Medir recursos del programa**). Si el archivo cambia después de medir, lo marca como **desactualizado**; si la medición falla (la CLI no está, un error de compilación), dice por qué y conserva la última medición correcta; si el resultado es **parcial** (funciones en ensamblador), lo dice con sus notas. Nada se graba en el PIC.

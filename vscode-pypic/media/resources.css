@@ -29,3 +29,13 @@ summary { cursor: pointer; color: var(--vscode-textLink-foreground); }
 details p { margin-top: 6px; color: var(--muted); overflow-wrap: anywhere; }
 .footnote { margin-top: 12px; font-size: 10px; }
 .empty p { margin-top: 6px; }
+.notice + .notice, .notice + .memory { margin-top: 8px; }
+.notice { margin-top: 10px; }
+.notice.error { border-left: 3px solid var(--vscode-errorForeground); color: var(--text); }
+.notice.stale, .notice.partial { border-left: 3px solid var(--vscode-editorWarning-foreground); color: var(--text); }
+.notice ul { margin: 4px 0 0; padding-left: 16px; }
+a.action { color: var(--vscode-textLink-foreground); }
+a.action:focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-offset: 2px; }
+table { width: 100%; margin-top: 6px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { padding: 2px 4px; text-align: right; border-bottom: 1px solid var(--border); }
+th[scope="row"], thead th:first-child { text-align: left; font-weight: 600; }

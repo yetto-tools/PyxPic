@@ -89,7 +89,11 @@ function activate(context) {
   }
   context.subscriptions.push(
     vscode.workspace.onDidOpenTextDocument(detect),
-    vscode.workspace.onDidChangeTextDocument((event) => { diagnostics.delete(event.document.uri); detect(event.document); }),
+    vscode.workspace.onDidChangeTextDocument((event) => {
+      diagnostics.delete(event.document.uri);
+      detect(event.document);
+      if (event.contentChanges.length) resourcesView.markStale(event.document.uri.toString());
+    }),
     vscode.workspace.onDidCloseTextDocument((document) => { diagnostics.delete(document.uri); checks.delete(document.uri.toString()); }),
     vscode.workspace.onDidSaveTextDocument((document) => {
       if (["pypic", "pypic-basic"].includes(document.languageId) && vscode.workspace.getConfiguration("pypic", document.uri).get("checkOnSave", true)) void run("check", document, true);
@@ -158,16 +162,31 @@ function activate(context) {
     return { devicesDir: data.tools.devices };
   }
   const pinoutView = pinout.register(vscode, context, currentHardware);
-  const resourcesView = resources.register(vscode, context, async () => {
-    const document = vscode.window.activeTextEditor?.document;
-    const hardware = await currentHardware();
-    return {
-      devicesDir: hardware.devicesDir,
-      deviceName: hardware.detected?.name,
-      fileKey: document?.uri.toString(),
-      source: document?.getText() || "",
-    };
-  });
+  const resourcesView = resources.register(
+    vscode,
+    context,
+    async () => {
+      const document = vscode.window.activeTextEditor?.document;
+      const hardware = await currentHardware();
+      return {
+        devicesDir: hardware.devicesDir,
+        deviceName: hardware.detected?.name,
+        fileKey: document?.uri.toString(),
+        source: document?.getText() || "",
+      };
+    },
+    // la medicion: `pypic memory --format json` del archivo activo, con el mismo perfil y dispositivo que `build` (la CLI es la unica fuente de los numeros)
+    async () => {
+      const document = vscode.window.activeTextEditor?.document;
+      if (!document || document.uri.scheme !== "file" || !SOURCE_LANGUAGES.includes(document.languageId)) return { error: new Error("sin archivo"), stdout: "", stderr: "" };
+      const ctx = contextFor(document);
+      const config = vscode.workspace.getConfiguration("pypic", document.uri);
+      const folder = vscode.workspace.getWorkspaceFolder(document.uri);
+      const cwd = ctx.mode === "project" ? path.dirname(ctx.projectFile) : folder ? folder.uri.fsPath : path.dirname(document.uri.fsPath);
+      const tools = language.projectTools(document.uri.fsPath, folder ? folder.uri.fsPath : path.dirname(document.uri.fsPath), config.get("executable", "pypic"), config.get("devicesDir", "").trim());
+      return cli(tools, [...modes.invocation("memory", ctx, { devices: tools.devices }), "--format", "json"], cwd);
+    },
+  );
   refreshStatus();
 
   // Limpiar solo borra los .hex que PyPIC dijo haber generado (el resumen de `pypic build`), nunca rutas adivinadas.
@@ -244,7 +263,7 @@ function activate(context) {
     execFile(tools.executable, args, { cwd, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (stdout) output.append(stdout);
       if (stderr) output.append(stderr);
-      if (!error && kind === "build") resourcesView.updateBuild(key, stdout);
+      if (!error) void resourcesView.measure();
       if (!quiet) output.show(true);
       if (checks.get(key) === request && document.version === version && !document.isClosed) {
         const entries = language.diagnostics(`${stdout}\n${stderr}`, file).map((item) => {
@@ -522,6 +541,7 @@ function activate(context) {
     vscode.commands.registerCommand("pypic.check", () => run("check")),
     vscode.commands.registerCommand("pypic.build", () => run("build")),
     vscode.commands.registerCommand("pypic.clean", clean),
+    vscode.commands.registerCommand("pypic.refreshResources", () => resourcesView.measure()),
     vscode.commands.registerCommand("pypic.examples", examples),
     vscode.commands.registerCommand("pypic.welcome", openWelcome),
     vscode.commands.registerCommand("pypic.newProject", newProject),
