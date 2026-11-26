@@ -55,7 +55,8 @@ fn swap_exchanges_the_nibbles() {
 #[test]
 fn a_sixteen_bit_shift_left_chains_the_carry_through_two_rotations() {
     // el caso de uso del issue: desplazar un u16 una posicion con RLF encadenado
-    let (g, c) = differential("lo: u8 = 0x81\nhi: u8 = 0x40\nout: bool = False\ndef main() -> None:\n    global lo, hi, out\n    clear_carry()\n    lo = rol_c(lo)\n    hi = rol_c(hi)\n    out = carry()\n");
+    let (g, c) =
+        differential("lo: u8 = 0x81\nhi: u8 = 0x40\nout: bool = False\ndef main() -> None:\n    global lo, hi, out\n    clear_carry()\n    lo = rol_c(lo)\n    hi = rol_c(hi)\n    out = carry()\n");
     assert_eq!((g["lo"], g["hi"], g["out"]), (0x02, 0x81, 0));
     // cada intrinseco es una instruccion: clrc, rlf lo,f, rlf hi,f
     assert!(c.listing.contains("RLF") && c.listing.matches("RLF").count() == 2, "{}", c.listing);

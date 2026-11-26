@@ -185,9 +185,6 @@ fn status_flags_follow_the_table() {
 #[test]
 fn disassembler_lists_addresses_words_and_invalid_data() {
     let out = disassemble(&[0x2805, 0x1683, 0x3B00, 0x0008], 0);
-    assert_eq!(
-        out,
-        "0000: 2805  GOTO 0x0005\n0001: 1683  BSF 0x03,5\n0002: 3B00  DW 0x3b00\n0003: 0008  RETURN\n"
-    );
+    assert_eq!(out, "0000: 2805  GOTO 0x0005\n0001: 1683  BSF 0x03,5\n0002: 3B00  DW 0x3b00\n0003: 0008  RETURN\n");
     assert!(disassemble(&[0x0000], 0x10).starts_with("0010: 0000  NOP"));
 }

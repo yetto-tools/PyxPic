@@ -55,7 +55,11 @@ pub enum BExprKind {
     Bin(BOp, Box<BExpr>, Box<BExpr>),
     Cmp(BCmp, Box<BExpr>, Box<BExpr>),
     /// `nombre(args)` (arreglo o funcion) y `objeto.metodo(args)` (el SDK).
-    Call { obj: Option<String>, name: String, args: Vec<BArg> },
+    Call {
+        obj: Option<String>,
+        name: String,
+        args: Vec<BArg>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -74,11 +78,31 @@ pub enum CaseItem {
 pub enum BStmtKind {
     Device(String),
     /// `CLOCK INTERNAL 4 MHZ`: la fuente (`Internal`, `Crystal`, `ExternalClock`), la cantidad y la unidad.
-    Clock { kind: String, amount: BExpr, unit: String },
-    Import { module: String, names: Vec<(String, Span)> },
-    Symbol { name: String, value: BExpr },
-    Dim { name: String, bits: u8, len: Option<i128>, init: Option<BExpr> },
-    Assign { target: String, target_span: Span, index: Option<BExpr>, value: BExpr },
+    Clock {
+        kind: String,
+        amount: BExpr,
+        unit: String,
+    },
+    Import {
+        module: String,
+        names: Vec<(String, Span)>,
+    },
+    Symbol {
+        name: String,
+        value: BExpr,
+    },
+    Dim {
+        name: String,
+        bits: u8,
+        len: Option<i128>,
+        init: Option<BExpr>,
+    },
+    Assign {
+        target: String,
+        target_span: Span,
+        index: Option<BExpr>,
+        value: BExpr,
+    },
     Label(String),
     Goto(String),
     Gosub(String),
@@ -89,15 +113,45 @@ pub enum BStmtKind {
     OnInterrupt(String),
     /// `ASM nombre ... END ASM`: una rutina escrita en ensamblador PIC-AS (`text`), que se llama con `GOSUB nombre`. `offset` es la posicion en bytes del
     /// primer caracter del cuerpo en el fuente.
-    Asm { name: String, text: String, offset: usize },
-    If { arms: Vec<(BExpr, Vec<BStmt>)>, orelse: Vec<BStmt> },
-    For { var: String, var_span: Span, from: BExpr, to: BExpr, step: Option<BExpr>, body: Vec<BStmt> },
+    Asm {
+        name: String,
+        text: String,
+        offset: usize,
+    },
+    If {
+        arms: Vec<(BExpr, Vec<BStmt>)>,
+        orelse: Vec<BStmt>,
+    },
+    For {
+        var: String,
+        var_span: Span,
+        from: BExpr,
+        to: BExpr,
+        step: Option<BExpr>,
+        body: Vec<BStmt>,
+    },
     /// `DO [WHILE|UNTIL c] ... LOOP [WHILE|UNTIL c]`: cada condicion es (es_until, condicion).
-    Do { pre: Option<(bool, BExpr)>, post: Option<(bool, BExpr)>, body: Vec<BStmt> },
-    While { cond: BExpr, body: Vec<BStmt> },
-    Select { subject: BExpr, cases: Vec<(Vec<CaseItem>, Vec<BStmt>)>, default: Vec<BStmt> },
+    Do {
+        pre: Option<(bool, BExpr)>,
+        post: Option<(bool, BExpr)>,
+        body: Vec<BStmt>,
+    },
+    While {
+        cond: BExpr,
+        body: Vec<BStmt>,
+    },
+    Select {
+        subject: BExpr,
+        cases: Vec<(Vec<CaseItem>, Vec<BStmt>)>,
+        default: Vec<BStmt>,
+    },
     /// Un comando (`HIGH`, `PAUSE`, `READADC`...) o una llamada al SDK (`UART.write(b0)`).
-    Cmd { obj: Option<String>, name: String, name_span: Span, args: Vec<BArg> },
+    Cmd {
+        obj: Option<String>,
+        name: String,
+        name_span: Span,
+        args: Vec<BArg>,
+    },
 }
 
 const BLOCK_END: &[&str] = &["ENDIF", "ELSE", "ELSEIF", "NEXT", "LOOP", "WEND", "CASE"];
@@ -611,7 +665,11 @@ impl<'a> Parser<'a> {
             "GOTO" | "GOSUB" => {
                 self.bump();
                 let (l, _) = self.ident("el nombre de una etiqueta")?;
-                if upper == "GOTO" { BStmtKind::Goto(l) } else { BStmtKind::Gosub(l) }
+                if upper == "GOTO" {
+                    BStmtKind::Goto(l)
+                } else {
+                    BStmtKind::Gosub(l)
+                }
             }
             "ON" => {
                 self.bump();
@@ -985,11 +1043,49 @@ impl<'a> Parser<'a> {
 fn is_keyword(upper: &str) -> bool {
     matches!(
         upper,
-        "ON" | "ASM" | "DEVICE" | "CLOCK" | "FROM" | "IMPORT" | "SYMBOL" | "DIM" | "AS" | "LET" | "GOTO" | "GOSUB" | "RETURN" | "EXIT" | "END" | "IF" | "THEN" | "ELSE" | "ELSEIF" | "ENDIF" | "FOR" | "TO" | "STEP" | "NEXT" | "DO" | "LOOP" | "WHILE" | "WEND" | "UNTIL" | "SELECT" | "CASE" | "ENDSELECT" | "AND" | "OR" | "XOR" | "NOT" | "MOD"
+        "ON" | "ASM"
+            | "DEVICE"
+            | "CLOCK"
+            | "FROM"
+            | "IMPORT"
+            | "SYMBOL"
+            | "DIM"
+            | "AS"
+            | "LET"
+            | "GOTO"
+            | "GOSUB"
+            | "RETURN"
+            | "EXIT"
+            | "END"
+            | "IF"
+            | "THEN"
+            | "ELSE"
+            | "ELSEIF"
+            | "ENDIF"
+            | "FOR"
+            | "TO"
+            | "STEP"
+            | "NEXT"
+            | "DO"
+            | "LOOP"
+            | "WHILE"
+            | "WEND"
+            | "UNTIL"
+            | "SELECT"
+            | "CASE"
+            | "ENDSELECT"
+            | "AND"
+            | "OR"
+            | "XOR"
+            | "NOT"
+            | "MOD"
     )
 }
 
 /// Los comandos al estilo PICAXE (se escriben como `HIGH B.0`, sin parentesis).
 pub fn is_command(name: &str) -> bool {
-    matches!(name.to_ascii_uppercase().as_str(), "HIGH" | "LOW" | "TOGGLE" | "OUTPUT" | "INPUT" | "PAUSE" | "PAUSEUS" | "READADC" | "READADC10" | "READ" | "WRITE" | "PWMOUT" | "SERTXD" | "SERRXD" | "ENABLE" | "DISABLE")
+    matches!(
+        name.to_ascii_uppercase().as_str(),
+        "HIGH" | "LOW" | "TOGGLE" | "OUTPUT" | "INPUT" | "PAUSE" | "PAUSEUS" | "READADC" | "READADC10" | "READ" | "WRITE" | "PWMOUT" | "SERTXD" | "SERRXD" | "ENABLE" | "DISABLE"
+    )
 }

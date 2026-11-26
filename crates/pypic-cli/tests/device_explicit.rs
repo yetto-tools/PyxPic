@@ -61,7 +61,8 @@ fn a_program_that_declares_its_device_gets_no_such_warning() {
 fn project(name: &str, main: &str) -> PathBuf {
     let dir = tmp(name);
     let devices = root().join("devices").to_string_lossy().replace('\\', "/");
-    std::fs::write(dir.join("pypic.toml"), format!("[project]\nname = \"t\"\nmain = \"main.py\"\ndevices_dir = \"{devices}\"\ndefault_target = \"a\"\n\n[target.a]\ndevice = \"PIC16F887\"\n")).unwrap();
+    std::fs::write(dir.join("pypic.toml"), format!("[project]\nname = \"t\"\nmain = \"main.py\"\ndevices_dir = \"{devices}\"\ndefault_target = \"a\"\n\n[target.a]\ndevice = \"PIC16F887\"\n"))
+        .unwrap();
     std::fs::write(dir.join("main.py"), main).unwrap();
     dir
 }

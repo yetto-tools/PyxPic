@@ -120,7 +120,11 @@ pub fn parse(path: &Path, text: &str) -> Result<Project, String> {
 }
 
 fn names(p: &Project) -> String {
-    if p.targets.is_empty() { "ninguno".to_string() } else { p.targets.keys().cloned().collect::<Vec<_>>().join(", ") }
+    if p.targets.is_empty() {
+        "ninguno".to_string()
+    } else {
+        p.targets.keys().cloned().collect::<Vec<_>>().join(", ")
+    }
 }
 
 impl Project {

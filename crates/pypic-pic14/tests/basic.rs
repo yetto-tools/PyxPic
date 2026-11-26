@@ -142,7 +142,7 @@ fn errors_point_at_the_basic_source_with_their_own_codes() {
     expect(&format!("{HEAD}HIGH 3\n"), "PYB0062");
     expect(&format!("{HEAD}GOTO nada\n"), "PYP2230"); // el verificador comun: etiqueta inexistente
     expect(&format!("{HEAD}IF b0 = 1 THEN\n"), "PYB0030"); // falta ENDIF
-    // un tipo equivocado lo dice el verificador de siempre, con la linea del .bas
+                                                           // un tipo equivocado lo dice el verificador de siempre, con la linea del .bas
     let (_, d) = diagnostics(&format!("{HEAD}b0 = 1\nb1 = nada\n"));
     assert!(d.contains("t.bas:4:"), "{d}");
 }
@@ -377,7 +377,7 @@ fn interrupt_and_asm_errors_are_clear() {
     expect(&format!("{HEAD}IF b0 = 1 THEN\n  ASM x\n    NOP\n  END ASM\nENDIF\n"), "PYB0104");
     expect(&format!("{HEAD}ENABLE b0\n"), "PYB0102");
     expect(&format!("{HEAD}ASM x\n  NOP\n"), "PYB0101"); // falta END ASM
-    // un error de ensamblador sale con la linea del .bas
+                                                         // un error de ensamblador sale con la linea del .bas
     let src = format!("{HEAD}GOSUB x\nEND\nASM x\n    NOP\n    FOOBAR 1\n    RETURN\nEND ASM\n");
     let r = analyze_in(Language::Basic, &src, &pack().target_profile());
     let m = lower(&r.program.expect("el verificador no ensambla"));

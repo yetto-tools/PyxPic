@@ -294,8 +294,7 @@ impl Inst {
         use Inst::*;
         match self {
             Addwf(..) | Subwf(..) | Addlw(_) | Sublw(_) => &[C, DC, Z],
-            Andwf(..) | Clrf(_) | Clrw | Comf(..) | Decf(..) | Incf(..) | Iorwf(..) | Movf(..) | Xorwf(..)
-            | Andlw(_) | Iorlw(_) | Xorlw(_) => &[Z],
+            Andwf(..) | Clrf(_) | Clrw | Comf(..) | Decf(..) | Incf(..) | Iorwf(..) | Movf(..) | Xorwf(..) | Andlw(_) | Iorlw(_) | Xorlw(_) => &[Z],
             Rlf(..) | Rrf(..) => &[C],
             Clrwdt | Sleep => &[TO, PD],
             _ => &[],
@@ -308,8 +307,20 @@ impl fmt::Display for Inst {
         use Inst::*;
         let m = self.mnemonic();
         match *self {
-            Addwf(r, d) | Andwf(r, d) | Comf(r, d) | Decf(r, d) | Decfsz(r, d) | Incf(r, d) | Incfsz(r, d)
-            | Iorwf(r, d) | Movf(r, d) | Rlf(r, d) | Rrf(r, d) | Subwf(r, d) | Swapf(r, d) | Xorwf(r, d) => {
+            Addwf(r, d)
+            | Andwf(r, d)
+            | Comf(r, d)
+            | Decf(r, d)
+            | Decfsz(r, d)
+            | Incf(r, d)
+            | Incfsz(r, d)
+            | Iorwf(r, d)
+            | Movf(r, d)
+            | Rlf(r, d)
+            | Rrf(r, d)
+            | Subwf(r, d)
+            | Swapf(r, d)
+            | Xorwf(r, d) => {
                 write!(f, "{m} {r:#04x},{}", if d == Dest::W { "W" } else { "F" })
             }
             Clrf(r) | Movwf(r) => write!(f, "{m} {r:#04x}"),

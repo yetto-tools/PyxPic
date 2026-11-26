@@ -82,10 +82,8 @@ fn timer0_overflow_period_follows_prescaler() {
 #[test]
 fn timer0_set_preloads_the_count() {
     // precarga 6: desborda a los 250 ciclos del preescalador 1:1 (preload = 256 - 250)
-    let src = format!(
-        "{}def main() -> None:\n    TMR0.start(prescaler=1)\n    while True:\n        if TMR0.expired():\n            TMR0.clear()\n            TMR0.set(6)\n",
-        header("TMR0", 4_000_000)
-    );
+    let src =
+        format!("{}def main() -> None:\n    TMR0.start(prescaler=1)\n    while True:\n        if TMR0.expired():\n            TMR0.clear()\n            TMR0.set(6)\n", header("TMR0", 4_000_000));
     let s = run(&src, 5_000);
     let p = periods(&s, "T0IF");
     assert!(p.len() >= 10, "{p:?}");
@@ -124,10 +122,7 @@ def main() -> None:
 
 #[test]
 fn timer2_stop_freezes_the_counter() {
-    let src = format!(
-        "{}def main() -> None:\n    TMR2.every_ms(1)\n    TMR2.stop()\n    while True:\n        pass\n",
-        header("TMR2", 4_000_000)
-    );
+    let src = format!("{}def main() -> None:\n    TMR2.every_ms(1)\n    TMR2.stop()\n    while True:\n        pass\n", header("TMR2", 4_000_000));
     let s = run(&src, 5_000);
     assert!(s.timer_events.is_empty(), "{:?}", s.timer_events);
 }

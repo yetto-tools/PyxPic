@@ -63,12 +63,21 @@ fn verifier_rejects_ill_typed_ir() {
         ret: Type::Void,
         locals: vec![Local { name: "x".into(), ty: pypic_frontend::types::U8, is_param: false }],
         temps: vec![],
-        blocks: vec![Block {
-            insts: vec![Inst::Copy { dst: Place::Local(0), src: Operand::Const { value: 1, ty: pypic_frontend::types::U16 } }],
-            term: Terminator::Jump(9),
-        }],
+        blocks: vec![Block { insts: vec![Inst::Copy { dst: Place::Local(0), src: Operand::Const { value: 1, ty: pypic_frontend::types::U16 } }], term: Terminator::Jump(9) }],
         asm: None,
     };
-    let m = Module { globals: vec![], adc_acq_ns: 0, roms: vec![], arrays: vec![], array_inits: vec![], functions: vec![f], pins: vec![], device: None, clock_hz: None, clock_defaulted: false, clock_source: None };
+    let m = Module {
+        globals: vec![],
+        adc_acq_ns: 0,
+        roms: vec![],
+        arrays: vec![],
+        array_inits: vec![],
+        functions: vec![f],
+        pins: vec![],
+        device: None,
+        clock_hz: None,
+        clock_defaulted: false,
+        clock_source: None,
+    };
     assert_eq!(verify(&m).unwrap_err().len(), 2);
 }

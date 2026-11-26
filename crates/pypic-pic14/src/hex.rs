@@ -167,7 +167,7 @@ impl Image {
             match bytes[3] {
                 0x00 => {
                     let base = upper * 0x1_0000 + addr;
-                    if base % 2 != 0 || data.len() % 2 != 0 {
+                    if !base.is_multiple_of(2) || !data.len().is_multiple_of(2) {
                         return Err(err("los datos deben alinearse a palabras de 2 bytes"));
                     }
                     for (k, pair) in data.chunks(2).enumerate() {

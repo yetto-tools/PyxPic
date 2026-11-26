@@ -60,7 +60,10 @@ fn head(clock: u32) -> String {
 
 #[test]
 fn read_returns_the_ten_bit_value_right_justified() {
-    let src = format!("{}a: u16 = 0\nb: u16 = 0\nc: u16 = 0\ndef main() -> None:\n    global a, b, c\n    ADC.start()\n    a = ADC.read(AN0)\n    b = ADC.read(AN5)\n    c = ADC.read(AN13)\n", head(4_000_000));
+    let src = format!(
+        "{}a: u16 = 0\nb: u16 = 0\nc: u16 = 0\ndef main() -> None:\n    global a, b, c\n    ADC.start()\n    a = ADC.read(AN0)\n    b = ADC.read(AN5)\n    c = ADC.read(AN13)\n",
+        head(4_000_000)
+    );
     let (c, s) = differential(&src, &[(0, 1023), (5, 513), (13, 0)], 4_000_000);
     assert_eq!((global(&c, &s, "a"), global(&c, &s, "b"), global(&c, &s, "c")), (1023, 513, 0));
     assert!(s.adc_violations.is_empty(), "{:?}", s.adc_violations);
@@ -164,7 +167,10 @@ fn read_waits_the_acquisition_time_after_changing_channel_at_any_clock() {
 #[test]
 fn going_without_the_wait_is_caught_by_the_simulator() {
     // select + go inmediato: la adquisicion es de unos pocos ciclos (menos de 5 us)
-    let src = format!("{}v: u16 = 0\ndef main() -> None:\n    global v\n    ADC.start()\n    ADC.select(AN5)\n    ADC.go()\n    while not ADC.done():\n        pass\n    v = ADC.result()\n", head(4_000_000));
+    let src = format!(
+        "{}v: u16 = 0\ndef main() -> None:\n    global v\n    ADC.start()\n    ADC.select(AN5)\n    ADC.go()\n    while not ADC.done():\n        pass\n    v = ADC.result()\n",
+        head(4_000_000)
+    );
     let (_, s) = differential(&src, &[(5, 9)], 4_000_000);
     assert!(s.adc_violations.iter().any(|v| v.contains("adquisicion")), "{:?}", s.adc_violations);
 }
@@ -414,7 +420,7 @@ fn the_limit_of_the_start_check_is_stated_and_the_simulator_catches_the_order() 
     let src = format!("{}v: u16 = 0\ndef main() -> None:\n    global v\n    v = ADC.read(AN0)\n    ADC.start()\n", head(4_000_000));
     let (ok, t) = diagnostics(&src);
     assert!(ok, "{t}"); // el compilador no puede verlo
-    // sin ADON la conversion nunca termina (como en el chip): el programa se queda sondeando GO y no llega a parar
+                        // sin ADON la conversion nunca termina (como en el chip): el programa se queda sondeando GO y no llega a parar
     let (_, c) = build(&src);
     let mut s = Sim::new(&c.image);
     s.adc_inputs[0] = 5;

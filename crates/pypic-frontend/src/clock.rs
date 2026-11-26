@@ -55,9 +55,9 @@ const CRYSTAL_PINS: &[(&str, &str)] = &[("RA7", "OSC1"), ("RA6", "OSC2")];
 const EC_PINS: &[(&str, &str)] = &[("RA7", "CLKIN")];
 
 pub fn fmt_hz(hz: u32) -> String {
-    if hz >= 1_000_000 && hz % 100_000 == 0 {
+    if hz >= 1_000_000 && hz.is_multiple_of(100_000) {
         format!("{} MHz", hz as f64 / 1e6)
-    } else if hz >= 1_000 && hz % 100 == 0 {
+    } else if hz >= 1_000 && hz.is_multiple_of(100) {
         format!("{} kHz", hz as f64 / 1e3)
     } else {
         format!("{hz} Hz")
@@ -67,13 +67,15 @@ pub fn fmt_hz(hz: u32) -> String {
 /// Resuelve la fuente y la frecuencia; el error dice cuales valen.
 pub fn resolve(kind: ClockKind, hz: u32) -> Result<ClockSource, String> {
     match kind {
-        ClockKind::Internal => match INTERNAL.iter().find(|(f, _)| *f == hz) {
-            Some(&(_, ircf)) => Ok(ClockSource { kind, hz, fosc: "INTRC_NOCLKOUT", ircf: Some(ircf), pins: &[] }),
-            None => {
-                let list: Vec<String> = INTERNAL.iter().map(|(f, _)| fmt_hz(*f)).collect();
-                Err(format!("el oscilador interno del PIC16F887 da {} (IRCF de OSCCON, DS40001291H p.64), no {}; para otra frecuencia usa un cristal (Crystal[...]) o un reloj externo (ExternalClock[...])", list.join(", "), fmt_hz(hz)))
+        ClockKind::Internal => {
+            match INTERNAL.iter().find(|(f, _)| *f == hz) {
+                Some(&(_, ircf)) => Ok(ClockSource { kind, hz, fosc: "INTRC_NOCLKOUT", ircf: Some(ircf), pins: &[] }),
+                None => {
+                    let list: Vec<String> = INTERNAL.iter().map(|(f, _)| fmt_hz(*f)).collect();
+                    Err(format!("el oscilador interno del PIC16F887 da {} (IRCF de OSCCON, DS40001291H p.64), no {}; para otra frecuencia usa un cristal (Crystal[...]) o un reloj externo (ExternalClock[...])", list.join(", "), fmt_hz(hz)))
+                }
             }
-        },
+        }
         ClockKind::Crystal => {
             let (fosc, ok) = match hz {
                 30_000..=37_000 => ("LP", true),
@@ -82,10 +84,7 @@ pub fn resolve(kind: ClockKind, hz: u32) -> Result<ClockSource, String> {
                 _ => ("", false),
             };
             if !ok {
-                return Err(format!(
-                    "un cristal de {} no cabe en ningun modo del PIC16F887 (tabla 17-1, p.249): LP es el cristal de 32,768 kHz, XT va de 0,1 a 4 MHz y HS de 1 a 20 MHz",
-                    fmt_hz(hz)
-                ));
+                return Err(format!("un cristal de {} no cabe en ningun modo del PIC16F887 (tabla 17-1, p.249): LP es el cristal de 32,768 kHz, XT va de 0,1 a 4 MHz y HS de 1 a 20 MHz", fmt_hz(hz)));
             }
             Ok(ClockSource { kind, hz, fosc, ircf: None, pins: CRYSTAL_PINS })
         }

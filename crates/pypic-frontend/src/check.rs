@@ -10,16 +10,16 @@
 //!  * Sin recursion: la memoria es estatica y la pila de hardware es limitada.
 
 use crate::adc::{self, AdcCall, AdcOp};
+use crate::bits::{self, BitsOp};
+use crate::clock::{self, ClockKind, ClockSource};
 use crate::comparator::{self, CmpId, CmpRef, CompCall, CompOp, CvrefOp};
 use crate::eeprom::{EepromCall, EepromOp};
 use crate::pwm::{self, PwmCall, PwmId, PwmOp, PwmTiming};
-use crate::uart::{self, FmtPart, UartCall, UartOp, UartStart};
-use crate::clock::{self, ClockKind, ClockSource};
-use crate::text::{TextCall, TextOp};
-use crate::bits::{self, BitsOp};
 use crate::regs::{RegCall, RegOp, BANK_BITS, WRITE_PROTECTED};
 use crate::target::RegInfo;
+use crate::text::{TextCall, TextOp};
 use crate::timer::{self, Gate, GateSource, TimerCall, TimerId, TimerOp, TimerSource, TimerStart};
+use crate::uart::{self, FmtPart, UartCall, UartOp, UartStart};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::ast::*;
@@ -285,7 +285,32 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         stmt_top: None,
     };
     c.run(module);
-    Checked { info: c.info, globals: c.globals, functions: c.functions, pins: c.pins, device: c.declared_device, clock_hz: c.clock_hz, clock_defaulted: c.clock_defaulted, clock_source: c.clock_source, timer_calls: c.timer_calls, reg_calls: c.reg_calls, bits_calls: c.bits_calls, roms: c.roms, rom_gets: c.rom_gets, arrays: c.arrays, array_inits: c.array_inits, array_gets: c.array_gets, text_calls: c.text_calls, adc_calls: c.adc_calls, adc_config: c.adc_config, pwm_calls: c.pwm_calls, eeprom_calls: c.eeprom_calls, comp_calls: c.comp_calls, uart_calls: c.uart_calls, uart_fmt: c.uart_fmt }
+    Checked {
+        info: c.info,
+        globals: c.globals,
+        functions: c.functions,
+        pins: c.pins,
+        device: c.declared_device,
+        clock_hz: c.clock_hz,
+        clock_defaulted: c.clock_defaulted,
+        clock_source: c.clock_source,
+        timer_calls: c.timer_calls,
+        reg_calls: c.reg_calls,
+        bits_calls: c.bits_calls,
+        roms: c.roms,
+        rom_gets: c.rom_gets,
+        arrays: c.arrays,
+        array_inits: c.array_inits,
+        array_gets: c.array_gets,
+        text_calls: c.text_calls,
+        adc_calls: c.adc_calls,
+        adc_config: c.adc_config,
+        pwm_calls: c.pwm_calls,
+        eeprom_calls: c.eeprom_calls,
+        comp_calls: c.comp_calls,
+        uart_calls: c.uart_calls,
+        uart_fmt: c.uart_fmt,
+    }
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -448,9 +473,9 @@ struct PwmUse {
 
 /// `CLOCK: Internal[4 * MHz]` para una frecuencia: la declaracion que se sugiere en los mensajes.
 fn internal_decl(hz: u32) -> String {
-    let f = if hz % 1_000_000 == 0 {
+    let f = if hz.is_multiple_of(1_000_000) {
         format!("{} * MHz", hz / 1_000_000)
-    } else if hz % 1_000 == 0 {
+    } else if hz.is_multiple_of(1_000) {
         format!("{} * kHz", hz / 1_000)
     } else {
         format!("{hz} * Hz")
@@ -600,14 +625,13 @@ impl<'a> Checker<'a> {
                     self.d.error(
                         "PYP2104",
                         n.span,
-                        format!("'{}' no existe: PyPIC tiene una sola forma por operacion. Usa 'pause' (milisegundos), 'wait' (segundos), 'delay_us' (microsegundos) o 'delay_cycles' (ciclos)", n.name),
+                        format!(
+                            "'{}' no existe: PyPIC tiene una sola forma por operacion. Usa 'pause' (milisegundos), 'wait' (segundos), 'delay_us' (microsegundos) o 'delay_cycles' (ciclos)",
+                            n.name
+                        ),
                     );
                 } else if n.name == "sleep" || n.name == "nap" {
-                    self.d.error(
-                        "PYP2103",
-                        n.span,
-                        format!("'{}' (espera de bajo consumo con el watchdog, aproximada) todavia no esta implementada; para una espera exacta usa pause o wait", n.name),
-                    );
+                    self.d.error("PYP2103", n.span, format!("'{}' (espera de bajo consumo con el watchdog, aproximada) todavia no esta implementada; para una espera exacta usa pause o wait", n.name));
                 } else {
                     self.d.error("PYP1002", n.span, format!("'pypic.system.time' no exporta '{}' (exporta: delay_cycles, delay_us, pause, wait; reservadas: nap, sleep)", n.name));
                 }
@@ -693,7 +717,12 @@ impl<'a> Checker<'a> {
                 } else if comparator::REFS.iter().any(|(c, _)| *c == n.name) {
                     self.comp_consts.insert(n.name.clone());
                 } else {
-                    let all: Vec<String> = ["CMP1", "CMP2"].iter().map(|s| s.to_string()).chain(comparator::NEG_INPUTS.iter().map(|(c, _)| c.to_string())).chain(comparator::REFS.iter().map(|(c, _)| c.to_string())).collect();
+                    let all: Vec<String> = ["CMP1", "CMP2"]
+                        .iter()
+                        .map(|s| s.to_string())
+                        .chain(comparator::NEG_INPUTS.iter().map(|(c, _)| c.to_string()))
+                        .chain(comparator::REFS.iter().map(|(c, _)| c.to_string()))
+                        .collect();
                     self.d.error("PYP2214", n.span, format!("'pypic.periph.comparator' no exporta '{}' (exporta: {})", n.name, all.join(", ")));
                 }
             }
@@ -760,7 +789,9 @@ impl<'a> Checker<'a> {
                         self.d.error("PYP2130", n.span, format!("'{}' no tiene el registro '{}' (registros: {})", self.target.name, n.name, all.join(", ")));
                     }
                     Some(r) if !r.physical => self.d.error("PYP2130", n.span, format!("'{}' no es un registro fisico: no se lee ni se escribe como un byte", n.name)),
-                    Some(r) if r.shared => self.d.error("PYP2130", n.span, format!("'{}' comparte direccion con otro registro y depende de otros bits para saber cual se toca; usa @asm_function", n.name)),
+                    Some(r) if r.shared => {
+                        self.d.error("PYP2130", n.span, format!("'{}' comparte direccion con otro registro y depende de otros bits para saber cual se toca; usa @asm_function", n.name))
+                    }
                     Some(r) => {
                         self.reg_names.insert(n.name.clone(), r.clone());
                     }
@@ -799,12 +830,9 @@ impl<'a> Checker<'a> {
                     }
                     None => {
                         let msg = match &self.target.pins {
-                            Some(map) => format!(
-                                "'pypic.periph.gpio' no exporta '{}' en '{}' (pines de E/S: {})",
-                                n.name,
-                                self.target.name,
-                                map.keys().map(String::as_str).collect::<Vec<_>>().join(", ")
-                            ),
+                            Some(map) => {
+                                format!("'pypic.periph.gpio' no exporta '{}' en '{}' (pines de E/S: {})", n.name, self.target.name, map.keys().map(String::as_str).collect::<Vec<_>>().join(", "))
+                            }
                             None => format!("'{}' no es un nombre de pin valido (se espera algo como RD0)", n.name),
                         };
                         self.d.error("PYP2074", n.span, msg);
@@ -845,7 +873,9 @@ impl<'a> Checker<'a> {
                         self.coerce_literal(a, U32);
                     }
                 }
-                _ => self.d.error("PYP2100", a.span, format!("{func}() necesita una constante: el tiempo se calcula al compilar, al ciclo; para una cantidad calculada usa pause o wait con un uint16")),
+                _ => {
+                    self.d.error("PYP2100", a.span, format!("{func}() necesita una constante: el tiempo se calcula al compilar, al ciclo; para una cantidad calculada usa pause o wait con un uint16"))
+                }
             },
             DelayUnit::Ms | DelayUnit::S => match t {
                 Type::Error => {}
@@ -881,7 +911,14 @@ impl<'a> Checker<'a> {
                     def
                 }
                 None => {
-                    self.d.error("PYP2101", first.span, format!("{} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK: Internal[4 * MHz]' (o Crystal[...] / ExternalClock[...])", first.name));
+                    self.d.error(
+                        "PYP2101",
+                        first.span,
+                        format!(
+                            "{} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK: Internal[4 * MHz]' (o Crystal[...] / ExternalClock[...])",
+                            first.name
+                        ),
+                    );
                     return;
                 }
             },
@@ -926,7 +963,7 @@ impl<'a> Checker<'a> {
             match u.amount {
                 Some(n) if n >= 0 => {
                     let num = n as u128 * hz as u128;
-                    if num % den != 0 {
+                    if !num.is_multiple_of(den) {
                         let cycles = (num + den / 2) / den;
                         let ideal_ns = num as f64 * 1e9 / den as f64 / (hz as f64 / cpc as f64) * (hz as f64 / cpc as f64) / hz as f64 * cpc as f64;
                         let got_ns = cycles as f64 * cpc as f64 * 1e9 / hz as f64;
@@ -944,7 +981,7 @@ impl<'a> Checker<'a> {
                         );
                     }
                 }
-                None if (hz as u128) % den != 0 && warned_var.insert(if u.unit == DelayUnit::Ms { "ms" } else { "s" }) => {
+                None if !(hz as u128).is_multiple_of(den) && warned_var.insert(if u.unit == DelayUnit::Ms { "ms" } else { "s" }) => {
                     let exact = hz as f64 / den as f64;
                     let ppm = (exact.round() - exact).abs() / exact * 1e6;
                     self.d.warning(
@@ -979,7 +1016,11 @@ impl<'a> Checker<'a> {
         for i in asm_fns {
             let f = &self.functions[i];
             if reach.contains(&f.name) {
-                self.d.error("PYP2111", f.span, format!("la funcion @asm_function '{}' se usa desde la interrupcion: por ahora solo se llama desde el contexto principal (comparte memoria estatica)", f.name));
+                self.d.error(
+                    "PYP2111",
+                    f.span,
+                    format!("la funcion @asm_function '{}' se usa desde la interrupcion: por ahora solo se llama desde el contexto principal (comparte memoria estatica)", f.name),
+                );
             }
         }
     }
@@ -1254,7 +1295,11 @@ impl<'a> Checker<'a> {
                 void(self)
             }
             other => {
-                self.d.error("PYP2124", e.span, format!("un temporizador no tiene el metodo '{other}' (disponibles: start, every_us, every_ms, stop, value, set, expired, clear, interrupt_on, interrupt_off)"));
+                self.d.error(
+                    "PYP2124",
+                    e.span,
+                    format!("un temporizador no tiene el metodo '{other}' (disponibles: start, every_us, every_ms, stop, value, set, expired, clear, interrupt_on, interrupt_off)"),
+                );
                 for a in args {
                     self.expr(a);
                 }
@@ -1280,7 +1325,11 @@ impl<'a> Checker<'a> {
                 Some(def)
             }
             None => {
-                self.d.error("PYP2101", span, format!("{who} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK: Internal[4 * MHz]' (o Crystal[...] / ExternalClock[...])"));
+                self.d.error(
+                    "PYP2101",
+                    span,
+                    format!("{who} necesita el reloj del sistema y no hay dispositivo declarado con reloj por defecto: declara 'CLOCK: Internal[4 * MHz]' (o Crystal[...] / ExternalClock[...])"),
+                );
                 None
             }
         }
@@ -1304,7 +1353,10 @@ impl<'a> Checker<'a> {
                 self.d.error(
                     "PYP2150",
                     c.span,
-                    format!("el pin {0} es la funcion {1} de {2}, que este programa enciende aqui, y tambien se importa como pin de E/S ({0}.output()...): un pin no puede ser las dos cosas a la vez", c.pin, c.function, c.peripheral),
+                    format!(
+                        "el pin {0} es la funcion {1} de {2}, que este programa enciende aqui, y tambien se importa como pin de E/S ({0}.output()...): un pin no puede ser las dos cosas a la vez",
+                        c.pin, c.function, c.peripheral
+                    ),
                 );
             }
         }
@@ -1347,11 +1399,16 @@ impl<'a> Checker<'a> {
         for p in pend {
             let den = cpc as u128 * p.div;
             let num = p.amount as u128 * hz as u128;
-            if num % den != 0 {
+            if !num.is_multiple_of(den) {
                 self.d.error(
                     "PYP2126",
                     p.span,
-                    format!("{}({}) no cae en un numero entero de ciclos de instruccion a {hz} Hz (un ciclo dura {:.1} ns): el periodo de Timer2 es un multiplo exacto del ciclo", p.name, p.amount, cpc as f64 * 1e9 / hz as f64),
+                    format!(
+                        "{}({}) no cae en un numero entero de ciclos de instruccion a {hz} Hz (un ciclo dura {:.1} ns): el periodo de Timer2 es un multiplo exacto del ciclo",
+                        p.name,
+                        p.amount,
+                        cpc as f64 * 1e9 / hz as f64
+                    ),
                 );
                 continue;
             }
@@ -1426,12 +1483,20 @@ impl<'a> Checker<'a> {
             return fail(self, args);
         }
         if op == RegOp::Write && WRITE_PROTECTED.contains(&obj) {
-            self.d.error("PYP2135", e.span, format!("{obj} no se escribe entero: lo usa el compilador (banco, pagina, PC). Para sus banderas usa {obj}.C, {obj}.Z, {obj}.DC; para algo mas, @asm_function"));
+            self.d.error(
+                "PYP2135",
+                e.span,
+                format!("{obj} no se escribe entero: lo usa el compilador (banco, pagina, PC). Para sus banderas usa {obj}.C, {obj}.Z, {obj}.DC; para algo mas, @asm_function"),
+            );
             return fail(self, args);
         }
         if matches!(op, RegOp::Set | RegOp::Clear | RegOp::Toggle) {
             if let Some(b) = attr.filter(|b| BANK_BITS.contains(&b.name.as_str())) {
-                self.d.error("PYP2135", e.span, format!("{obj}.{} elige el banco de datos y lo gestiona el compilador: el codigo del programa corre en el banco 0. Para cambiarlo a mano usa @asm_function", b.name));
+                self.d.error(
+                    "PYP2135",
+                    e.span,
+                    format!("{obj}.{} elige el banco de datos y lo gestiona el compilador: el codigo del programa corre en el banco 0. Para cambiarlo a mano usa @asm_function", b.name),
+                );
                 return fail(self, args);
             }
         }
@@ -1533,7 +1598,11 @@ impl<'a> Checker<'a> {
                     let op = if method == "select" { AdcOp::Select(ch) } else { AdcOp::Read(ch) };
                     self.adc_calls.insert(e.id, AdcCall { op });
                 }
-                if method == "select" { void(self) } else { self.set(e, U16, None) }
+                if method == "select" {
+                    void(self)
+                } else {
+                    self.set(e, U16, None)
+                }
             }
             "go" | "done" | "result" => {
                 if !args.is_empty() {
@@ -1697,7 +1766,11 @@ impl<'a> Checker<'a> {
                 if !matches!(a.kind, ExprKind::Str(_)) {
                     self.expr(a);
                 }
-                self.d.error("PYP2166", a.span, "UART.write_text recibe un texto entre comillas o el nombre de una tabla Rom[uint8]: el texto se conoce al compilar y se guarda en la memoria de programa");
+                self.d.error(
+                    "PYP2166",
+                    a.span,
+                    "UART.write_text recibe un texto entre comillas o el nombre de una tabla Rom[uint8]: el texto se conoce al compilar y se guarda en la memoria de programa",
+                );
                 None
             }
         };
@@ -1741,14 +1814,20 @@ impl<'a> Checker<'a> {
                             ok = false;
                             continue;
                         }
-                        Type::Int { bits: b @ (8 | 16), signed: false } => b as u8,
+                        Type::Int { bits: b @ (8 | 16), signed: false } => b,
                         other => {
                             self.d.error("PYP2167", expr.span, format!("el campo es de tipo {other}: write_text formatea uint8 y uint16 por ahora (convierte con uint8(...) o uint16(...))"));
                             ok = false;
                             continue;
                         }
                     };
-                    let natural = if spec.kind == FKind::Dec { 0 } else if matches!(spec.kind, FKind::Bin) { bits } else { bits / 4 };
+                    let natural = if spec.kind == FKind::Dec {
+                        0
+                    } else if matches!(spec.kind, FKind::Bin) {
+                        bits
+                    } else {
+                        bits / 4
+                    };
                     if spec.kind != FKind::Dec && spec.width != 0 && spec.width < natural {
                         let (unit, tipo) = if spec.kind == FKind::Bin { ("binarios", format!("uint{bits}")) } else { ("hexadecimales", format!("uint{bits}")) };
                         self.d.error("PYP2168", expr.span, format!("un {tipo} se muestra con {natural} digitos {unit} como minimo (ancho fijo, sin recortar): el ancho {} es menor", spec.width));
@@ -1904,7 +1983,16 @@ impl<'a> Checker<'a> {
                 continue;
             }
             if err.abs() > uart::WARN_PCT {
-                self.d.warning("PYP3014", p.span, format!("error de baudios de {err:+.2} % ({:.0} baudios para los {} pedidos): pasa de {} % y el otro extremo suma el suyo; un reloj distinto lo mejora", brg.achieved(hz), p.baud, uart::WARN_PCT));
+                self.d.warning(
+                    "PYP3014",
+                    p.span,
+                    format!(
+                        "error de baudios de {err:+.2} % ({:.0} baudios para los {} pedidos): pasa de {} % y el otro extremo suma el suyo; un reloj distinto lo mejora",
+                        brg.achieved(hz),
+                        p.baud,
+                        uart::WARN_PCT
+                    ),
+                );
             }
             self.uart_calls.insert(p.id, UartCall { op: UartOp::Start(UartStart { baud: p.baud, bits9: p.bits9, brg: Some(brg) }) });
         }
@@ -1948,7 +2036,14 @@ impl<'a> Checker<'a> {
             }
             self.adc_config = first.cfg;
             if first.cfg.acq_ns < adc::TAMP_MAX_NS {
-                self.d.warning("PYP3013", first.span, format!("acquisition_us = {} us es menos que el TAMP maximo del datasheet (5 us, AD133): el amplificador no llega a asentarse en el peor caso; el valor tipico es 11,5 us", first.cfg.acq_ns as f64 / 1000.0));
+                self.d.warning(
+                    "PYP3013",
+                    first.span,
+                    format!(
+                        "acquisition_us = {} us es menos que el TAMP maximo del datasheet (5 us, AD133): el amplificador no llega a asentarse en el peor caso; el valor tipico es 11,5 us",
+                        first.cfg.acq_ns as f64 / 1000.0
+                    ),
+                );
             }
         }
         for p in pend {
@@ -2018,7 +2113,11 @@ impl<'a> Checker<'a> {
                         }
                         ("positive", _) => {
                             self.expr(&k.value);
-                            self.d.error("PYP2215", k.value.span, format!("{name}.start: positive es REF_PIN (el pin C{}IN+), REF_CVREF o REF_FIXED (0,6 V), importadas de pypic.periph.comparator", id.n()));
+                            self.d.error(
+                                "PYP2215",
+                                k.value.span,
+                                format!("{name}.start: positive es REF_PIN (el pin C{}IN+), REF_CVREF o REF_FIXED (0,6 V), importadas de pypic.periph.comparator", id.n()),
+                            );
                         }
                         ("invert", _) => {
                             self.expr(&k.value);
@@ -2056,7 +2155,11 @@ impl<'a> Checker<'a> {
                 }
                 let op = if method == "stop" { CompOp::Stop } else { CompOp::Out };
                 self.comp_calls.insert(e.id, CompCall::Cmp(id, op));
-                if op == CompOp::Out { self.set(e, Type::Bool, None) } else { void(self) }
+                if op == CompOp::Out {
+                    self.set(e, Type::Bool, None)
+                } else {
+                    void(self)
+                }
             }
             other => {
                 self.d.error("PYP2216", e.span, format!("{name} no tiene el metodo '{other}' (disponibles: start, stop, out)"));
@@ -2157,7 +2260,11 @@ impl<'a> Checker<'a> {
     fn check_comparator_usage(&mut self) {
         if let Some(sp) = self.cvref_needed.take() {
             if !self.cvref_started {
-                self.d.error("PYP2218", sp, "el comparador usa REF_CVREF pero nunca se llama a CVREF.start(): inicia la referencia con CVREF.start(step=...) (de 'from pypic.periph.vref import CVREF')");
+                self.d.error(
+                    "PYP2218",
+                    sp,
+                    "el comparador usa REF_CVREF pero nunca se llama a CVREF.start(): inicia la referencia con CVREF.start(step=...) (de 'from pypic.periph.vref import CVREF')",
+                );
             }
         }
     }
@@ -2213,7 +2320,11 @@ impl<'a> Checker<'a> {
         match method {
             "start" => {
                 if !args.is_empty() {
-                    self.d.error("PYP2201", args[0].span, format!("{name}.start se escribe con argumentos con nombre: {name}.start(frequency=1000), {name}.start(frequency=1000, duty=256) o {name}.start(prescaler=4, period=249)"));
+                    self.d.error(
+                        "PYP2201",
+                        args[0].span,
+                        format!("{name}.start se escribe con argumentos con nombre: {name}.start(frequency=1000), {name}.start(frequency=1000, duty=256) o {name}.start(prescaler=4, period=249)"),
+                    );
                 }
                 let (mut freq, mut pre, mut period, mut duty) = (None, None, None, 0u16);
                 let int_arg = |this: &mut Self, k: &Kwarg, lo: i128, hi: i128, what: &str| -> Option<i128> {
@@ -2318,8 +2429,16 @@ impl<'a> Checker<'a> {
         for id in [PwmId::Pwm1, PwmId::Pwm2] {
             let Some(u) = uses.iter().find(|u| u.pwm == id) else { continue };
             if !pend.iter().any(|p| p.pwm == id && p.func.is_none_or(|f| reach.contains(&f))) {
-                let why = if pend.iter().any(|p| p.pwm == id) { format!("las llamadas a {0}.start() estan en funciones que ni main ni @init_device pueden llamar", id.name()) } else { format!("nunca se llama a {}.start()", id.name()) };
-                self.d.error("PYP2204", u.span, format!("{} se usa pero {why}: inicialo con {}.start(...) en main o en una funcion que main llame (se comprueba que exista, no el orden)", id.name(), id.name()));
+                let why = if pend.iter().any(|p| p.pwm == id) {
+                    format!("las llamadas a {0}.start() estan en funciones que ni main ni @init_device pueden llamar", id.name())
+                } else {
+                    format!("nunca se llama a {}.start()", id.name())
+                };
+                self.d.error(
+                    "PYP2204",
+                    u.span,
+                    format!("{} se usa pero {why}: inicialo con {}.start(...) en main o en una funcion que main llame (se comprueba que exista, no el orden)", id.name(), id.name()),
+                );
             }
         }
         // el PWM es dueno de Timer2: T2CON y PR2 los fija el arranque
@@ -2350,16 +2469,34 @@ impl<'a> Checker<'a> {
         }
         if let Some((_, first)) = resolved.first().copied() {
             if let Some((sp, other)) = resolved.iter().find(|(_, t)| *t != first) {
-                self.d.error("PYP2208", *sp, format!("los modulos PWM comparten Timer2: un solo periodo por programa (aqui prescaler {} y PR2 = {}, antes prescaler {} y PR2 = {})", other.prescaler, other.pr2, first.prescaler, first.pr2));
+                self.d.error(
+                    "PYP2208",
+                    *sp,
+                    format!(
+                        "los modulos PWM comparten Timer2: un solo periodo por programa (aqui prescaler {} y PR2 = {}, antes prescaler {} y PR2 = {})",
+                        other.prescaler, other.pr2, first.prescaler, first.pr2
+                    ),
+                );
             }
             for u in &uses {
                 if let Some(v) = u.duty.filter(|v| (0..=1023).contains(v) && *v as u32 > first.full_scale()) {
-                    self.d.warning("PYP3015", u.span, format!("{}: el ciclo de trabajo {v} supera el periodo ({} cuentas con PR2 = {}): la salida queda siempre en alto (100 %); el maximo util es {}", u.pwm.name(), first.full_scale(), first.pr2, first.full_scale()));
+                    self.d.warning(
+                        "PYP3015",
+                        u.span,
+                        format!(
+                            "{}: el ciclo de trabajo {v} supera el periodo ({} cuentas con PR2 = {}): la salida queda siempre en alto (100 %); el maximo util es {}",
+                            u.pwm.name(),
+                            first.full_scale(),
+                            first.pr2,
+                            first.full_scale()
+                        ),
+                    );
                 }
             }
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn method_call(&mut self, e: &Expr, obj: &str, obj_span: Span, attr: Option<&Ident>, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
         if obj == "UART" && self.uart_name {
             return self.uart_method(e, method, args, kwargs);
@@ -2498,11 +2635,7 @@ impl<'a> Checker<'a> {
                     t
                 }
                 Some(t) => {
-                    self.d.error(
-                        "PYP2030",
-                        te.span,
-                        format!("el tipo '{t}' no esta soportado por el destino '{}' (maximo {} bits)", self.target.name, self.target.max_int_bits),
-                    );
+                    self.d.error("PYP2030", te.span, format!("el tipo '{t}' no esta soportado por el destino '{}' (maximo {} bits)", self.target.name, self.target.max_int_bits));
                     Type::Error
                 }
                 None => {
@@ -2526,10 +2659,7 @@ impl<'a> Checker<'a> {
             self.d.warning(
                 "PYP3001",
                 span,
-                format!(
-                    "'{t}' excede el ancho nativo de {} bits de '{}': se emulara por software (mayor coste en flash y ciclos)",
-                    self.target.native_bits, self.target.name
-                ),
+                format!("'{t}' excede el ancho nativo de {} bits de '{}': se emulara por software (mayor coste en flash y ciclos)", self.target.native_bits, self.target.name),
             );
         }
     }
@@ -2551,7 +2681,13 @@ impl<'a> Checker<'a> {
             self.d.error("PYP2002", f.name.span, format!("funcion '{}' ya definida", f.name.name));
             return;
         }
-        if self.pin_names.contains_key(&f.name.name) || self.time_fns.contains_key(&f.name.name) || self.bits_fns.contains(&f.name.name) || self.timer_names.contains_key(&f.name.name) || self.reg_names.contains_key(&f.name.name) || self.timer_consts.contains(&f.name.name) {
+        if self.pin_names.contains_key(&f.name.name)
+            || self.time_fns.contains_key(&f.name.name)
+            || self.bits_fns.contains(&f.name.name)
+            || self.timer_names.contains_key(&f.name.name)
+            || self.reg_names.contains_key(&f.name.name)
+            || self.timer_consts.contains(&f.name.name)
+        {
             self.d.error("PYP2009", f.name.span, format!("'{}' ya esta declarado (es un pin o una funcion del SDK importados)", f.name.name));
             return;
         }
@@ -2567,11 +2703,7 @@ impl<'a> Checker<'a> {
         let ret = match &f.ret {
             Some(r) => self.resolve_type(r, true),
             None => {
-                self.d.error(
-                    "PYP2004",
-                    f.name.span,
-                    format!("la funcion '{}' necesita anotacion de retorno (usa '-> None' si no devuelve valor)", f.name.name),
-                );
+                self.d.error("PYP2004", f.name.span, format!("la funcion '{}' necesita anotacion de retorno (usa '-> None' si no devuelve valor)", f.name.name));
                 Type::Error
             }
         };
@@ -2615,18 +2747,7 @@ impl<'a> Checker<'a> {
             self.d.error("PYP2097", f.name.span, "una funcion no puede ser a la vez @interrupt y @init_device");
         }
         self.fidx.insert(f.name.name.clone(), self.functions.len());
-        self.functions.push(FuncInfo {
-            name: f.name.name.clone(),
-            params,
-            ret,
-            is_interrupt,
-            is_init,
-            is_asm,
-            calls: BTreeSet::new(),
-            uses_rom: false,
-            runtime_depth: 0,
-            span: f.name.span,
-        });
+        self.functions.push(FuncInfo { name: f.name.name.clone(), params, ret, is_interrupt, is_init, is_asm, calls: BTreeSet::new(), uses_rom: false, runtime_depth: 0, span: f.name.span });
     }
 
     fn declare_variable(&mut self, v: &VarDecl, is_global: bool) {
@@ -2658,7 +2779,17 @@ impl<'a> Checker<'a> {
         let exists = if is_global { self.globals.contains_key(name) } else { self.locals.contains_key(name) };
         if !is_global && self.globals.contains_key(name) {
             self.d.error("PYP2008", v.name.span, format!("'{name}' oculta una variable global del mismo nombre"));
-        } else if exists || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.time_fns.contains_key(name) || self.bits_fns.contains(name) || self.timer_names.contains_key(name) || self.reg_names.contains_key(name) || self.timer_consts.contains(name) || self.array_idx.contains_key(name) || self.rom_idx.contains_key(name) {
+        } else if exists
+            || self.fidx.contains_key(name)
+            || self.pin_names.contains_key(name)
+            || self.time_fns.contains_key(name)
+            || self.bits_fns.contains(name)
+            || self.timer_names.contains_key(name)
+            || self.reg_names.contains_key(name)
+            || self.timer_consts.contains(name)
+            || self.array_idx.contains_key(name)
+            || self.rom_idx.contains_key(name)
+        {
             self.d.error("PYP2009", v.name.span, format!("'{name}' ya esta declarado"));
         }
         let mut konst = None;
@@ -2667,11 +2798,8 @@ impl<'a> Checker<'a> {
                 self.expect(val, ty, None);
                 konst = self.konst(val);
                 if konst.is_none() && (is_global || is_final) {
-                    let (code, msg) = if is_global {
-                        ("PYP2010", "el inicializador de una variable global debe ser una constante")
-                    } else {
-                        ("PYP2011", "un valor Const debe ser una expresion constante")
-                    };
+                    let (code, msg) =
+                        if is_global { ("PYP2010", "el inicializador de una variable global debe ser una constante") } else { ("PYP2011", "un valor Const debe ser una expresion constante") };
                     self.d.error(code, val.span, msg);
                 }
             } else {
@@ -2684,13 +2812,7 @@ impl<'a> Checker<'a> {
         if !is_global {
             self.local_decls.push((name.clone(), v.name.span));
         }
-        let sym = Symbol {
-            name: name.clone(),
-            ty,
-            kind: if is_global { SymKind::Global } else { SymKind::Local },
-            konst: if is_final { konst } else { None },
-            is_final,
-        };
+        let sym = Symbol { name: name.clone(), ty, kind: if is_global { SymKind::Global } else { SymKind::Local }, konst: if is_final { konst } else { None }, is_final };
         if is_global {
             self.globals.insert(name.clone(), sym);
         } else {
@@ -2711,7 +2833,7 @@ impl<'a> Checker<'a> {
         self.global_decls.clear();
         self.loop_depth = 0;
         self.fn_labels.clear();
-        collect_labels(&f.body, &mut self.fn_labels, &mut self.d);
+        collect_labels(&f.body, &mut self.fn_labels, self.d);
         let params = self.functions[idx].params.clone();
         for (name, ty) in params {
             if self.globals.contains_key(&name) {
@@ -2906,7 +3028,11 @@ impl<'a> Checker<'a> {
                         }
                     }
                     if items.len() as i128 != n {
-                        self.d.error("PYP2160", val.span, format!("'{name}' tiene {n} elementos y la lista trae {}: un inicializador da todos los valores (para empezar en cero, quita el '= ...')", items.len()));
+                        self.d.error(
+                            "PYP2160",
+                            val.span,
+                            format!("'{name}' tiene {n} elementos y la lista trae {}: un inicializador da todos los valores (para empezar en cero, quita el '= ...')", items.len()),
+                        );
                         init.clear();
                     }
                 }
@@ -2916,7 +3042,16 @@ impl<'a> Checker<'a> {
                 }
             }
         }
-        if self.globals.contains_key(name) || self.rom_idx.contains_key(name) || self.array_idx.contains_key(name) || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.reg_names.contains_key(name) || self.timer_names.contains_key(name) || self.bits_fns.contains(name) || self.time_fns.contains_key(name) {
+        if self.globals.contains_key(name)
+            || self.rom_idx.contains_key(name)
+            || self.array_idx.contains_key(name)
+            || self.fidx.contains_key(name)
+            || self.pin_names.contains_key(name)
+            || self.reg_names.contains_key(name)
+            || self.timer_names.contains_key(name)
+            || self.bits_fns.contains(name)
+            || self.time_fns.contains_key(name)
+        {
             self.d.error("PYP2009", v.name.span, format!("'{name}' ya esta declarado"));
             return;
         }
@@ -2981,7 +3116,15 @@ impl<'a> Checker<'a> {
             TypeExprKind::Name(n) if Type::from_name(n) == Some(U8) => {}
             _ => self.d.error("PYP2160", inner.span, "Rom solo admite uint8 por ahora: cada entrada es un RETLW"),
         }
-        if self.globals.contains_key(name) || self.rom_idx.contains_key(name) || self.array_idx.contains_key(name) || self.fidx.contains_key(name) || self.pin_names.contains_key(name) || self.reg_names.contains_key(name) || self.timer_names.contains_key(name) || self.bits_fns.contains(name) {
+        if self.globals.contains_key(name)
+            || self.rom_idx.contains_key(name)
+            || self.array_idx.contains_key(name)
+            || self.fidx.contains_key(name)
+            || self.pin_names.contains_key(name)
+            || self.reg_names.contains_key(name)
+            || self.timer_names.contains_key(name)
+            || self.bits_fns.contains(name)
+        {
             self.d.error("PYP2009", v.name.span, format!("'{name}' ya esta declarado"));
         }
         let Some(val) = &v.value else {
@@ -3022,7 +3165,11 @@ impl<'a> Checker<'a> {
         }
         let Some(&ti) = self.rom_idx.get(obj) else {
             self.expr(index);
-            let msg = if self.lookup(obj).is_some() { format!("'{obj}' no es una tabla ni un arreglo: solo se indexan las 'Rom[uint8]' y los 'uint8[N]'") } else { format!("'{obj}' no esta declarada como tabla") };
+            let msg = if self.lookup(obj).is_some() {
+                format!("'{obj}' no es una tabla ni un arreglo: solo se indexan las 'Rom[uint8]' y los 'uint8[N]'")
+            } else {
+                format!("'{obj}' no esta declarada como tabla")
+            };
             self.d.error("PYP2162", obj_span, msg);
             return self.set(e, Type::Error, None);
         };
@@ -3084,7 +3231,7 @@ impl<'a> Checker<'a> {
         let mut worst: Option<(u32, String)> = None;
         for r in &roots {
             let u = 1 + self.call_depth(r, &mut visiting, &mut memo);
-            if worst.as_ref().map_or(true, |(w, _)| u > *w) {
+            if worst.as_ref().is_none_or(|(w, _)| u > *w) {
                 worst = Some((u, r.clone()));
             }
         }
@@ -3168,9 +3315,7 @@ impl<'a> Checker<'a> {
                 for n in names {
                     match self.globals.get(&n.name) {
                         None => self.d.error("PYP2020", n.span, format!("'{}' no es una variable global", n.name)),
-                        Some(g) if g.is_final => {
-                            self.d.error("PYP2021", n.span, format!("'{}' es constante (Const) y no puede modificarse", n.name))
-                        }
+                        Some(g) if g.is_final => self.d.error("PYP2021", n.span, format!("'{}' es constante (Const) y no puede modificarse", n.name)),
                         Some(_) => {
                             self.global_decls.insert(n.name.clone());
                         }
@@ -3690,15 +3835,27 @@ impl<'a> Checker<'a> {
                     self.d.error("PYP2142", e.span, format!("{func} debe ser la expresion completa de la sentencia ('y = {func}(x)'): el acarreo se pierde con cualquier otra operacion"));
                 }
                 if !self.carry_prev {
-                    self.d.error("PYP2142", e.span, format!("{func} usa el acarreo de entrada y la sentencia anterior no lo deja definido: ponlo con clear_carry()/set_carry() o encadena otra rotacion justo antes"));
+                    self.d.error(
+                        "PYP2142",
+                        e.span,
+                        format!("{func} usa el acarreo de entrada y la sentencia anterior no lo deja definido: ponlo con clear_carry()/set_carry() o encadena otra rotacion justo antes"),
+                    );
                 }
-                if func == "rol_c" { BitsOp::RolC } else { BitsOp::RorC }
+                if func == "rol_c" {
+                    BitsOp::RolC
+                } else {
+                    BitsOp::RorC
+                }
             }
             "clear_carry" | "set_carry" => {
                 if !top {
                     self.d.error("PYP2142", e.span, format!("{func}() se escribe como sentencia propia"));
                 }
-                if func == "clear_carry" { BitsOp::ClearCarry } else { BitsOp::SetCarry }
+                if func == "clear_carry" {
+                    BitsOp::ClearCarry
+                } else {
+                    BitsOp::SetCarry
+                }
             }
             "carry" => {
                 if !top {
@@ -3716,8 +3873,8 @@ impl<'a> Checker<'a> {
                 let bit = self.expr(&args[1]);
                 let k = self.konst(&args[1]);
                 let bits = ty.filter(|t| t.is_int()).map(|t| t.bits());
-                if ty.is_some() && bits.is_none() {
-                    self.d.error("PYP2141", args[0].span, format!("{func} trabaja sobre un entero, no sobre {}", ty.unwrap()));
+                if let (Some(t), None) = (ty, bits) {
+                    self.d.error("PYP2141", args[0].span, format!("{func} trabaja sobre un entero, no sobre {t}"));
                 } else if bits.is_some_and(|b| b > 16) {
                     self.d.error("PYP2141", args[0].span, format!("{func} trabaja sobre enteros de hasta 16 bits"));
                 }
@@ -3914,7 +4071,19 @@ const PERIPH_MODULES: &[&str] = &["gpio", "adc", "timer", "pwm", "ccp", "eccp", 
 const SYSTEM_MODULES: &[&str] = &["time", "irq", "wdt", "clock", "power", "flash"];
 /// `pypic.soft.*`: implementaciones por software sobre cualquier GPIO (cuestan ciclos de CPU).
 const SOFT_MODULES: &[&str] = &["spi", "i2c", "uart", "onewire"];
-const IMPLEMENTED_MODULES: &[&str] = &["pypic.periph.uart", "pypic.periph.adc", "pypic.periph.pwm", "pypic.periph.eeprom", "pypic.periph.comparator", "pypic.periph.vref", "pypic.periph.gpio", "pypic.periph.timer", "pypic.regs", "pypic.bits", "pypic.system.time"];
+const IMPLEMENTED_MODULES: &[&str] = &[
+    "pypic.periph.uart",
+    "pypic.periph.adc",
+    "pypic.periph.pwm",
+    "pypic.periph.eeprom",
+    "pypic.periph.comparator",
+    "pypic.periph.vref",
+    "pypic.periph.gpio",
+    "pypic.periph.timer",
+    "pypic.regs",
+    "pypic.bits",
+    "pypic.system.time",
+];
 
 /// Problema con la ruta de un modulo `pypic.*` (renombrado, categoria sin modulo, inexistente o aun no implementado).
 /// `None` si es un modulo implementado o no es del arbol de categorias.

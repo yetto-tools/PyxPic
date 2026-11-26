@@ -7,8 +7,8 @@ use pypic_device::DevicePack;
 use pypic_frontend::{analyze, TargetProfile};
 use pypic_ir::{lower, verify, Machine, Module};
 use pypic_pic14::codegen::{CodegenError, Compiled, Options};
-use pypic_pic14::sim::Sim;
 use pypic_pic14::compile;
+use pypic_pic14::sim::Sim;
 
 fn pack_target() -> TargetProfile {
     DevicePack::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../devices/pic16f887")).unwrap().target_profile()
@@ -158,7 +158,7 @@ fn analog_pins_in_ansel_are_cleared() {
         s
     };
     // RA0 = AN0, RA5 = AN4
-    assert_eq!(s.read(0x188), 0xFF & !0x01 & !0x10, "ANSEL");
+    assert_eq!(s.read(0x188), !0x01 & !0x10, "ANSEL");
 }
 
 #[test]

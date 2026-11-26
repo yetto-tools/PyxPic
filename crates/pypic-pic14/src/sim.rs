@@ -13,7 +13,22 @@ use crate::isa::{Dest, Inst};
 fn file_read(inst: Inst) -> Option<u8> {
     use Inst::*;
     match inst {
-        Movf(f, _) | Addwf(f, _) | Andwf(f, _) | Comf(f, _) | Decf(f, _) | Decfsz(f, _) | Incf(f, _) | Incfsz(f, _) | Iorwf(f, _) | Rlf(f, _) | Rrf(f, _) | Subwf(f, _) | Swapf(f, _) | Xorwf(f, _) | Btfsc(f, _) | Btfss(f, _) => Some(f),
+        Movf(f, _)
+        | Addwf(f, _)
+        | Andwf(f, _)
+        | Comf(f, _)
+        | Decf(f, _)
+        | Decfsz(f, _)
+        | Incf(f, _)
+        | Incfsz(f, _)
+        | Iorwf(f, _)
+        | Rlf(f, _)
+        | Rrf(f, _)
+        | Subwf(f, _)
+        | Swapf(f, _)
+        | Xorwf(f, _)
+        | Btfsc(f, _)
+        | Btfss(f, _) => Some(f),
         _ => None,
     }
 }
@@ -114,7 +129,54 @@ impl Sim {
                 flash[a as usize] = w;
             }
         }
-        let mut s = Sim { flash, ram: [0; 512], w: 0, pc: 0, pclath: 0, stack: [0; 8], sp: 0, cycles: 0, halted: false, flash_words: img.len(), pcl_write: None, t0_pre: 0, t0_inhibit: 0, t1_pre: 0, t2_pre: 0, t2_post: 0, timer_events: Vec::new(), adc_inputs: [0; 16], fosc_hz: 4_000_000, adc_violations: Vec::new(), adc_tacq_ns: 11_500.0, adc_low_voltage: false, uart_tx: Vec::new(), uart_tx9: Vec::new(), uart_txreg9: false, uart_violations: Vec::new(), uart_rx_pending: Default::default(), uart_fifo: Default::default(), uart_txreg: None, uart_tsr_left: 0, uart_prev_cren: false, osc_ready_at: 0, adc_prev_go: false, adc_prev_on: false, adc_prev_chs: 0, adc_acq_from: 0, adc_remaining: 0, cmp_prev: [false; 2], pwm_latch: [0; 2], pwm_events: Vec::new(), eeprom: [0xFF; 256], eeprom_write_ns: 6_000_000.0, eeprom_violations: Vec::new(), ee_stage: 0, ee_done_at: None, ee_pending: (0, 0) };
+        let mut s = Sim {
+            flash,
+            ram: [0; 512],
+            w: 0,
+            pc: 0,
+            pclath: 0,
+            stack: [0; 8],
+            sp: 0,
+            cycles: 0,
+            halted: false,
+            flash_words: img.len(),
+            pcl_write: None,
+            t0_pre: 0,
+            t0_inhibit: 0,
+            t1_pre: 0,
+            t2_pre: 0,
+            t2_post: 0,
+            timer_events: Vec::new(),
+            adc_inputs: [0; 16],
+            fosc_hz: 4_000_000,
+            adc_violations: Vec::new(),
+            adc_tacq_ns: 11_500.0,
+            adc_low_voltage: false,
+            uart_tx: Vec::new(),
+            uart_tx9: Vec::new(),
+            uart_txreg9: false,
+            uart_violations: Vec::new(),
+            uart_rx_pending: Default::default(),
+            uart_fifo: Default::default(),
+            uart_txreg: None,
+            uart_tsr_left: 0,
+            uart_prev_cren: false,
+            osc_ready_at: 0,
+            adc_prev_go: false,
+            adc_prev_on: false,
+            adc_prev_chs: 0,
+            adc_acq_from: 0,
+            adc_remaining: 0,
+            cmp_prev: [false; 2],
+            pwm_latch: [0; 2],
+            pwm_events: Vec::new(),
+            eeprom: [0xFF; 256],
+            eeprom_write_ns: 6_000_000.0,
+            eeprom_violations: Vec::new(),
+            ee_stage: 0,
+            ee_done_at: None,
+            ee_pending: (0, 0),
+        };
         s.reset();
         s
     }
@@ -183,7 +245,11 @@ impl Sim {
 
     fn read_indirect(&self) -> u8 {
         let a = self.indirect_addr();
-        if a & 0x7F == 0 { 0 } else { self.ram[Self::phys(a)] } // INDF indirecto lee 00h
+        if a & 0x7F == 0 {
+            0
+        } else {
+            self.ram[Self::phys(a)]
+        } // INDF indirecto lee 00h
     }
 
     pub fn write_f(&mut self, f: u8, v: u8) {
@@ -259,7 +325,11 @@ impl Sim {
     }
 
     fn set_flag(&mut self, mask: u8, on: bool) {
-        if on { self.ram[STATUS] |= mask } else { self.ram[STATUS] &= !mask }
+        if on {
+            self.ram[STATUS] |= mask
+        } else {
+            self.ram[STATUS] &= !mask
+        }
     }
 
     fn zflag(&mut self, v: u8) {
@@ -562,7 +632,13 @@ impl Sim {
             let (on, pol, r, ch) = (con0 & 0x80 != 0, con0 & 0x10 != 0, con0 & 0x04 != 0, (con0 & 3) as usize);
             let rsel = cm2con1 & (0x20 >> i) != 0;
             let pos_pin_an = if i == 0 { 3 } else { 2 };
-            let pos = if !r { self.adc_inputs[pos_pin_an] as f64 } else if rsel { cvref } else { fixed };
+            let pos = if !r {
+                self.adc_inputs[pos_pin_an] as f64
+            } else if rsel {
+                cvref
+            } else {
+                fixed
+            };
             let neg = self.adc_inputs[c::NEG_INPUTS[ch].1 as usize] as f64;
             let out = c::output(on, pol, pos, neg);
             self.ram[0x107 + i] = (con0 & !0x40) | if out { 0x40 } else { 0 };
@@ -640,7 +716,15 @@ impl Sim {
                 let cycle_ns = 4e9 / f64::from(self.fosc_hz);
                 self.ee_done_at = Some(self.cycles + (self.eeprom_write_ns / cycle_ns).ceil() as u64);
             } else {
-                let why = if eepgd { "EEPGD = 1 (escritura de la memoria de programa: no se modela)" } else if !wren { "WREN = 0" } else if busy { "ya hay una escritura en curso" } else { "falta la secuencia 55h, AAh en EECON2" };
+                let why = if eepgd {
+                    "EEPGD = 1 (escritura de la memoria de programa: no se modela)"
+                } else if !wren {
+                    "WREN = 0"
+                } else if busy {
+                    "ya hay una escritura en curso"
+                } else {
+                    "falta la secuencia 55h, AAh en EECON2"
+                };
                 self.eeprom_violations.push(format!("WR = 1 sin iniciar la escritura: {why}"));
                 self.ram[0x18C] &= !0x02; // la escritura no se inicia y WR queda en 0
             }
@@ -761,9 +845,21 @@ impl Sim {
         match self.uart_fifo.front() {
             Some(&(b, ok, b9)) => {
                 self.ram[0x1A] = b;
-                if self.ram[0x18] & 0x40 != 0 && b9 { self.ram[0x18] |= 0x01 } else { self.ram[0x18] &= !0x01 }
-                if ok { self.ram[0x18] &= !0x04 } else { self.ram[0x18] |= 0x04 }
-                if rx_en { self.ram[0x0C] |= 0x20 } else { self.ram[0x0C] &= !0x20 }
+                if self.ram[0x18] & 0x40 != 0 && b9 {
+                    self.ram[0x18] |= 0x01
+                } else {
+                    self.ram[0x18] &= !0x01
+                }
+                if ok {
+                    self.ram[0x18] &= !0x04
+                } else {
+                    self.ram[0x18] |= 0x04
+                }
+                if rx_en {
+                    self.ram[0x0C] |= 0x20
+                } else {
+                    self.ram[0x0C] &= !0x20
+                }
             }
             None => {
                 self.ram[0x18] &= !0x05;
@@ -791,9 +887,17 @@ impl Sim {
         // tras la escritura (p.150): la instruccion que sigue a la escritura lee todavia el valor viejo, la siguiente ya el nuevo
         let stale = self.uart_txreg.is_some_and(|(_, at)| now < at + 1);
         let txif = tx_en && (self.uart_txreg.is_none() || stale);
-        if txif { self.ram[0x0C] |= 0x10 } else { self.ram[0x0C] &= !0x10 }
+        if txif {
+            self.ram[0x0C] |= 0x10
+        } else {
+            self.ram[0x0C] &= !0x10
+        }
         // TRMT (TXSTA<1>)
-        if self.uart_tsr_left == 0 && self.uart_txreg.is_none() { self.ram[0x98] |= 0x02 } else { self.ram[0x98] &= !0x02 }
+        if self.uart_tsr_left == 0 && self.uart_txreg.is_none() {
+            self.ram[0x98] |= 0x02
+        } else {
+            self.ram[0x98] &= !0x02
+        }
         // receptor
         let (spen, cren) = (self.ram[0x18] & 0x80 != 0, self.ram[0x18] & 0x10 != 0);
         while let Some(&(at, b, ok, b9)) = self.uart_rx_pending.front() {

@@ -98,7 +98,8 @@ fn range_bound_is_evaluated_once() {
 
 #[test]
 fn break_and_continue() {
-    let s = "def f() -> u8:\n    n: u8 = 0\n    i: u8 = 0\n    while True:\n        i += 1\n        if i == 3:\n            continue\n        if i > 6:\n            break\n        n += i\n    return n\n";
+    let s =
+        "def f() -> u8:\n    n: u8 = 0\n    i: u8 = 0\n    while True:\n        i += 1\n        if i == 3:\n            continue\n        if i > 6:\n            break\n        n += i\n    return n\n";
     assert_eq!(run(s, "f", &[]), Some(1 + 2 + 4 + 5 + 6));
 }
 

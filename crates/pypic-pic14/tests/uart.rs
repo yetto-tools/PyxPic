@@ -59,7 +59,9 @@ fn frame_cycles(brg16: bool, brgh: bool, n: u64) -> u64 {
 #[test]
 fn the_measured_baud_rate_is_the_requested_one_within_the_reported_error() {
     // (reloj, baudios, error maximo esperado en %)
-    for (fosc, baud) in [(4_000_000u32, 9600u32), (8_000_000, 9600), (20_000_000, 115_200), (16_000_000, 115_200), (1_000_000, 1200), (4_000_000, 2400), (20_000_000, 9600), (4_000_000, 19_200), (12_000_000, 57_600)] {
+    for (fosc, baud) in
+        [(4_000_000u32, 9600u32), (8_000_000, 9600), (20_000_000, 115_200), (16_000_000, 115_200), (1_000_000, 1200), (4_000_000, 2400), (20_000_000, 9600), (4_000_000, 19_200), (12_000_000, 57_600)]
+    {
         let src = format!("{}def main() -> None:\n    UART.start(baud={baud})\n    UART.write(65)\n    UART.write(66)\n    UART.write(67)\n    while UART.sending():\n        pass\n", head(fosc));
         let (_, c) = build(&src);
         let rep = c.uart.expect("el informe de la UART");
@@ -186,7 +188,10 @@ fn writing_before_start_is_caught_by_the_simulator() {
 
 #[test]
 fn an_echo_matches_the_reference_interpreter() {
-    let src = format!("{}def main() -> None:\n    UART.start(baud=9600)\n    for i in range(5):\n        b: u8 = UART.read()\n        UART.write(b + 1)\n    while UART.sending():\n        pass\n", head(4_000_000));
+    let src = format!(
+        "{}def main() -> None:\n    UART.start(baud=9600)\n    for i in range(5):\n        b: u8 = UART.read()\n        UART.write(b + 1)\n    while UART.sending():\n        pass\n",
+        head(4_000_000)
+    );
     let (m, c) = build(&src);
     let input = [10u8, 20, 30, 40, 250];
     let mut mach = Machine::new(&m);
@@ -205,7 +210,10 @@ fn an_echo_matches_the_reference_interpreter() {
 
 #[test]
 fn rx_ready_and_recv_read_without_blocking() {
-    let src = format!("{}got: u8 = 0\nidle: u8 = 0\ndef main() -> None:\n    global got, idle\n    UART.start(baud=9600)\n    while not UART.rx_ready():\n        idle += 1\n    got = UART.recv()\n", head(4_000_000));
+    let src = format!(
+        "{}got: u8 = 0\nidle: u8 = 0\ndef main() -> None:\n    global got, idle\n    UART.start(baud=9600)\n    while not UART.rx_ready():\n        idle += 1\n    got = UART.recv()\n",
+        head(4_000_000)
+    );
     let (_, c) = build(&src);
     let mut s = sim_for(&c, 4_000_000);
     s.uart_feed(77, 2_000, true);
@@ -279,7 +287,14 @@ fn the_uart_must_be_started_and_the_start_must_be_reachable() {
 #[test]
 fn start_arguments_are_checked() {
     let h = head(4_000_000);
-    for (call, code) in [("UART.start()", "PYP2182"), ("UART.start(9600)", "PYP2127"), ("UART.start(baud=0)", "PYP2182"), ("UART.start(baud=True)", "PYP2182"), ("UART.start(speed=9600)", "PYP2182"), ("UART.start(baud=9600, parity=1)", "PYP2182")] {
+    for (call, code) in [
+        ("UART.start()", "PYP2182"),
+        ("UART.start(9600)", "PYP2127"),
+        ("UART.start(baud=0)", "PYP2182"),
+        ("UART.start(baud=True)", "PYP2182"),
+        ("UART.start(speed=9600)", "PYP2182"),
+        ("UART.start(baud=9600, parity=1)", "PYP2182"),
+    ] {
         let (ok, t) = diagnostics(&format!("{h}def main() -> None:\n    {call}\n"));
         assert!(!ok && t.contains(code), "{call}: {t}");
     }
@@ -322,7 +337,10 @@ fn the_uart_can_be_read_in_an_interrupt() {
 // ---- costo --------------------------------------------------------------------------------------------------------
 
 fn cycles_of(stmt: &str, prelude: &str, feed: bool) -> u64 {
-    let src = format!("{}from pypic.periph.gpio import RD0\nv: u8 = 0\ndef main() -> None:\n    global v\n    RD0.output()\n    UART.start(baud=9600)\n{prelude}    RD0.on()\n    {stmt}\n    RD0.off()\n", head(4_000_000));
+    let src = format!(
+        "{}from pypic.periph.gpio import RD0\nv: u8 = 0\ndef main() -> None:\n    global v\n    RD0.output()\n    UART.start(baud=9600)\n{prelude}    RD0.on()\n    {stmt}\n    RD0.off()\n",
+        head(4_000_000)
+    );
     let (_, c) = build(&src);
     let mut s = sim_for(&c, 4_000_000);
     if feed {
@@ -373,7 +391,14 @@ fn polling_txif_immediately_after_writing_txreg_reads_a_stale_value_which_is_why
 
 #[test]
 fn the_flag_primitives_have_a_fixed_cost() {
-    for (call, want) in [("b: bool = UART.tx_ready()", 3u64), ("b: bool = UART.rx_ready()", 3), ("b: bool = UART.overrun()", 3), ("b: bool = UART.framing_error()", 3), ("UART.clear_overrun()", 2), ("b: bool = UART.sending()", 7)] {
+    for (call, want) in [
+        ("b: bool = UART.tx_ready()", 3u64),
+        ("b: bool = UART.rx_ready()", 3),
+        ("b: bool = UART.overrun()", 3),
+        ("b: bool = UART.framing_error()", 3),
+        ("UART.clear_overrun()", 2),
+        ("b: bool = UART.sending()", 7),
+    ] {
         assert_eq!(cycles_of(call, "", false), want, "{call}");
     }
 }

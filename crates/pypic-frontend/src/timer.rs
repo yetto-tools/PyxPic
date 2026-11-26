@@ -41,7 +41,11 @@ impl TimerId {
 
     /// Ancho del contador: 8 bits (Timer0, Timer2) o 16 (Timer1).
     pub fn bits(self) -> u32 {
-        if self == TimerId::T1 { 16 } else { 8 }
+        if self == TimerId::T1 {
+            16
+        } else {
+            8
+        }
     }
 }
 
@@ -126,18 +130,7 @@ pub struct TimerCall {
 }
 
 /// Constantes que exporta `pypic.periph.timer` y su codigo interno.
-pub const CONSTANTS: &[(&str, i128)] = &[
-    ("INTERNAL", 0),
-    ("T0CKI", 1),
-    ("T1CKI", 2),
-    ("T1OSC", 3),
-    ("RISING", 4),
-    ("FALLING", 5),
-    ("T1G_HIGH", 6),
-    ("T1G_LOW", 7),
-    ("C2_HIGH", 8),
-    ("C2_LOW", 9),
-];
+pub const CONSTANTS: &[(&str, i128)] = &[("INTERNAL", 0), ("T0CKI", 1), ("T1CKI", 2), ("T1OSC", 3), ("RISING", 4), ("FALLING", 5), ("T1G_HIGH", 6), ("T1G_LOW", 7), ("C2_HIGH", 8), ("C2_LOW", 9)];
 
 pub fn constant(name: &str) -> Option<i128> {
     CONSTANTS.iter().find(|(n, _)| *n == name).map(|(_, v)| *v)
@@ -154,7 +147,7 @@ pub fn solve_t2(cycles: u64) -> Option<TimerStart> {
     for &pre in &T2_PRESCALERS {
         for post in 1..=16u32 {
             let div = pre as u64 * post as u64;
-            if cycles % div != 0 {
+            if !cycles.is_multiple_of(div) {
                 continue;
             }
             let per = cycles / div;

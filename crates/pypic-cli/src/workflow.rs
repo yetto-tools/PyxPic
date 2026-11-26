@@ -50,19 +50,16 @@ pub fn locate_pack(name: &str, extra: Option<&str>) -> Result<DevicePack, (Strin
     }
     avail.sort();
     avail.dedup();
-    Err((
-        format!("dispositivo '{name}' desconocido: no hay Device Pack en {} (disponibles: {})", roots.join(", "), if avail.is_empty() { "ninguno".to_string() } else { avail.join(", ") }),
-        1,
-    ))
+    Err((format!("dispositivo '{name}' desconocido: no hay Device Pack en {} (disponibles: {})", roots.join(", "), if avail.is_empty() { "ninguno".to_string() } else { avail.join(", ") }), 1))
 }
 
 // ---- pypic init -----------------------------------------------------------------------------------------------------------------------
 
 /// `4_000_000` -> `4 * MHz`, `125_000` -> `125 * kHz`.
 fn hz_expr(hz: u32) -> String {
-    if hz % 1_000_000 == 0 {
+    if hz.is_multiple_of(1_000_000) {
         format!("{} * MHz", hz / 1_000_000)
-    } else if hz % 1_000 == 0 {
+    } else if hz.is_multiple_of(1_000) {
         format!("{} * kHz", hz / 1_000)
     } else {
         format!("{hz} * Hz")
@@ -174,7 +171,14 @@ impl TargetReport {
 
 /// Revisa un perfil sin escribir nada: dispositivo y pack, reloj, configuracion y el analisis del programa para ese destino.
 pub fn check_target(project: &Project, name: &str, t: &Target) -> TargetReport {
-    let mut r = TargetReport { name: name.to_string(), device: t.device.clone(), clock: t.clock.clone(), config: t.config.clone(), output: t.output.as_ref().map(|o| o.display().to_string()), ..Default::default() };
+    let mut r = TargetReport {
+        name: name.to_string(),
+        device: t.device.clone(),
+        clock: t.clock.clone(),
+        config: t.config.clone(),
+        output: t.output.as_ref().map(|o| o.display().to_string()),
+        ..Default::default()
+    };
     let devices_dir = project.devices_dir.as_ref().map(|d| d.to_string_lossy().into_owned());
     let src = match &project.main {
         Some(m) => match std::fs::read_to_string(m) {
@@ -355,7 +359,11 @@ pub fn project_cmd(args: &[String]) -> ExitCode {
             }
         }
     }
-    if ok { ExitCode::SUCCESS } else { ExitCode::from(1) }
+    if ok {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    }
 }
 
 // ---- pypic project set ------------------------------------------------------------------------------------------------------------

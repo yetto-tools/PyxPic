@@ -104,7 +104,7 @@ pub const PRESCALERS: [u8; 3] = [1, 4, 16];
 
 /// Todos los periodos (en ciclos) que Timer2 puede dar con alguno de sus prescalers.
 fn representable(cycles: u32) -> Option<PwmTiming> {
-    PRESCALERS.iter().find_map(|&p| (cycles % p as u32 == 0 && (1..=256).contains(&(cycles / p as u32))).then(|| PwmTiming { prescaler: p, pr2: (cycles / p as u32 - 1) as u8 }))
+    PRESCALERS.iter().find_map(|&p| (cycles.is_multiple_of(p as u32) && (1..=256).contains(&(cycles / p as u32))).then(|| PwmTiming { prescaler: p, pr2: (cycles / p as u32 - 1) as u8 }))
 }
 
 /// Resuelve `frequency=` a `fosc_hz`: el periodo en ciclos debe ser **exacto** y salir de `prescaler x (PR2 + 1)`. Elige el
@@ -115,7 +115,7 @@ pub fn resolve_frequency(fosc_hz: u32, clocks_per_cycle: u32, freq_hz: u32) -> R
         return Err("la frecuencia debe ser mayor que cero".into());
     }
     let cycles = fosc_hz as u64 / denom;
-    if fosc_hz as u64 % denom == 0 {
+    if (fosc_hz as u64).is_multiple_of(denom) {
         if let Some(t) = u32::try_from(cycles).ok().and_then(representable) {
             return Ok(t);
         }
@@ -135,7 +135,11 @@ pub fn resolve_frequency(fosc_hz: u32, clocks_per_cycle: u32, freq_hz: u32) -> R
     let f = |n: u32| fosc_hz as f64 / (clocks_per_cycle as f64 * n as f64);
     let fmt = |n: u32| {
         let v = f(n);
-        if (v - v.round()).abs() < 1e-9 { format!("{} Hz", v.round() as u64) } else { format!("{v:.2} Hz") }
+        if (v - v.round()).abs() < 1e-9 {
+            format!("{} Hz", v.round() as u64)
+        } else {
+            format!("{v:.2} Hz")
+        }
     };
     let near = match (lo, hi) {
         (Some(a), Some(b)) => format!("las frecuencias exactas mas cercanas son {} (periodo de {a} ciclos) y {} ({b} ciclos)", fmt(a), fmt(b)),

@@ -195,7 +195,7 @@ fn psect_errors() {
     // un psect sin clase ni -p
     assert!(msg("PSECT lost,delta=2\n nop\n").contains("no tiene clase"));
     // un psect que no cabe en una pagina de codigo
-    let big = format!("PSECT code2,class=CODE,delta=2\n ORG 0x800\n nop\n");
+    let big = "PSECT code2,class=CODE,delta=2\n ORG 0x800\n nop\n".to_string();
     assert!(msg(&big).contains("no cabe"), "{}", msg(&big));
     // dos psects fijos que se solapan
     let e = env_with(&["-pa=0h", "-pb=0h"]);
@@ -277,7 +277,9 @@ fn processor_must_match_the_device() {
 
 #[test]
 fn define_ifdef_and_if_work() {
-    let a = ok(&abs("#define K 7\n#ifdef K\n movlw K\n#else\n movlw 1\n#endif\n#ifndef K\n movlw 2\n#endif\n IF 1\n movlw 3\n ELSE\n movlw 4\n ENDIF\n IF 0\n movlw 5\n ELSIF 1\n movlw 6\n ELSE\n movlw 8\n ENDIF"));
+    let a = ok(&abs(
+        "#define K 7\n#ifdef K\n movlw K\n#else\n movlw 1\n#endif\n#ifndef K\n movlw 2\n#endif\n IF 1\n movlw 3\n ELSE\n movlw 4\n ENDIF\n IF 0\n movlw 5\n ELSIF 1\n movlw 6\n ELSE\n movlw 8\n ENDIF",
+    ));
     let got: Vec<u16> = (0..3).map(|i| w(&a, i)).collect();
     assert_eq!(got, vec![enc(Inst::Movlw(7)), enc(Inst::Movlw(3)), enc(Inst::Movlw(6))]);
     assert!(a.image.get(3).is_none());
@@ -306,7 +308,8 @@ fn fcall_and_ljmp_set_pclath_and_restore_the_page() {
     }
     assert_eq!((w(&a, 5), w(&a, 6), w(&a, 7)), (enc(Inst::Bcf(0x0A, 4)), enc(Inst::Bsf(0x0A, 3)), enc(Inst::Goto(0))));
     assert_eq!((w(&a, 8), w(&a, 9)), (enc(Inst::Bsf(0x0A, 3)), enc(Inst::Bcf(0x0A, 4)))); // PAGESEL fn: pagina 1
-    assert_eq!((w(&a, 10), w(&a, 11)), (enc(Inst::Bcf(0x0A, 3)), enc(Inst::Bcf(0x0A, 4)))); // PAGESEL $: pagina 0
+    assert_eq!((w(&a, 10), w(&a, 11)), (enc(Inst::Bcf(0x0A, 3)), enc(Inst::Bcf(0x0A, 4))));
+    // PAGESEL $: pagina 0
 }
 
 #[test]

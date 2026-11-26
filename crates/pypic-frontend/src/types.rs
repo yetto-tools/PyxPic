@@ -8,7 +8,10 @@ use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Type {
-    Int { bits: u8, signed: bool },
+    Int {
+        bits: u8,
+        signed: bool,
+    },
     Bool,
     Void,
     /// Literal entero que aun no tomo tipo: lo toma del contexto si su valor cabe.

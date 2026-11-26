@@ -28,7 +28,11 @@ impl RtKind {
 
     /// Niveles de la pila de hardware que usa una llamada (la division con signo llama a la sin signo).
     pub fn stack_levels(self) -> u32 {
-        if self == RtKind::SDiv { 2 } else { 1 }
+        if self == RtKind::SDiv {
+            2
+        } else {
+            1
+        }
     }
 }
 

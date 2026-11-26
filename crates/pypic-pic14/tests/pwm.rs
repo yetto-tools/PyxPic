@@ -263,7 +263,7 @@ fn language_rules_are_located_errors() {
         let (ok, t) = diagnostics(&src);
         assert!(!ok && t.contains(code) && t.contains(frag), "{src}\n{t}");
     }
-    let (ok, t) = diagnostics(&format!("from pypic.device import PIC16F887\nfrom pypic.periph.pwm import PWM3\n\ndef main() -> None:\n    pass\n"));
+    let (ok, t) = diagnostics("from pypic.device import PIC16F887\nfrom pypic.periph.pwm import PWM3\n\ndef main() -> None:\n    pass\n");
     assert!(!ok && t.contains("PYP2200") && t.contains("PWM1, PWM2"), "{t}");
 }
 

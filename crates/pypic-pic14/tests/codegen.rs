@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use pypic_frontend::{analyze, TargetProfile};
-use pypic_ir::{lower_unoptimized, lower, verify, Machine, Module};
+use pypic_ir::{lower, lower_unoptimized, verify, Machine, Module};
 use pypic_pic14::codegen::{CodegenError, Compiled, GlobalSym, Options};
 use pypic_pic14::sim::Sim;
 use pypic_pic14::{compile, Inst};
@@ -199,14 +199,10 @@ fn constant_shifts() {
 
 #[test]
 fn loops_and_calls() {
-    let g = same(
-        "total: u16 = 0\ndef main() -> None:\n    global total\n    for i in range(100):\n        total += u16(i)\n",
-    );
+    let g = same("total: u16 = 0\ndef main() -> None:\n    global total\n    for i in range(100):\n        total += u16(i)\n");
     assert_eq!(g["total"], 4950);
 
-    let g = same(
-        "r: u16 = 0\ndef main() -> None:\n    global r\n    a: u16 = 0\n    b: u16 = 1\n    for i in range(24):\n        t: u16 = a + b\n        a = b\n        b = t\n    r = a\n",
-    );
+    let g = same("r: u16 = 0\ndef main() -> None:\n    global r\n    a: u16 = 0\n    b: u16 = 1\n    for i in range(24):\n        t: u16 = a + b\n        a = b\n        b = t\n    r = a\n");
     assert_eq!(g["r"], 46368);
 
     // maximo comun divisor por restas

@@ -159,7 +159,13 @@ fn blink_cycles(clock: &str, ms: u32) -> u64 {
 #[test]
 fn the_declared_frequency_sets_the_exact_cycle_count_of_a_pause() {
     // TCY = 4 / FOSC: 10 ms son FOSC / 400 ciclos
-    for (clock, cycles) in [("CLOCK: Internal[4 * MHz]", 10_000u64), ("CLOCK: Internal[8 * MHz]", 20_000), ("CLOCK: Crystal[20 * MHz]", 50_000), ("CLOCK: Crystal[1 * MHz]", 2_500), ("CLOCK: ExternalClock[2 * MHz]", 5_000)] {
+    for (clock, cycles) in [
+        ("CLOCK: Internal[4 * MHz]", 10_000u64),
+        ("CLOCK: Internal[8 * MHz]", 20_000),
+        ("CLOCK: Crystal[20 * MHz]", 50_000),
+        ("CLOCK: Crystal[1 * MHz]", 2_500),
+        ("CLOCK: ExternalClock[2 * MHz]", 5_000),
+    ] {
         assert_eq!(blink_cycles(clock, 10), cycles, "{clock}");
     }
     // igual que la forma antigua

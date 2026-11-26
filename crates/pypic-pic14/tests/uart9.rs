@@ -62,7 +62,8 @@ fn start_sets_tx9_and_rx9_and_the_frame_has_eleven_bits() {
 
 #[test]
 fn write9_matches_the_reference_interpreter_for_every_edge_value() {
-    let src = format!("{}def main() -> None:
+    let src = format!(
+        "{}def main() -> None:
     UART.start(baud=9600, bits=9)
     UART.write9(0)
     UART.write9(1)
@@ -73,7 +74,9 @@ fn write9_matches_the_reference_interpreter_for_every_edge_value() {
     UART.write9(427)
     while UART.sending():
         pass
-", head());
+",
+        head()
+    );
     let (m, c) = build(&src);
     let mut mach = Machine::new(&m);
     mach.run_main().unwrap();
@@ -87,7 +90,10 @@ fn write9_matches_the_reference_interpreter_for_every_edge_value() {
 #[test]
 fn only_bit_8_of_the_value_is_the_ninth_bit_and_higher_bits_are_ignored() {
     // 0x3FF = 0b11_1111_1111: byte bajo 0xFF y bit 8 = 1; 0x200 tiene el bit 9 y el bit 8 en 0
-    let src = format!("{}a: uint16 = 0x3FF\nb: uint16 = 0x200\ndef main() -> None:\n    UART.start(baud=9600, bits=9)\n    UART.write9(a)\n    UART.write9(b)\n    while UART.sending():\n        pass\n", head());
+    let src = format!(
+        "{}a: uint16 = 0x3FF\nb: uint16 = 0x200\ndef main() -> None:\n    UART.start(baud=9600, bits=9)\n    UART.write9(a)\n    UART.write9(b)\n    while UART.sending():\n        pass\n",
+        head()
+    );
     let (m, c) = build(&src);
     let mut mach = Machine::new(&m);
     mach.run_main().unwrap();
@@ -118,7 +124,10 @@ fn read9_pairs_each_character_with_its_own_ninth_bit() {
 
 #[test]
 fn an_echo_of_nine_bit_characters_matches_the_interpreter() {
-    let src = format!("{}def main() -> None:\n    UART.start(baud=9600, bits=9)\n    for i in range(4):\n        v: uint16 = UART.read9()\n        UART.write9(v ^ 0x100)\n    while UART.sending():\n        pass\n", head());
+    let src = format!(
+        "{}def main() -> None:\n    UART.start(baud=9600, bits=9)\n    for i in range(4):\n        v: uint16 = UART.read9()\n        UART.write9(v ^ 0x100)\n    while UART.sending():\n        pass\n",
+        head()
+    );
     let (m, c) = build(&src);
     let input = [0x000u16, 0x1FF, 0x055, 0x1AA];
     let mut mach = Machine::new(&m);

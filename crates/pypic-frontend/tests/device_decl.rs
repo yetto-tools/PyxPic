@@ -35,7 +35,7 @@ fn a_valid_declaration_is_accepted_and_recorded() {
     let r = analyze(&src, &pic16f887());
     assert_eq!(r.program.unwrap().device.as_deref(), Some("PIC16F887"));
     assert!(analyze(&src, &generic()).program.is_some()); // sin pack tambien (solo se valida el formato del nombre)
-    // el nombre se compara sin distinguir mayusculas
+                                                          // el nombre se compara sin distinguir mayusculas
     assert!(analyze(&src.replace("PIC16F887", "pic16f887"), &pic16f887()).program.is_some());
 }
 
@@ -79,9 +79,9 @@ fn clock_hz_is_a_final_u32_checked_against_the_device_maximum() {
 #[test]
 fn clock_hz_has_a_fixed_shape() {
     for bad in [
-        "CLOCK_HZ: u32 = 4_000_000\n",            // no es Const
-        "CLOCK_HZ: Const[u16] = 4000\n",           // no es u32
-        "CLOCK_HZ: Const[u32] = 0\n",              // 0 Hz
+        "CLOCK_HZ: u32 = 4_000_000\n",   // no es Const
+        "CLOCK_HZ: Const[u16] = 4000\n", // no es u32
+        "CLOCK_HZ: Const[u32] = 0\n",    // 0 Hz
     ] {
         assert_eq!(codes(&format!("{bad}{MAIN}"), &generic()), vec!["PYP2093"], "{bad}");
     }

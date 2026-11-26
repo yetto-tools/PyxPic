@@ -131,13 +131,7 @@ fn print_timing(timing: &[pypic_pic14::DelayReport]) {
                 let err = r.achieved_ns() - r.requested_ns().unwrap_or(0.0);
                 println!("  {}: {n} {unit} -> {} ciclos = {} (error {:+.1} ns)", r.function, r.cycles, fmt_ns(r.achieved_ns()), err);
             }
-            None => println!(
-                "  {}: cantidad variable de {unit} -> {} ciclos por unidad ({}) + {} ciclos fijos de entrada",
-                r.function,
-                r.cycles,
-                fmt_ns(r.achieved_ns()),
-                r.fixed_cycles
-            ),
+            None => println!("  {}: cantidad variable de {unit} -> {} ciclos por unidad ({}) + {} ciclos fijos de entrada", r.function, r.cycles, fmt_ns(r.achieved_ns()), r.fixed_cycles),
         }
     }
 }
@@ -159,7 +153,11 @@ fn main() -> ExitCode {
 /// `16F887` o `PIC16F887` -> `PIC16F887`.
 fn pic_name(s: &str) -> String {
     let u = s.to_ascii_uppercase();
-    if u.starts_with("PIC") { u } else { format!("PIC{u}") }
+    if u.starts_with("PIC") {
+        u
+    } else {
+        format!("PIC{u}")
+    }
 }
 
 /// Ensambla un `.s` PIC14 con la sintaxis de pic-as a Intel HEX (ver docs/asm-pic14.md).
@@ -250,14 +248,19 @@ fn disasm(args: &[String]) -> ExitCode {
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--pic-as" => pic_as = true,
-            "--devices-dir" => match it.next() { Some(dir) => devices_dir = Some(dir.as_str()), None => return usage() },
+            "--devices-dir" => match it.next() {
+                Some(dir) => devices_dir = Some(dir.as_str()),
+                None => return usage(),
+            },
             s if s.starts_with("-mcpu=") && s.len() > 6 => cpu = Some(&s[6..]),
             s if !s.starts_with('-') && path.is_none() => path = Some(s),
             _ => return usage(),
         }
     }
     let Some(path) = path else { return usage() };
-    if !pic_as && (cpu.is_some() || devices_dir.is_some()) { return usage(); }
+    if !pic_as && (cpu.is_some() || devices_dir.is_some()) {
+        return usage();
+    }
     let text = match std::fs::read_to_string(path) {
         Ok(t) => t,
         Err(e) => {
@@ -276,7 +279,10 @@ fn disasm(args: &[String]) -> ExitCode {
         let pack = match cpu {
             Some(name) => match find_pack(&pic_name(name), devices_dir) {
                 Ok(pack) if pack.memory.program.word_bits == 14 => Some(pack),
-                Ok(_) => { eprintln!("disasm --pic-as solo admite palabras PIC14 de 14 bits"); return ExitCode::from(1); }
+                Ok(_) => {
+                    eprintln!("disasm --pic-as solo admite palabras PIC14 de 14 bits");
+                    return ExitCode::from(1);
+                }
                 Err(code) => return code,
             },
             None => None,
@@ -299,12 +305,20 @@ fn disasm(args: &[String]) -> ExitCode {
         }
         println!("PSECT pypic_disasm,class=CODE,delta=2,abs");
         for (addr, word) in img.iter() {
-            if pack.as_ref().is_some_and(|p| p.config.words.iter().any(|c| c.address.0 == addr)) { continue; }
-            if pack.as_ref().is_some_and(|p| p.config.id_locations.iter().any(|id| id.address.0 == addr && u32::from(word) & !id.mask.0 == 0)) { continue; }
+            if pack.as_ref().is_some_and(|p| p.config.words.iter().any(|c| c.address.0 == addr)) {
+                continue;
+            }
+            if pack.as_ref().is_some_and(|p| p.config.id_locations.iter().any(|id| id.address.0 == addr && u32::from(word) & !id.mask.0 == 0)) {
+                continue;
+            }
             println!("    ORG {addr:#06x}");
             if let Some(pack) = &pack {
-                if addr == pack.memory.program.reset_vector.0 { println!("pypic_reset:"); }
-                if addr == pack.memory.program.interrupt_vector.0 { println!("pypic_interrupt:"); }
+                if addr == pack.memory.program.reset_vector.0 {
+                    println!("pypic_reset:");
+                }
+                if addr == pack.memory.program.interrupt_vector.0 {
+                    println!("pypic_interrupt:");
+                }
             }
             let program_end = pack.as_ref().map_or(0x2000, |p| p.memory.program.words);
             if addr >= program_end {
@@ -465,7 +479,10 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     let profile_device = profile.as_ref().and_then(|(_, t)| t.device.clone());
     if let (Some(d), Some(pd), Some((tn, _)), Some(pj)) = (&declared, &profile_device, &profile, &project) {
         if !d.eq_ignore_ascii_case(pd) {
-            eprintln!("{file}: error: el programa declara 'from pypic.device import {d}' y el perfil '{tn}' de {} pide {pd}: quita una de las dos declaraciones o elige otro perfil con --target", pj.file.display());
+            eprintln!(
+                "{file}: error: el programa declara 'from pypic.device import {d}' y el perfil '{tn}' de {} pide {pd}: quita una de las dos declaraciones o elige otro perfil con --target",
+                pj.file.display()
+            );
             return ExitCode::from(1);
         }
     }
@@ -565,7 +582,11 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     // `CLOCK: Crystal[20 * MHz]` fija el oscilador (FOSC): pedir otro con --config seria una contradiccion
     if let Some(cs) = &module.clock_source {
         if settings.iter().any(|(n, _)| n == "FOSC") {
-            eprintln!("{file}: error: el programa declara 'CLOCK: {}[...]', que fija FOSC = {}: quita --config FOSC=... (o declara el reloj con CLOCK_HZ para elegir el oscilador a mano)", cs.kind.name(), cs.fosc);
+            eprintln!(
+                "{file}: error: el programa declara 'CLOCK: {}[...]', que fija FOSC = {}: quita --config FOSC=... (o declara el reloj con CLOCK_HZ para elegir el oscilador a mano)",
+                cs.kind.name(),
+                cs.fosc
+            );
             return ExitCode::from(1);
         }
         settings.push(("FOSC".to_string(), cs.fosc.to_string()));

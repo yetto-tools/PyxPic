@@ -15,7 +15,8 @@ fn pack() -> DevicePack {
 }
 
 fn head() -> String {
-    "from pypic.device import PIC16F887\nfrom pypic.periph.eeprom import EEPROM\nfrom pypic.regs import INTCON, EECON1, PIR2\nfrom pypic import interrupt\nCLOCK_HZ: Const[uint32] = 4_000_000\n".to_string()
+    "from pypic.device import PIC16F887\nfrom pypic.periph.eeprom import EEPROM\nfrom pypic.regs import INTCON, EECON1, PIR2\nfrom pypic import interrupt\nCLOCK_HZ: Const[uint32] = 4_000_000\n"
+        .to_string()
 }
 
 fn diagnostics(src: &str) -> (bool, String) {
@@ -110,7 +111,10 @@ fn the_eeprom_survives_a_reset_but_a_ram_variable_does_not() {
 
 /// Programa con una marca en RD0 antes y despues de `body` para medir ciclos.
 fn cycles_between(body: &str) -> u64 {
-    let src = format!("{}from pypic.periph.gpio import RD0\n\nz: uint8 = 0\n\n\ndef main() -> None:\n    global z\n    RD0.output()\n    RD0.on()\n{body}    RD0.off()\n    while True:\n        pass\n", head());
+    let src = format!(
+        "{}from pypic.periph.gpio import RD0\n\nz: uint8 = 0\n\n\ndef main() -> None:\n    global z\n    RD0.output()\n    RD0.on()\n{body}    RD0.off()\n    while True:\n        pass\n",
+        head()
+    );
     let (_, c) = build(&src);
     let mut s = Sim::new(&c.image);
     let (mut on, mut off) = (None, None);
@@ -299,9 +303,9 @@ fn read_busy_and_failed_costs_are_fixed() {
     let busy = cost("    if EEPROM.busy():\n        z = 1\n");
     let failed = cost("    if EEPROM.failed():\n        z = 1\n");
     eprintln!("COSTOS eeprom: read(const) {read_const}, read(var) {read_var}, busy {busy}, failed {failed}");
-    assert!(read_const >= 7 && read_const <= 14, "read: {read_const}");
+    assert!((7..=14).contains(&read_const), "read: {read_const}");
     assert!(read_var >= read_const && read_var - read_const <= 2, "read variable: {read_var}");
-    assert!(busy >= 6 && busy <= 14 && failed >= 6 && failed <= 14, "busy {busy}, failed {failed}");
+    assert!((6..=14).contains(&busy) && (6..=14).contains(&failed), "busy {busy}, failed {failed}");
     // no depende de la direccion
     for a in [0u8, 1, 127, 255] {
         assert_eq!(cost(&format!("    z = EEPROM.read({a})\n")), read_const, "read({a})");

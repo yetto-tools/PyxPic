@@ -47,10 +47,7 @@ fn pic_as_blink_matches_native_assembler_when_xc8_and_dfp_are_configured() {
     let native = dir.join("native.hex");
     let source = "examples/asm/gpio/blink_rd0.s";
     let options = "-Wl,-presetVec=0h,-pintentry=4h";
-    let xc8 = Command::new(pic_as).current_dir(root())
-        .arg("-mcpu=16F887").arg(format!("-mdfp={dfp}"))
-        .args(["-xassembler-with-cpp", source, options, "-o"])
-        .arg(&official).output().unwrap();
+    let xc8 = Command::new(pic_as).current_dir(root()).arg("-mcpu=16F887").arg(format!("-mdfp={dfp}")).args(["-xassembler-with-cpp", source, options, "-o"]).arg(&official).output().unwrap();
     assert!(xc8.status.success(), "{}", text(&xc8));
     let own = pypic(&root(), &["asm", source, options, "-o", native.to_str().unwrap()]);
     assert!(own.status.success(), "{}", text(&own));
@@ -69,8 +66,7 @@ fn pic_as_wrt_256_matches_native_config_when_xc8_is_configured() {
     let official = dir.join("official.hex");
     let native = dir.join("native.hex");
     std::fs::write(&source, "PROCESSOR 16F887\nCONFIG WRT = 256\nPSECT test,class=CODE,delta=2,abs\n nop\nEND\n").unwrap();
-    let xc8 = Command::new(pic_as).current_dir(root()).arg("-mcpu=16F887")
-        .arg(format!("-mdfp={dfp}")).arg(&source).arg("-o").arg(&official).output().unwrap();
+    let xc8 = Command::new(pic_as).current_dir(root()).arg("-mcpu=16F887").arg(format!("-mdfp={dfp}")).arg(&source).arg("-o").arg(&official).output().unwrap();
     assert!(xc8.status.success(), "{}", text(&xc8));
     let own = pypic(&root(), &["asm", source.to_str().unwrap(), "-o", native.to_str().unwrap()]);
     assert!(own.status.success(), "{}", text(&own));
@@ -87,14 +83,28 @@ fn pic_as_numeric_config_values_match_when_xc8_is_configured() {
         return;
     };
     let dir = tmp("xc8-config-numeric");
-    let cases = [("WRT", "-1", 0x2008), ("WRT", "0", 0x2008), ("WRT", "1", 0x2008), ("WRT", "2", 0x2008), ("WRT", "3", 0x2008), ("WRT", "4", 0x2008), ("WRT", "0x100", 0x2008), ("WDTE", "2", 0x2007), ("FOSC", "0x10", 0x2007), ("CONFIG1", "0", 0x2007), ("CONFIG1", "0x3fff", 0x2007), ("CONFIG1", "0x4000", 0x2007), ("CONFIG2", "-1", 0x2008), ("IDLOC0", "0x80", 0x2000)];
+    let cases = [
+        ("WRT", "-1", 0x2008),
+        ("WRT", "0", 0x2008),
+        ("WRT", "1", 0x2008),
+        ("WRT", "2", 0x2008),
+        ("WRT", "3", 0x2008),
+        ("WRT", "4", 0x2008),
+        ("WRT", "0x100", 0x2008),
+        ("WDTE", "2", 0x2007),
+        ("FOSC", "0x10", 0x2007),
+        ("CONFIG1", "0", 0x2007),
+        ("CONFIG1", "0x3fff", 0x2007),
+        ("CONFIG1", "0x4000", 0x2007),
+        ("CONFIG2", "-1", 0x2008),
+        ("IDLOC0", "0x80", 0x2000),
+    ];
     for (index, (field, value, address)) in cases.iter().enumerate() {
         let source = dir.join(format!("wrt{index}.s"));
         let official = dir.join(format!("official{index}.hex"));
         let native = dir.join(format!("native{index}.hex"));
         std::fs::write(&source, format!("PROCESSOR 16F887\nCONFIG {field} = {value}\nPSECT test,class=CODE,delta=2,abs\n nop\nEND\n")).unwrap();
-        let xc8 = Command::new(&pic_as).current_dir(root()).arg("-mcpu=16F887")
-            .arg(format!("-mdfp={dfp}")).arg(&source).arg("-o").arg(&official).output().unwrap();
+        let xc8 = Command::new(&pic_as).current_dir(root()).arg("-mcpu=16F887").arg(format!("-mdfp={dfp}")).arg(&source).arg("-o").arg(&official).output().unwrap();
         let own = pypic(&root(), &["asm", source.to_str().unwrap(), "-o", native.to_str().unwrap()]);
         assert_eq!(own.status.success(), xc8.status.success(), "{field}={value}: XC8: {} PyPIC: {}", text(&xc8), text(&own));
         if xc8.status.success() {
@@ -145,8 +155,7 @@ fn disasm_pic_as_uses_device_pack_configuration_and_vectors() {
     assert_eq!(Image::from_intel_hex(&std::fs::read_to_string(output).unwrap()).unwrap(), image);
     if let (Ok(pic_as), Ok(dfp)) = (std::env::var("PYPIC_TEST_PIC_AS"), std::env::var("PYPIC_TEST_XC8_DFP")) {
         let official = dir.join("official.hex");
-        let result = Command::new(pic_as).current_dir(root()).arg("-mcpu=16F887")
-            .arg(format!("-mdfp={dfp}")).arg(&source).arg("-o").arg(&official).output().unwrap();
+        let result = Command::new(pic_as).current_dir(root()).arg("-mcpu=16F887").arg(format!("-mdfp={dfp}")).arg(&source).arg("-o").arg(&official).output().unwrap();
         assert!(result.status.success(), "{}", text(&result));
         assert_eq!(Image::from_intel_hex(&std::fs::read_to_string(official).unwrap()).unwrap(), image);
     }
@@ -300,12 +309,9 @@ fn asm_reproduces_the_proteus_verified_hex_byte_for_byte() {
     let out = tmp("asm").join("blink_rd0.hex");
     let o = pypic(&root(), &["asm", "examples/asm/gpio/blink_rd0.s", "-Wl,-presetVec=0h,-pintentry=4h", "-o", out.to_str().unwrap()]);
     assert!(o.status.success(), "{}", text(&o));
-    let made = std::fs::read_to_string(&out).unwrap().replace("
-", "
-");
-    let verified = std::fs::read_to_string(root().join("examples/hex/blink_rd0.hex")).unwrap().replace("
-", "
-");
+    // el repositorio guarda los .hex con los saltos del sistema (Git los convierte con * text=auto): se compara sin ellos
+    let made = std::fs::read_to_string(&out).unwrap().replace("\r\n", "\n");
+    let verified = std::fs::read_to_string(root().join("examples/hex/blink_rd0.hex")).unwrap().replace("\r\n", "\n");
     assert_eq!(made, verified);
 }
 
@@ -313,16 +319,24 @@ fn asm_reproduces_the_proteus_verified_hex_byte_for_byte() {
 fn asm_lists_and_reports_errors_with_location() {
     let dir = tmp("asmerr");
     let good = dir.join("g.s");
-    std::fs::write(&good, "PSECT t,class=CODE,delta=2,abs
+    std::fs::write(
+        &good,
+        "PSECT t,class=CODE,delta=2,abs
     movlw 0x2A
-").unwrap();
+",
+    )
+    .unwrap();
     let o = pypic(&root(), &["asm", good.to_str().unwrap(), "-o", dir.join("g.hex").to_str().unwrap(), "--listing"]);
     assert!(o.status.success() && text(&o).contains("0000 302A      movlw 0x2A"), "{}", text(&o));
     let bad = dir.join("b.s");
-    std::fs::write(&bad, "PSECT t,class=CODE,delta=2,abs
+    std::fs::write(
+        &bad,
+        "PSECT t,class=CODE,delta=2,abs
     MOVLB 1
     MOVLW 999
-").unwrap();
+",
+    )
+    .unwrap();
     let o = pypic(&root(), &["asm", bad.to_str().unwrap(), "-o", dir.join("b.hex").to_str().unwrap()]);
     assert_eq!(o.status.code(), Some(1));
     let t = text(&o);
@@ -334,11 +348,15 @@ fn asm_lists_and_reports_errors_with_location() {
 fn asm_takes_the_device_from_mcpu_and_rejects_a_wrong_processor() {
     let dir = tmp("asmcpu");
     let f = dir.join("c.s");
-    std::fs::write(&f, "#include <xc.inc>
+    std::fs::write(
+        &f,
+        "#include <xc.inc>
 CONFIG WDTE = OFF
 PSECT code,abs
     bsf STATUS,STATUS_RP0_POSN
-").unwrap();
+",
+    )
+    .unwrap();
     let hex = dir.join("c.hex");
     let o = pypic(&root(), &["asm", f.to_str().unwrap(), "-mcpu=16F887", "-o", hex.to_str().unwrap()]);
     assert!(o.status.success(), "{}", text(&o));
@@ -353,7 +371,8 @@ PSECT code,abs
 
 // ---- configuracion por nombre (#33) -----------------------------------------------------------------
 
-const BLINK: &str = "from pypic.device import PIC16F887\nfrom pypic.periph.gpio import RD0\nCLOCK_HZ: Const[u32] = 4_000_000\ndef main() -> None:\n    RD0.output()\n    RD0.on()\n    while True:\n        pass\n";
+const BLINK: &str =
+    "from pypic.device import PIC16F887\nfrom pypic.periph.gpio import RD0\nCLOCK_HZ: Const[u32] = 4_000_000\ndef main() -> None:\n    RD0.output()\n    RD0.on()\n    while True:\n        pass\n";
 
 fn hex_word(hex: &str, addr: u32) -> Option<u16> {
     let img = pypic_pic14::Image::from_intel_hex(hex).unwrap();
@@ -410,10 +429,7 @@ fn config_errors_say_what_is_valid_and_write_nothing() {
 fn disasm_rejects_malformed_control_records_with_a_failing_exit_status() {
     let dir = tmp("hexbad");
     // los dos archivos del issue: checksum correcto, pero un EOF con datos y un tipo 04 con direccion
-    for (name, body, needle) in [
-        ("eof_con_datos.hex", ":0100000100FE\n", "registro 01"),
-        ("ext_con_direccion.hex", ":020002040000F8\n:00000001FF\n", "registro 04"),
-    ] {
+    for (name, body, needle) in [("eof_con_datos.hex", ":0100000100FE\n", "registro 01"), ("ext_con_direccion.hex", ":020002040000F8\n:00000001FF\n", "registro 04")] {
         let f = dir.join(name);
         std::fs::write(&f, body).unwrap();
         let o = pypic(&root(), &["disasm", f.to_str().unwrap()]);
@@ -438,7 +454,7 @@ fn clock_declaration_sets_fosc_and_rejects_a_conflicting_config() {
     assert!(text(&o).contains("Crystal 20 MHz (FOSC = HS)"), "{}", text(&o));
     let img = Image::from_intel_hex(&std::fs::read_to_string(&out).unwrap()).unwrap();
     assert_eq!(img.get(0x2007), Some(0x20D2)); // FOSC = HS (010) en lugar del INTOSCIO (100) por defecto: 0x20D4
-    // pedir otro oscilador a la vez es una contradiccion
+                                               // pedir otro oscilador a la vez es una contradiccion
     let o = pypic(&root(), &["build", src.to_str().unwrap(), "-o", out.to_str().unwrap(), "--config", "FOSC=XT"]);
     assert!(!o.status.success() && text(&o).contains("fija FOSC = HS"), "{}", text(&o));
 }
@@ -456,7 +472,8 @@ fn project_dir(name: &str, toml: &str, main: &str) -> PathBuf {
     dir
 }
 
-const BARE_MAIN: &str = "from pypic.periph.gpio import RD0\nfrom pypic.system.time import pause\n\n\ndef main() -> None:\n    RD0.output()\n    while True:\n        RD0.toggle()\n        pause(100)\n";
+const BARE_MAIN: &str =
+    "from pypic.periph.gpio import RD0\nfrom pypic.system.time import pause\n\n\ndef main() -> None:\n    RD0.output()\n    while True:\n        RD0.toggle()\n        pause(100)\n";
 
 #[test]
 fn a_project_builds_with_no_arguments_taking_device_clock_config_and_output_from_the_profile() {
@@ -519,7 +536,14 @@ fn the_target_is_chosen_with_target_or_default_target_and_the_command_line_wins_
     assert_ne!(word("on.hex") & 0x08, 0);
     assert_eq!(word("off.hex") & 0x08, 0);
     // un default_target elige solo
-    std::fs::write(dir.join("pypic.toml"), format!("[project]\nmain = \"main.py\"\ndevices_dir = \"{}\"\ndefault_target = \"b\"\n\n[target.a]\ndevice = \"PIC16F887\"\n[target.b]\ndevice = \"PIC16F887\"\nclock = \"Internal[8 * MHz]\"\n", devices())).unwrap();
+    std::fs::write(
+        dir.join("pypic.toml"),
+        format!(
+            "[project]\nmain = \"main.py\"\ndevices_dir = \"{}\"\ndefault_target = \"b\"\n\n[target.a]\ndevice = \"PIC16F887\"\n[target.b]\ndevice = \"PIC16F887\"\nclock = \"Internal[8 * MHz]\"\n",
+            devices()
+        ),
+    )
+    .unwrap();
     let o = pypic(&dir, &["build"]);
     assert!(o.status.success() && text(&o).contains("Internal 8 MHz"), "{}", text(&o));
 }
@@ -570,7 +594,10 @@ fn init_creates_a_valid_project_that_checks_and_builds_with_no_further_edits() {
     assert!(o.status.success(), "{}", text(&o));
     assert!(text(&o).contains("Proyecto creado") && text(&o).contains("PIC16F887") && text(&o).contains("Internal[4 * MHz]"), "{}", text(&o));
     let toml = std::fs::read_to_string(dir.join("pypic.toml")).unwrap();
-    assert!(toml.contains("name = \"termometro\"") && toml.contains("[target.pic16f887]") && toml.contains("clock = \"Internal[4 * MHz]\"") && toml.contains("output = \"build/termometro.hex\""), "{toml}");
+    assert!(
+        toml.contains("name = \"termometro\"") && toml.contains("[target.pic16f887]") && toml.contains("clock = \"Internal[4 * MHz]\"") && toml.contains("output = \"build/termometro.hex\""),
+        "{toml}"
+    );
     assert!(std::fs::read_to_string(dir.join("main.py")).unwrap().contains("termometro"));
     // el proyecto recien creado se revisa y se compila sin tocar nada
     let o = pypic(&dir, &["project", "check"]);
@@ -660,7 +687,10 @@ fn project_check_json_is_versioned_and_machine_readable() {
     let targets = v["targets"].as_array().unwrap();
     assert_eq!(targets.len(), 2);
     let ok = targets.iter().find(|t| t["name"] == "ok").unwrap();
-    assert_eq!((ok["status"].as_str(), ok["device"].as_str(), ok["clock"]["declaration"].as_str(), ok["config"]["WDTE"].as_str()), (Some("ok"), Some("PIC16F887"), Some("Crystal[8 * MHz]"), Some("ON")));
+    assert_eq!(
+        (ok["status"].as_str(), ok["device"].as_str(), ok["clock"]["declaration"].as_str(), ok["config"]["WDTE"].as_str()),
+        (Some("ok"), Some("PIC16F887"), Some("Crystal[8 * MHz]"), Some("ON"))
+    );
     assert!(ok["clock"]["description"].as_str().unwrap().contains("FOSC = HS") && ok["errors"].as_array().unwrap().is_empty());
     let mal = targets.iter().find(|t| t["name"] == "mal").unwrap();
     assert_eq!(mal["status"], "error");
@@ -710,7 +740,13 @@ fn set_changes_only_the_asked_keys_keeps_comments_and_leaves_a_backup() {
     assert!(t.contains("placa.clock: Internal[4 * MHz] -> Crystal[20 * MHz]") && t.contains("placa.config.WDTE: (nuevo) ON") && t.contains("pypic.toml.bak"), "{t}");
     let after = toml_of(&dir);
     // los comentarios (los de linea y los del final de linea) y el resto del archivo no se tocan
-    for keep in ["# Mi proyecto (este comentario debe sobrevivir)", "name = \"demo\"            # nombre", "[target.placa]            # mi placa", "clock = \"Crystal[20 * MHz]\"   # reloj actual", "output = \"build/demo.hex\""] {
+    for keep in [
+        "# Mi proyecto (este comentario debe sobrevivir)",
+        "name = \"demo\"            # nombre",
+        "[target.placa]            # mi placa",
+        "clock = \"Crystal[20 * MHz]\"   # reloj actual",
+        "output = \"build/demo.hex\"",
+    ] {
         assert!(after.contains(keep), "falta {keep:?} en:\n{after}");
     }
     assert!(after.contains("config = { WDTE = \"ON\", BOREN = 1 }"), "{after}");
@@ -750,13 +786,9 @@ fn set_dry_run_shows_the_changes_and_writes_nothing() {
 fn set_refuses_a_change_that_would_leave_the_profile_invalid_and_writes_nothing() {
     let dir = set_project("set-invalid");
     let before = toml_of(&dir);
-    for (arg, frag) in [
-        ("clock=Internal[20 * MHz]", "PYP2194"),
-        ("clock=Crystal[24 * MHz]", "PYP2194"),
-        ("config.WDTE=QUIZAS", "WDTE"),
-        ("config.NOEXISTE=1", "NOEXISTE"),
-        ("device=PIC99X999", "desconocido"),
-    ] {
+    for (arg, frag) in
+        [("clock=Internal[20 * MHz]", "PYP2194"), ("clock=Crystal[24 * MHz]", "PYP2194"), ("config.WDTE=QUIZAS", "WDTE"), ("config.NOEXISTE=1", "NOEXISTE"), ("device=PIC99X999", "desconocido")]
+    {
         let o = pypic(&dir, &["project", "set", arg]);
         assert_eq!(o.status.code(), Some(1), "{arg}: {}", text(&o));
         assert!(text(&o).contains("no se escribe nada") && text(&o).contains(frag), "{arg}: {}", text(&o));

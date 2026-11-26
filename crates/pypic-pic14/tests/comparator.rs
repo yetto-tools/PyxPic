@@ -103,7 +103,12 @@ fn cvref_reference_follows_equation_8_1_in_both_ranges() {
             let counts = pypic_frontend::comparator::cvref_counts(step, low);
             let want = (counts > 511.0) as u8;
             let lr = if low { "True" } else { "False" };
-            let src = prog("o: uint8 = 9\n", &format!("    global o\n    CVREF.start(step={step}, low_range={lr})\n    CMP1.start(negative=C12IN0, positive=REF_CVREF)\n    if CMP1.out():\n        o = 1\n    else:\n        o = 0\n"));
+            let src = prog(
+                "o: uint8 = 9\n",
+                &format!(
+                    "    global o\n    CVREF.start(step={step}, low_range={lr})\n    CMP1.start(negative=C12IN0, positive=REF_CVREF)\n    if CMP1.out():\n        o = 1\n    else:\n        o = 0\n"
+                ),
+            );
             let (i, s) = both(&src, &[(0, 511)], "o");
             assert_eq!((i, s), (want, want), "paso {step}, rango bajo = {low}: CVREF = {counts:.1} cuentas contra 511");
         }
@@ -145,7 +150,10 @@ fn fixed_reference_is_0_6_volts() {
 fn a_stopped_comparator_reads_its_polarity() {
     // CxON = 0 manda un 0 al XOR: CxOUT = CxPOL (8.2.1 y figura 8-2)
     for (inv, want) in [("False", 0u8), ("True", 1)] {
-        let src = prog("o: uint8 = 9\n", &format!("    global o\n    CMP1.start(negative=C12IN0, positive=REF_PIN, invert={inv})\n    CMP1.stop()\n    if CMP1.out():\n        o = 1\n    else:\n        o = 0\n"));
+        let src = prog(
+            "o: uint8 = 9\n",
+            &format!("    global o\n    CMP1.start(negative=C12IN0, positive=REF_PIN, invert={inv})\n    CMP1.stop()\n    if CMP1.out():\n        o = 1\n    else:\n        o = 0\n"),
+        );
         assert_eq!(both(&src, &[(3, 900), (0, 100)], "o"), (want, want), "invert = {inv}");
     }
 }
@@ -154,7 +162,9 @@ fn a_stopped_comparator_reads_its_polarity() {
 
 #[test]
 fn start_writes_the_documented_registers() {
-    let cases: &[(&str, usize, u8, Option<(usize, u8, u8)>)] = &[
+    /// (llamada, registro CMxCON0, valor esperado, otro registro: direccion, mascara y valor)
+    type Case = (&'static str, usize, u8, Option<(usize, u8, u8)>);
+    let cases: &[Case] = &[
         // (llamada, registro CMxCON0, valor esperado, (otro registro, mascara, valor))
         ("CMP1.start(negative=C12IN2, positive=REF_PIN)", CM1CON0, 0x80 | 2, None),
         ("CMP1.start(negative=C12IN3, positive=REF_PIN, invert=True)", CM1CON0, 0x80 | 0x10 | 3, None),
@@ -184,7 +194,7 @@ fn start_enables_the_analog_inputs_and_clears_the_flag() {
     s.write(0x189, 0); // ANSELH en digital
     s.write(0x85, 0); // TRISA salida
     s.write(0x86, 0); // TRISB salida
-    // la entrada + (RA3/AN3) en 900 y la - (RB3/AN9) en 100: la salida sube a 1 al encender y CxIF se levanta; start lo baja al final
+                      // la entrada + (RA3/AN3) en 900 y la - (RB3/AN9) en 100: la salida sube a 1 al encender y CxIF se levanta; start lo baja al final
     s.adc_inputs[3] = 900;
     s.adc_inputs[9] = 100;
     s.run_until(2_000, |_| false);
