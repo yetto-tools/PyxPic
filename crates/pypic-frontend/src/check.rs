@@ -14,6 +14,7 @@ use crate::bits::{self, BitsOp};
 use crate::clock::{self, ClockKind, ClockSource};
 use crate::comparator::{self, CmpId, CmpRef, CompCall, CompOp, CvrefOp};
 use crate::eeprom::{EepromCall, EepromOp};
+use crate::i2c::{self, I2cCall, I2cOp, I2cStart};
 use crate::pwm::{self, PwmCall, PwmId, PwmOp, PwmTiming};
 use crate::regs::{RegCall, RegOp, BANK_BITS, WRITE_PROTECTED};
 use crate::target::RegInfo;
@@ -166,6 +167,8 @@ pub struct Program {
     pub pwm_calls: BTreeMap<u32, PwmCall>,
     /// Llamadas a metodos de `pypic.periph.eeprom`, por id de expresion.
     pub eeprom_calls: BTreeMap<u32, EepromCall>,
+    /// Llamadas a metodos de `pypic.periph.i2c`, por id de expresion.
+    pub i2c_calls: BTreeMap<u32, I2cCall>,
     /// Llamadas a metodos de `pypic.periph.comparator` y `pypic.periph.vref`, por id de expresion.
     pub comp_calls: BTreeMap<u32, CompCall>,
     /// Niveles de la pila de hardware en el peor caso: (contexto principal, interrupcion), con la llamada de arranque y la entrada a la interrupcion incluidas.
@@ -203,6 +206,8 @@ pub struct Checked {
     pub pwm_calls: BTreeMap<u32, PwmCall>,
     /// Llamadas a metodos de `pypic.periph.eeprom`, por id de expresion.
     pub eeprom_calls: BTreeMap<u32, EepromCall>,
+    /// Llamadas a metodos de `pypic.periph.i2c`, por id de expresion.
+    pub i2c_calls: BTreeMap<u32, I2cCall>,
     pub comp_calls: BTreeMap<u32, CompCall>,
     pub stack_use: Option<(u32, u32)>,
     pub uart_calls: BTreeMap<u32, UartCall>,
@@ -257,6 +262,10 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         pwm_names: HashSet::new(),
         eeprom_name: false,
         eeprom_calls: BTreeMap::new(),
+        i2c_name: false,
+        i2c_calls: BTreeMap::new(),
+        i2c_pending: Vec::new(),
+        i2c_needs: None,
         comp_names: HashSet::new(),
         comp_consts: HashSet::new(),
         cvref_name: false,
@@ -312,6 +321,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         adc_config: c.adc_config,
         pwm_calls: c.pwm_calls,
         eeprom_calls: c.eeprom_calls,
+        i2c_calls: c.i2c_calls,
         comp_calls: c.comp_calls,
         stack_use: c.stack_use,
         uart_calls: c.uart_calls,
@@ -404,6 +414,10 @@ struct Checker<'a> {
     /// EEPROM de datos: importada y sus llamadas.
     eeprom_name: bool,
     eeprom_calls: BTreeMap<u32, EepromCall>,
+    i2c_name: bool,
+    i2c_calls: BTreeMap<u32, I2cCall>,
+    i2c_pending: Vec<I2cPending>,
+    i2c_needs: Option<Span>,
     /// Comparadores (`CMP1`, `CMP2`), sus constantes (`C12IN0`.., `REF_PIN`..), CVREF, las llamadas y si algun comparador pide CVREF.
     comp_names: HashSet<String>,
     comp_consts: HashSet<String>,
@@ -499,6 +513,14 @@ struct AdcStart {
     func: Option<usize>,
 }
 
+/// Una llamada a `I2C.start(freq=...)` por resolver (necesita el reloj del sistema).
+struct I2cPending {
+    id: u32,
+    span: Span,
+    freq: u32,
+    func: Option<usize>,
+}
+
 /// Una llamada a `UART.start(baud=...)` por resolver (necesita el reloj del sistema).
 struct UartPending {
     id: u32,
@@ -564,6 +586,7 @@ impl<'a> Checker<'a> {
         self.check_comparator_usage();
         self.check_pwm_usage();
         self.check_uart_usage();
+        self.check_i2c_usage();
         self.check_time_usage();
         self.check_asm_usage();
     }
@@ -747,6 +770,22 @@ impl<'a> Checker<'a> {
                     self.cvref_name = true;
                 } else {
                     self.d.error("PYP2220", n.span, format!("'pypic.periph.vref' no exporta '{}' (exporta: CVREF)", n.name));
+                }
+            }
+            return;
+        }
+        if module == "pypic.periph.i2c" {
+            for n in names {
+                if n.name == "I2C" {
+                    if let Some(set) = &self.target.peripherals {
+                        if !set.contains("MSSP") {
+                            self.d.error("PYP2224", n.span, format!("'{}' no tiene I2C: el dispositivo no trae el modulo MSSP", self.target.name));
+                            continue;
+                        }
+                    }
+                    self.i2c_name = true;
+                } else {
+                    self.d.error("PYP2224", n.span, format!("'pypic.periph.i2c' no exporta '{}' (exporta: I2C)", n.name));
                 }
             }
             return;
@@ -2276,6 +2315,117 @@ impl<'a> Checker<'a> {
         }
     }
 
+    // ------------------------------------------------------ I2C maestro por hardware (pypic.periph.i2c)
+    fn i2c_method(&mut self, e: &Expr, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
+        if method == "start" {
+            if !args.is_empty() {
+                self.d.error("PYP2226", args[0].span, "I2C.start se escribe con un argumento con nombre: I2C.start(freq=100000)");
+            }
+            let mut freq = None;
+            for k in kwargs {
+                self.expr(&k.value);
+                if k.name != "freq" {
+                    self.d.error("PYP2226", k.name_span, format!("I2C.start no tiene el argumento '{}' (admite: freq)", k.name));
+                    continue;
+                }
+                match self.konst(&k.value) {
+                    Some(f) if (1_000..=1_000_000).contains(&f) && self.ty(&k.value) != Type::Bool => freq = Some(f as u32),
+                    _ => self.d.error("PYP2226", k.value.span, "I2C.start: freq es una constante de 1000 a 1000000 (Hz): se calcula al compilar"),
+                }
+            }
+            let Some(freq) = freq else {
+                if kwargs.iter().all(|k| k.name != "freq") {
+                    self.d.error("PYP2226", e.span, "I2C.start necesita freq=...: I2C.start(freq=100000)");
+                }
+                return self.set(e, Type::Void, None);
+            };
+            self.note_claims_of("SSPEN", &["SCL", "SDA"], e.span);
+            self.i2c_pending.push(I2cPending { id: e.id, span: e.span, freq, func: self.cur });
+            return self.set(e, Type::Void, None);
+        }
+        if let Some(k) = kwargs.first() {
+            self.d.error("PYP2226", k.name_span, format!("I2C.{method} no acepta argumentos con nombre"));
+        }
+        let (op, arity, ret) = match method {
+            "begin" => (I2cOp::Begin, 0, Type::Void),
+            "restart" => (I2cOp::Restart, 0, Type::Void),
+            "end" => (I2cOp::End, 0, Type::Void),
+            "write" => (I2cOp::Write, 1, Type::Bool),
+            other => {
+                self.d.error("PYP2227", e.span, format!("I2C no tiene el metodo '{other}' (disponibles: start, begin, restart, end, write)"));
+                for a in args {
+                    self.expr(a);
+                }
+                return self.set(e, Type::Error, None);
+            }
+        };
+        if args.len() != arity {
+            let want = if arity == 1 { "el byte a enviar (la direccion con R/W en el bit 0, o un dato)" } else { "ningun argumento" };
+            self.d.error("PYP2055", e.span, format!("'I2C.{method}' recibe {want}"));
+            for a in args {
+                self.expr(a);
+            }
+            return self.set(e, Type::Error, None);
+        }
+        for a in args {
+            self.expect(a, U8, Some("I2C.write envia un uint8: convierte con uint8(...)"));
+        }
+        self.i2c_needs.get_or_insert(e.span);
+        self.i2c_calls.insert(e.id, I2cCall { op });
+        self.set(e, ret, None)
+    }
+
+    /// I2C usado sin un `I2C.start(freq=...)` alcanzable, una sola velocidad y SSPADD resuelto con el reloj.
+    fn check_i2c_usage(&mut self) {
+        let pend = std::mem::take(&mut self.i2c_pending);
+        if let Some(sp) = self.i2c_needs.take() {
+            let reach = self.entry_reachable();
+            if !pend.iter().any(|p| p.func.is_none_or(|f| reach.contains(&f))) {
+                let why = if pend.is_empty() { "nunca se llama a I2C.start(freq=...)" } else { "las llamadas a I2C.start() estan en funciones que ni main ni @init_device pueden llamar" };
+                self.d.error("PYP2225", sp, format!("el I2C se usa pero {why}: inicializalo en main o en una funcion que main llame (se comprueba que exista, no el orden)"));
+            }
+        }
+        if let Some(first) = pend.first() {
+            if let Some(other) = pend.iter().find(|p| p.freq != first.freq) {
+                self.d.error("PYP2228", other.span, format!("I2C.start pide {} Hz y otra llamada {} Hz: el MSSP tiene un solo generador; repite la misma velocidad", other.freq, first.freq));
+            }
+        }
+        for p in pend {
+            let Some(hz) = self.effective_clock(p.span, "I2C.start") else { continue };
+            let Some(n) = i2c::solve(hz, p.freq) else {
+                self.d.error(
+                    "PYP2228",
+                    p.span,
+                    format!(
+                        "{} Hz de SCL no se pueden generar con un reloj de {hz} Hz: SCL = FOSC / (4 * (SSPADD + 1)) con SSPADD de {} a {}, o sea de {:.0} a {:.0} Hz",
+                        p.freq,
+                        i2c::SSPADD_MIN,
+                        i2c::SSPADD_MAX,
+                        hz as f64 / (4.0 * (i2c::SSPADD_MAX as f64 + 1.0)),
+                        hz as f64 / (4.0 * (i2c::SSPADD_MIN as f64 + 1.0))
+                    ),
+                );
+                continue;
+            };
+            let st = I2cStart { freq: p.freq, sspadd: Some(n) };
+            let got = st.achieved(hz);
+            if got < p.freq as f64 * 0.8 {
+                self.d.warning("PYP3019", p.span, format!("a {hz} Hz el MSSP da SCL = {got:.0} Hz para los {} Hz pedidos (SSPADD = {n}): un reloj distinto se acerca mas", p.freq));
+            }
+            self.i2c_calls.insert(p.id, I2cCall { op: I2cOp::Start(st) });
+        }
+    }
+
+    /// Como `note_claims`, pero solo las funciones `only` del bit (el MSSP comparte el bit SSPEN entre SPI e I2C).
+    fn note_claims_of(&mut self, bit: &str, only: &[&str], span: Span) {
+        let Some(list) = self.target.pin_claims.as_ref().and_then(|m| m.get(bit)).cloned() else { return };
+        for c in list.iter().filter(|c| only.contains(&c.function.as_str())) {
+            for pin in &c.pins {
+                self.claims.push(Claim { pin: pin.clone(), function: c.function.clone(), peripheral: c.peripheral.clone(), span, via_timer: false });
+            }
+        }
+    }
+
     // ------------------------------------------------------ EEPROM de datos (pypic.periph.eeprom)
     fn eeprom_method(&mut self, e: &Expr, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
         if let Some(k) = kwargs.first() {
@@ -2513,6 +2663,9 @@ impl<'a> Checker<'a> {
         }
         if obj == "EEPROM" && self.eeprom_name {
             return self.eeprom_method(e, method, args, kwargs);
+        }
+        if obj == "I2C" && self.i2c_name {
+            return self.i2c_method(e, method, args, kwargs);
         }
         if let Some(id) = CmpId::from_name(obj).filter(|_| self.comp_names.contains(obj)) {
             return self.cmp_method(e, id, method, args, kwargs);
@@ -3565,6 +3718,8 @@ impl<'a> Checker<'a> {
             self.d.error("PYP2175", e.span, "'ADC' es el convertidor: usa sus metodos (ADC.start(), ADC.read(AN0), ADC.result()...)");
         } else if self.adc_consts.contains(n) {
             self.d.error("PYP2175", e.span, format!("'{n}' es una constante del ADC: solo se usa como argumento de ADC.select/read o ADC.start(clock=...)"));
+        } else if self.i2c_name && n == "I2C" {
+            self.d.error("PYP2229", e.span, "'I2C' es el bus maestro del MSSP: usa sus metodos (I2C.start(freq=100000), I2C.begin(), I2C.write(b), I2C.end()...)");
         } else if self.eeprom_name && n == "EEPROM" {
             self.d.error("PYP2213", e.span, "'EEPROM' es la memoria de datos: usa sus metodos (EEPROM.read(a), EEPROM.write(a, v), EEPROM.busy()...)");
         } else if self.comp_names.contains(n) {
@@ -4084,6 +4239,7 @@ const IMPLEMENTED_MODULES: &[&str] = &[
     "pypic.periph.adc",
     "pypic.periph.pwm",
     "pypic.periph.eeprom",
+    "pypic.periph.i2c",
     "pypic.periph.comparator",
     "pypic.periph.vref",
     "pypic.periph.gpio",

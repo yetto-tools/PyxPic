@@ -10,7 +10,7 @@ use std::fmt;
 
 use pypic_frontend::timer::{GateSource, TimerSource};
 use pypic_ir::ir::{
-    AdcCall, AdcOp, BinOp, BitsOp, CmpOp, CmpRef, CompCall, CompOp, CvrefOp, DelayUnit, EepromCall, EepromOp, Function, Module, Operand, Pin, Place, PwmCall, PwmOp, RegCall, RegOp, Terminator,
+    AdcCall, AdcOp, BinOp, BitsOp, CmpOp, CmpRef, CompCall, CompOp, CvrefOp, DelayUnit, EepromCall, EepromOp, Function, I2cCall, I2cOp, Module, Operand, Pin, Place, PwmCall, PwmOp, RegCall, RegOp, Terminator,
     TimerCall, TimerId, TimerOp, TimerStart, Type, UartCall, UartOp, UnaryOp,
 };
 
@@ -1002,6 +1002,7 @@ impl<'a> Gen<'a> {
             I::Comp { call, dst } => self.comp(call, *dst),
             I::Pwm { call, hi, dc } => self.pwm(call, hi.as_ref(), dc.as_ref()),
             I::Eeprom { call, dst, addr, val } => self.eeprom(call, *dst, addr.as_ref(), val.as_ref()),
+            I::I2c { call, dst, arg } => self.i2c(call, *dst, arg.as_ref()),
             I::Uart { call, dst, arg } => self.uart(call, *dst, arg.as_ref()),
             I::RomGet { dst, rom, index } => self.rom_get(*dst, *rom, index),
             I::ArrGet { dst, arr, index } => self.arr_get(*dst, *arr, index),
@@ -1984,6 +1985,64 @@ impl<'a> Gen<'a> {
                         self.settle(call.settle_ns())?;
                     }
                     CvrefOp::Stop => self.banked(vrcon, |g, f| g.asm.i(Clrf(f))),
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // ---- I2C maestro (pypic.periph.i2c, docs/sdk-i2c.md): registros y bits del Device Pack por nombre ----
+    /// Espera (con el banco de `name` seleccionado) a que el bit `name` baje: lo baja el hardware al terminar la operacion.
+    fn i2c_wait_clear(&mut self, name: &str) -> Result<(), CodegenError> {
+        let (addr, bit) = self.bit_loc(name)?;
+        self.banked(addr, |g, f| {
+            let top = g.asm.label("i2c.espera");
+            g.asm.place(top);
+            g.asm.i(Btfsc(f, bit));
+            g.asm.goto(top);
+        });
+        Ok(())
+    }
+
+    fn i2c(&mut self, call: &I2cCall, dst: Option<Place>, arg: Option<&Operand>) -> Result<(), CodegenError> {
+        match call.op {
+            I2cOp::Start(st) => {
+                let sspadd = st.sspadd.expect("el frontend resuelve SSPADD");
+                let hz = self.clock_hz.ok_or_else(|| CodegenError::Device("I2C.start necesita el reloj: declara 'CLOCK: Internal[4 * MHz]'".into()))?;
+                // 13.4: SSPADD fija SCL; SMP (SSPSTAT<7>) activa el control de pendiente solo a 400 kHz
+                self.write_banked("SSPADD", sspadd)?;
+                self.write_banked("SSPSTAT", if st.slew_control(hz) { 0 } else { 1u8 << self.bit_pos("SMP")? })?;
+                // SCL y SDA se dejan como entradas: el modulo maneja los pines
+                self.bit_op("TRISC3", true)?;
+                self.bit_op("TRISC4", true)?;
+                // SSPEN = 1 y SSPM = 1000: maestro I2C (se hace al final, con todo lo demas ya configurado)
+                self.write_banked("SSPCON", (1u8 << self.bit_pos("SSPEN")?) | (1u8 << self.bit_pos("SSPM3")?))?;
+            }
+            I2cOp::Begin | I2cOp::Restart | I2cOp::End => {
+                let bit = match call.op {
+                    I2cOp::Begin => "SEN",
+                    I2cOp::Restart => "RSEN",
+                    _ => "PEN",
+                };
+                self.bit_op(bit, true)?;
+                self.i2c_wait_clear(bit)?;
+            }
+            I2cOp::Write => {
+                let b = self.bytes(arg.expect("Write lleva un byte"))?[0];
+                let sspbuf = self.reg_bank0("SSPBUF")?;
+                self.ld(b);
+                self.asm.i(Movwf(sspbuf));
+                // R/W vale 1 mientras sale el byte y se lee su ACK (p.176)
+                self.i2c_wait_clear("R_W")?;
+                if let Some(dst) = dst {
+                    let d = self.regs(dst)?[0];
+                    let (addr, ackstat) = self.bit_loc("ACKSTAT")?;
+                    self.asm.i(Clrf(d));
+                    self.banked(addr, |g, f| g.asm.i(Movf(f, W)));
+                    self.asm.i(Andlw(1 << ackstat));
+                    // ACKSTAT = 0: el esclavo respondio
+                    self.asm.i(Btfsc(STATUS, BIT_Z));
+                    self.asm.i(Incf(d, F));
                 }
             }
         }

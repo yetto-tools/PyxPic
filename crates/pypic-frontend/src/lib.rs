@@ -13,6 +13,7 @@ pub mod clock;
 pub mod comparator;
 pub mod diag;
 pub mod eeprom;
+pub mod i2c;
 pub mod lexer;
 pub mod parser;
 pub mod pwm;
@@ -31,6 +32,7 @@ pub use clock::{ClockKind, ClockSource};
 pub use comparator::{CmpId, CmpRef, CompCall, CompOp, CvrefOp};
 pub use diag::{Diagnostic, Diagnostics, Severity, Span};
 pub use eeprom::{EepromCall, EepromOp};
+pub use i2c::{I2cCall, I2cOp, I2cStart};
 pub use pwm::{PwmCall, PwmId, PwmOp, PwmTiming};
 pub use regs::{RegCall, RegOp};
 pub use runtime::{pow2_exp, routine_for, RtKind};
@@ -174,6 +176,7 @@ fn analyze_parsed(source: &str, mut module: ast::Module, mut d: Diagnostics, tar
         adc_config: c.adc_config,
         pwm_calls: c.pwm_calls,
         eeprom_calls: c.eeprom_calls,
+        i2c_calls: c.i2c_calls,
         comp_calls: c.comp_calls,
         stack_use: c.stack_use,
         uart_calls: c.uart_calls,

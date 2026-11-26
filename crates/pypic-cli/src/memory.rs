@@ -92,6 +92,7 @@ pub fn report(i: &Inputs) -> Value {
         (!p.adc_calls.is_empty(), "ADC"),
         (!p.uart_calls.is_empty(), "UART"),
         (!p.eeprom_calls.is_empty(), "EEPROM"),
+        (!p.i2c_calls.is_empty(), "I2C"),
         (!p.pwm_calls.is_empty(), "PWM"),
         (!p.comp_calls.is_empty(), "comparadores/CVREF"),
         (!p.timer_calls.is_empty(), "temporizadores"),

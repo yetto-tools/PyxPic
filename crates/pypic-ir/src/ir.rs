@@ -6,7 +6,7 @@
 
 pub use pypic_frontend::ast::{BinOp, CmpOp};
 pub use pypic_frontend::{
-    AdcCall, AdcOp, BitsOp, CmpId, CmpRef, CompCall, CompOp, CvrefOp, DelayUnit, EepromCall, EepromOp, PwmCall, PwmId, PwmOp, PwmTiming, RegCall, RegOp, TimerCall, TimerId, TimerOp, TimerStart, Type,
+    AdcCall, AdcOp, BitsOp, CmpId, CmpRef, CompCall, CompOp, CvrefOp, DelayUnit, EepromCall, EepromOp, I2cCall, I2cOp, PwmCall, PwmId, PwmOp, PwmTiming, RegCall, RegOp, TimerCall, TimerId, TimerOp, TimerStart, Type,
     UartCall, UartOp,
 };
 
@@ -151,6 +151,13 @@ pub enum Inst {
         dst: Option<Place>,
         addr: Option<Operand>,
         val: Option<Operand>,
+    },
+    /// Operacion del I2C maestro (`I2C.begin()`, `I2C.write(b)`...). `arg` es el byte de `Write` (u8); `dst` recibe su ACK (bool, `true` si el
+    /// esclavo respondio). Todas esperan a que el MSSP termine, asi que el bus queda en reposo al volver.
+    I2c {
+        call: I2cCall,
+        dst: Option<Place>,
+        arg: Option<Operand>,
     },
     /// Operacion de un comparador (`CMP1.start(...)`, `CMP1.out()`, `CMP1.stop()`) o de CVREF (`CVREF.start(step=8)`...). `dst` recibe el
     /// resultado de `Out` (bool).

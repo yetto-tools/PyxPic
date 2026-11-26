@@ -289,6 +289,11 @@ impl<'a> FnLower<'a> {
                 let val = matches!(call.op, E::Write | E::StartWrite).then(|| self.value(&args[1]));
                 self.emit(Inst::Eeprom { call, dst: if reads { dst } else { None }, addr, val });
             }
+            ExprKind::MethodCall { args, .. } if self.prog.i2c_calls.contains_key(&e.id) => {
+                let call = self.prog.i2c_calls[&e.id];
+                let arg = (call.op == pypic_frontend::I2cOp::Write).then(|| self.value(&args[0]));
+                self.emit(Inst::I2c { call, dst, arg });
+            }
             ExprKind::MethodCall { args, .. } if self.prog.pwm_calls.contains_key(&e.id) => {
                 let call = self.prog.pwm_calls[&e.id];
                 let u8_ty = Type::Int { bits: 8, signed: false };
