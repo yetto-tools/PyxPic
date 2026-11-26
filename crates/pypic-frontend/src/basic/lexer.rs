@@ -23,6 +23,8 @@ pub enum T {
     Pipe,
     Caret,
     Tilde,
+    /// `#b0` en SERTXD: el valor en decimal.
+    Hash,
     Shl,
     Shr,
     Eq,
@@ -147,6 +149,7 @@ pub fn lex(src: &str, d: &mut Diagnostics) -> Vec<Token> {
                     (b'|', _) => (T::Pipe, 1),
                     (b'^', _) => (T::Caret, 1),
                     (b'~', _) => (T::Tilde, 1),
+                    (b'#', _) => (T::Hash, 1),
                     (b'=', _) => (T::Eq, 1),
                     (b'<', _) => (T::Lt, 1),
                     (b'>', _) => (T::Gt, 1),

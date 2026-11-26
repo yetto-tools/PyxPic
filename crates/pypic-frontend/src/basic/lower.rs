@@ -19,6 +19,25 @@ use crate::diag::{Diagnostics, Span};
 /// Metodos del SDK que devuelven un booleano: se usan directamente como condicion (`IF CMP1.out() THEN`, `IF UART.rx_ready() THEN`).
 const BOOL_METHODS: &[&str] = &["out", "expired", "done", "busy", "failed", "rx_ready", "tx_ready", "sending", "overrun", "framing_error"];
 
+/// El modulo del SDK que exporta un nombre (`ADC`, `AN0`, `REF_PIN`...) y su escritura canonica (el SDK usa mayusculas). BASIC los importa solo,
+/// sin `FROM ... IMPORT`, cuando el programa los usa.
+fn sdk_lookup(name: &str) -> Option<(&'static str, String)> {
+    let u = name.to_ascii_uppercase();
+    let module = match u.as_str() {
+        "ADC" | "FOSC_2" | "FOSC_8" | "FOSC_32" | "FRC" => "pypic.periph.adc",
+        n if crate::adc::channel(n).is_some() => "pypic.periph.adc",
+        "UART" => "pypic.periph.uart",
+        "EEPROM" => "pypic.periph.eeprom",
+        "PWM1" | "PWM2" => "pypic.periph.pwm",
+        "CMP1" | "CMP2" | "C12IN0" | "C12IN1" | "C12IN2" | "C12IN3" | "REF_PIN" | "REF_CVREF" | "REF_FIXED" => "pypic.periph.comparator",
+        "CVREF" => "pypic.periph.vref",
+        "TMR0" | "TMR1" | "TMR2" => "pypic.periph.timer",
+        n if crate::timer::CONSTANTS.iter().any(|(c, _)| *c == n) => "pypic.periph.timer",
+        _ => return None,
+    };
+    Some((module, u))
+}
+
 /// Objetos del SDK: se aceptan sin distinguir mayusculas y se escriben como el SDK los llama.
 const SDK_OBJECTS: &[&str] = &["ADC", "UART", "EEPROM", "PWM1", "PWM2", "CMP1", "CMP2", "CVREF", "TMR0", "TMR1", "TMR2"];
 
@@ -59,8 +78,16 @@ struct Lw<'a> {
     pin_out: BTreeMap<(char, u8), bool>,
     uses_pause: bool,
     uses_pause_us: bool,
+    /// Nombres del SDK que el programa usa sin importarlos (modulo -> nombres) y los que importo a mano (en minusculas).
+    auto: BTreeMap<&'static str, BTreeSet<String>>,
+    explicit_names: std::collections::HashSet<String>,
+    explicit_adc_start: bool,
+    explicit_uart_start: bool,
+    uses_uart: bool,
     uses_adc: bool,
-    adc_channels: BTreeSet<u8>,
+    /// Periodo (PR2) pedido con PWMOUT: los dos PWM comparten Timer2 y por eso el periodo.
+    pwm_period: Option<(i128, Span)>,
+    pwm_used: BTreeSet<&'static str>,
 }
 
 pub fn lower(stmts: &[BStmt], d: &mut Diagnostics) -> Module {
@@ -78,8 +105,14 @@ pub fn lower(stmts: &[BStmt], d: &mut Diagnostics) -> Module {
         pin_out: BTreeMap::new(),
         uses_pause: false,
         uses_pause_us: false,
+        auto: BTreeMap::new(),
+        explicit_names: Default::default(),
+        explicit_adc_start: false,
+        explicit_uart_start: false,
+        uses_uart: false,
         uses_adc: false,
-        adc_channels: BTreeSet::new(),
+        pwm_period: None,
+        pwm_used: BTreeSet::new(),
     };
     lw.run(stmts)
 }
@@ -122,6 +155,15 @@ impl<'a> Lw<'a> {
     fn method(&mut self, span: Span, obj: &str, method: &str, args: Vec<Expr>, kwargs: Vec<Kwarg>) -> Expr {
         self.ex(span, ExprKind::MethodCall { obj: obj.to_string(), obj_span: span, attr: None, method: method.to_string(), args, kwargs })
     }
+    /// Un nombre del SDK usado sin `FROM ... IMPORT`: se anota para importarlo y se devuelve su escritura canonica.
+    fn note_sdk(&mut self, name: &str) -> Option<String> {
+        let (module, canon) = sdk_lookup(name)?;
+        if !self.explicit_names.contains(&name.to_ascii_lowercase()) {
+            self.auto.entry(module).or_default().insert(canon.clone());
+        }
+        Some(canon)
+    }
+
     fn pin_ident(p: (char, u8)) -> String {
         format!("R{}{}", p.0, p.1)
     }
@@ -207,7 +249,8 @@ impl<'a> Lw<'a> {
                 Res::Other => None,
             },
             BExprKind::Pin(..) => Some(8),
-            BExprKind::Neg(x) | BExprKind::Not(x) => self.width(x),
+            BExprKind::Str(_) => None,
+            BExprKind::Neg(x) | BExprKind::Not(x) | BExprKind::Dec(x) => self.width(x),
             BExprKind::Bin(op, l, r) => {
                 let wl = self.width(l);
                 if matches!(op, BOp::Shl | BOp::Shr) {
@@ -236,7 +279,10 @@ impl<'a> Lw<'a> {
     fn arg(&mut self, a: &BArg) -> Option<Expr> {
         match &a.value.kind {
             BExprKind::Int(v) => Some(self.int(a.value.span, *v)),
-            BExprKind::Name(n) if matches!(self.resolve(n, a.value.span), Res::Other) => Some(self.name_expr(a.value.span, n)),
+            BExprKind::Name(n) if matches!(self.resolve(n, a.value.span), Res::Other) => {
+                let canon = self.note_sdk(n).unwrap_or_else(|| n.clone());
+                Some(self.name_expr(a.value.span, &canon))
+            }
             _ => {
                 let w = self.width(&a.value).unwrap_or(8);
                 self.int_expr(&a.value, w)
@@ -252,7 +298,10 @@ impl<'a> Lw<'a> {
                 self.pin_out.entry((p, b)).or_insert(false);
                 Self::pin_ident((p, b))
             }
-            _ => self.sdk_names.get(&obj.to_ascii_lowercase()).cloned().unwrap_or_else(|| obj.clone()),
+            _ => match self.note_sdk(obj) {
+                Some(c) => c,
+                None => self.sdk_names.get(&obj.to_ascii_lowercase()).cloned().unwrap_or_else(|| obj.clone()),
+            },
         };
         let (mut pos, mut kw) = (Vec::new(), Vec::new());
         for a in args {
@@ -281,9 +330,16 @@ impl<'a> Lw<'a> {
                 }
                 Res::Const(v) => Some(self.int(sp, v)),
                 Res::Pin(p, b) => self.pin_read(sp, (p, b), t),
-                Res::Other => Some(self.name_expr(sp, n)),
+                Res::Other => {
+                    let canon = self.note_sdk(n).unwrap_or_else(|| n.clone());
+                    Some(self.name_expr(sp, &canon))
+                }
             },
             BExprKind::Pin(p, b) => self.pin_read(sp, (*p, *b), t),
+            BExprKind::Str(_) | BExprKind::Dec(_) => {
+                self.err("PYB0090", sp, "un texto o un #valor solo se usa en SERTXD");
+                None
+            }
             BExprKind::Neg(_) => {
                 self.err("PYB0042", sp, "los valores de PyPIC BASIC no tienen signo: no hay numeros negativos (b0 = 255 es el ultimo valor de un BYTE)");
                 None
@@ -655,6 +711,11 @@ impl<'a> Lw<'a> {
         if obj.is_some() {
             let call = BExpr { span: sp, kind: BExprKind::Call { obj: obj.map(str::to_string), name: name.to_string(), args: args.to_vec() } };
             if let Some((o, m, a, k)) = self.call_parts(&call) {
+                match (o.as_str(), m.as_str()) {
+                    ("ADC", "start") => self.explicit_adc_start = true,
+                    ("UART", "start") => self.explicit_uart_start = true,
+                    _ => {}
+                }
                 let c = self.method(sp, &o, &m, a, k);
                 out.push(self.st(sp, StmtKind::Expr(c)));
             }
@@ -731,8 +792,9 @@ impl<'a> Lw<'a> {
                 }
                 self.uses_adc = true;
                 cx.assigned.insert(v.name.clone());
-                self.adc_channels.insert(ch as u8);
-                let chan = self.name_expr(args[0].value.span, &format!("AN{ch}"));
+                self.note_sdk("ADC");
+                let chan_name = self.note_sdk(&format!("AN{ch}")).unwrap_or_default();
+                let chan = self.name_expr(args[0].value.span, &chan_name);
                 let read = self.method(sp, "ADC", "read", vec![chan], Vec::new());
                 let value = if upper == "READADC10" {
                     read
@@ -750,8 +812,166 @@ impl<'a> Lw<'a> {
                     out.push(self.st(sp, StmtKind::Assign { target: Ident { name: v.name.clone(), span: args[1].value.span }, value }));
                 }
             }
+            "READ" | "WRITE" => {
+                if !want(self, 2) {
+                    return;
+                }
+                let Some(addr) = self.assigned_value(&args[0].value, 8, "una direccion de EEPROM (0 a 255)") else { return };
+                self.note_sdk("EEPROM");
+                if upper == "WRITE" {
+                    let Some(val) = self.assigned_value(&args[1].value, 8, "un BYTE") else { return };
+                    let c = self.method(sp, "EEPROM", "write", vec![addr, val], Vec::new());
+                    out.push(self.st(sp, StmtKind::Expr(c)));
+                } else {
+                    let BExprKind::Name(vn) = &args[1].value.kind else {
+                        self.err("PYB0063", args[1].value.span, "READ guarda el byte leido en una variable BYTE: READ 0, b0");
+                        return;
+                    };
+                    let Some(v) = self.target_var(vn, args[1].value.span) else { return };
+                    if v.bits != 8 || v.array.is_some() {
+                        self.err("PYB0064", args[1].value.span, "READ lee un byte: guardalo en una variable BYTE (b0, o DIM x AS BYTE)");
+                        return;
+                    }
+                    cx.assigned.insert(v.name.clone());
+                    let c = self.method(sp, "EEPROM", "read", vec![addr], Vec::new());
+                    out.push(self.st(sp, StmtKind::Assign { target: Ident { name: v.name.clone(), span: args[1].value.span }, value: c }));
+                }
+            }
+            "PWMOUT" => {
+                if !want(self, 3) {
+                    return;
+                }
+                // el PWM sale por el pin de su modulo CCP: C.2 es PWM1 y C.1 es PWM2
+                let module = match self.pin_of(&args[0].value) {
+                    Some(('C', 2)) => "PWM1",
+                    Some(('C', 1)) => "PWM2",
+                    _ => {
+                        self.err("PYB0065", args[0].value.span, "PWMOUT necesita el pin de un modulo PWM: C.2 (PWM1) o C.1 (PWM2)");
+                        return;
+                    }
+                };
+                let Some(period) = self.const_eval(&args[1].value).filter(|p| (0..=255).contains(p)) else {
+                    self.err("PYB0066", args[1].value.span, "el periodo de PWMOUT es una constante de 0 a 255 (el valor de PR2: periodo = (PR2 + 1) ciclos de instruccion)");
+                    return;
+                };
+                if let Some((old, _)) = self.pwm_period.filter(|(old, _)| *old != period) {
+                    self.err("PYB0067", args[1].value.span, format!("los dos PWM comparten Timer2 y por eso el periodo: antes se uso {old} y aqui {period}"));
+                    return;
+                }
+                self.pwm_period = Some((period, args[1].value.span));
+                self.pwm_used.insert(module);
+                self.note_sdk(module);
+                let Some(duty) = self.assigned_value(&args[2].value, 16, "el ciclo de trabajo de 10 bits (0 a 1023)") else { return };
+                let c = self.method(sp, module, "duty", vec![duty], Vec::new());
+                out.push(self.st(sp, StmtKind::Expr(c)));
+            }
+            "SERRXD" => {
+                if !want(self, 1) {
+                    return;
+                }
+                let BExprKind::Name(vn) = &args[0].value.kind else {
+                    self.err("PYB0063", args[0].value.span, "SERRXD guarda el byte recibido en una variable BYTE: SERRXD(b0)");
+                    return;
+                };
+                let Some(v) = self.target_var(vn, args[0].value.span) else { return };
+                if v.bits != 8 || v.array.is_some() {
+                    self.err("PYB0064", args[0].value.span, "SERRXD recibe un byte: guardalo en una variable BYTE");
+                    return;
+                }
+                self.uses_uart = true;
+                self.note_sdk("UART");
+                cx.assigned.insert(v.name.clone());
+                let c = self.method(sp, "UART", "read", Vec::new(), Vec::new()); // read espera el byte; recv solo lo toma si ya llego
+                out.push(self.st(sp, StmtKind::Assign { target: Ident { name: v.name.clone(), span: args[0].value.span }, value: c }));
+            }
+            "SERTXD" => self.sertxd(sp, args, out),
             _ => unreachable!("is_command ya filtro el nombre"),
         }
+    }
+
+    /// `SERTXD("x = ", #b0, CR, LF, b1)`: texto, `#valor` en decimal, constantes (CR, LF, TAB o un byte) y un valor suelto, que se envia tal cual.
+    /// Las partes de texto seguidas forman una sola llamada a `UART.write_text`; un valor que no es constante es un `UART.write`.
+    fn sertxd(&mut self, sp: Span, args: &[BArg], out: &mut Vec<Stmt>) {
+        self.uses_uart = true;
+        self.note_sdk("UART");
+        let bs = char::from(92u8);
+        let mut parts: Vec<FPart> = Vec::new();
+        let mut lit = String::new();
+        let flush = |this: &mut Self, lit: &mut String, parts: &mut Vec<FPart>, out: &mut Vec<Stmt>| {
+            if !lit.is_empty() {
+                parts.push(FPart::Lit(std::mem::take(lit)));
+            }
+            if parts.is_empty() {
+                return;
+            }
+            let arg = if parts.iter().all(|p| matches!(p, FPart::Lit(_))) {
+                let text: String = parts.drain(..).map(|p| if let FPart::Lit(s) = p { s } else { String::new() }).collect();
+                this.ex(sp, ExprKind::Str(text))
+            } else {
+                this.ex(sp, ExprKind::FStr(std::mem::take(parts)))
+            };
+            let c = this.method(sp, "UART", "write_text", vec![arg], Vec::new());
+            out.push(this.st(sp, StmtKind::Expr(c)));
+        };
+        for a in args {
+            let e = &a.value;
+            match &e.kind {
+                BExprKind::Str(s) => lit.push_str(s),
+                BExprKind::Name(n) if matches!(n.to_ascii_uppercase().as_str(), "CR" | "LF" | "TAB") && matches!(self.resolve(n, e.span), Res::Other) => {
+                    lit.push(bs);
+                    lit.push(match n.to_ascii_uppercase().as_str() {
+                        "CR" => 'r',
+                        "LF" => 'n',
+                        _ => 't',
+                    });
+                }
+                BExprKind::Dec(x) => {
+                    if !lit.is_empty() {
+                        parts.push(FPart::Lit(std::mem::take(&mut lit)));
+                    }
+                    let w = self.width(x).unwrap_or(8);
+                    let Some(v) = self.int_expr(x, w) else { return };
+                    parts.push(FPart::Field { expr: Box::new(v), spec: FSpec { kind: FKind::Dec, width: 0, zero: false } });
+                }
+                _ => match self.const_eval(e) {
+                    Some(v) if (0..=255).contains(&v) => match v as u8 {
+                        10 => {
+                            lit.push(bs);
+                            lit.push('n');
+                        }
+                        13 => {
+                            lit.push(bs);
+                            lit.push('r');
+                        }
+                        9 => {
+                            lit.push(bs);
+                            lit.push('t');
+                        }
+                        c if (32..127).contains(&c) => {
+                            if c == b'"' || c == 92 {
+                                lit.push(bs);
+                            }
+                            lit.push(c as char);
+                        }
+                        c => {
+                            flush(self, &mut lit, &mut parts, out);
+                            let b = self.int(e.span, c as i128);
+                            let call = self.method(sp, "UART", "write", vec![b], Vec::new());
+                            out.push(self.st(sp, StmtKind::Expr(call)));
+                        }
+                    },
+                    Some(v) => self.err("PYB0068", e.span, format!("{v} no es un byte (0 a 255)")),
+                    None => {
+                        // un valor de 8 bits que no es constante: el byte se envia tal cual
+                        flush(self, &mut lit, &mut parts, out);
+                        let Some(val) = self.assigned_value(e, 8, "un byte") else { return };
+                        let call = self.method(sp, "UART", "write", vec![val], Vec::new());
+                        out.push(self.st(sp, StmtKind::Expr(call)));
+                    }
+                },
+            }
+        }
+        flush(self, &mut lit, &mut parts, out);
     }
 
     // ---------------------------------------------------------------- programa
@@ -786,6 +1006,7 @@ impl<'a> Lw<'a> {
                 BStmtKind::Import { module, names } => {
                     for (n, _) in names {
                         self.sdk_names.insert(n.to_ascii_lowercase(), n.clone());
+                        self.explicit_names.insert(n.to_ascii_lowercase());
                     }
                     self.explicit.push((module.clone(), s.span, names.clone()));
                 }
@@ -850,9 +1071,23 @@ impl<'a> Lw<'a> {
             let c = self.method(sp0, &Self::pin_ident(p), if as_output { "output" } else { "input" }, Vec::new(), Vec::new());
             prologue.push(self.st(sp0, StmtKind::Expr(c)));
         }
-        if self.uses_adc {
+        if self.uses_adc && !self.explicit_adc_start {
             let c = self.method(sp0, "ADC", "start", Vec::new(), Vec::new());
             prologue.push(self.st(sp0, StmtKind::Expr(c)));
+        }
+        if self.uses_uart && !self.explicit_uart_start {
+            let baud = self.int(sp0, 9600);
+            let c = self.method(sp0, "UART", "start", Vec::new(), vec![Kwarg { name: "baud".into(), name_span: sp0, value: baud }]);
+            prologue.push(self.st(sp0, StmtKind::Expr(c)));
+        }
+        if let Some((period, _)) = self.pwm_period {
+            let used: Vec<&'static str> = self.pwm_used.iter().copied().collect();
+            for pwm in used {
+                let (one, p) = (self.int(sp0, 1), self.int(sp0, period));
+                let kw = vec![Kwarg { name: "prescaler".into(), name_span: sp0, value: one }, Kwarg { name: "period".into(), name_span: sp0, value: p }];
+                let c = self.method(sp0, pwm, "start", Vec::new(), kw);
+                prologue.push(self.st(sp0, StmtKind::Expr(c)));
+            }
         }
         prologue.append(&mut b);
         funcs.push(self.func("main", sp0, prologue, cx.assigned));
@@ -897,14 +1132,11 @@ impl<'a> Lw<'a> {
         if !time.is_empty() {
             items.push(Item::Import { span: Span::new(0, 0), module: "pypic.system.time".into(), names: time.into_iter().map(|n| Ident { name: n.to_string(), span: Span::new(0, 0) }).collect() });
         }
-        if self.uses_adc {
-            // ADC y los canales usados; si el programa ya importo alguno, el suyo manda (un nombre no se importa dos veces)
-            let have: BTreeSet<String> = explicit.iter().filter(|(m, ..)| m == "pypic.periph.adc").flat_map(|(_, _, ns)| ns.iter().map(|(n, _)| n.clone())).collect();
-            let mut names: Vec<String> = vec!["ADC".to_string()];
-            names.extend(self.adc_channels.iter().map(|c| format!("AN{c}")));
-            names.retain(|n| !have.contains(n));
+        // los nombres del SDK que el programa uso sin importarlos (si importo alguno a mano, el suyo manda: un nombre no se importa dos veces)
+        for (module, names) in std::mem::take(&mut self.auto) {
+            let names: Vec<Ident> = names.into_iter().filter(|n| !self.explicit_names.contains(&n.to_ascii_lowercase())).map(|n| Ident { name: n, span: Span::new(0, 0) }).collect();
             if !names.is_empty() {
-                items.push(Item::Import { span: Span::new(0, 0), module: "pypic.periph.adc".into(), names: names.into_iter().map(|n| Ident { name: n, span: Span::new(0, 0) }).collect() });
+                items.push(Item::Import { span: Span::new(0, 0), module: module.into(), names });
             }
         }
         for (m, sp, names) in explicit {

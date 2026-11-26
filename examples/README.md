@@ -40,6 +40,7 @@ Varios ejemplos existen en los tres lenguajes y hacen lo mismo (cada uno nombra 
 | Contador de arranques en la EEPROM | `python/eeprom/eeprom_arranques.py` | `basic/eeprom/eeprom_arranques.bas` | `asm/eeprom/eeprom_arranques.s` |
 | Eco por el puerto serie | `python/uart/eco.py` | `basic/uart/eco.bas` | `asm/uart/eco.s` |
 | PWM con un potenciometro | `python/pwm/pwm.py` | `basic/pwm/pwm.bas` | `asm/pwm/pwm.s` |
+| Saludo con un contador por la UART | `python/uart/saludo_texto.py` | `basic/uart/saludo.bas` | — |
 | Media móvil del ADC | `python/adc/media_movil.py` | `basic/adc/media_movil.bas` | — |
 | Comparador contra CVREF | `python/comparadores/comparador.py` | `basic/comparadores/comparador.bas` | — |
 | Parpadeo con Timer2 | `python/temporizadores/timer_blink.py` | `basic/temporizadores/timer_blink.bas` | — |

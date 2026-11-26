@@ -262,3 +262,57 @@ fn uart_eco_example_echoes_what_it_receives() {
     let sent: Vec<u8> = s.uart_tx.iter().map(|(b, _)| *b).collect();
     assert_eq!(sent, vec![0x41, 0x00, 0xFF]);
 }
+
+// ---- el SDK con sintaxis de BASIC: sin FROM...IMPORT, comandos sin parentesis y los comandos de PICAXE ----
+
+#[test]
+fn sertxd_sends_text_decimal_values_and_raw_bytes() {
+    let (_, c) = build(&example("uart/saludo.bas"));
+    let mut s = Sim::new(&c.image);
+    s.run_until(40_000, |_| false);
+    let sent: Vec<u8> = s.uart_tx.iter().map(|(b, _)| *b).collect();
+    assert!(sent.starts_with(b"Hola PyPIC 1\r\n"), "{:?}", String::from_utf8_lossy(&sent));
+    // un byte suelto y uno constante no imprimible van sin tocar
+    let src = format!("{HEAD}b0 = 200\nSERTXD(b0, 7, \"a\", #b0, 255)\nEND\n");
+    let (_, c) = build(&src);
+    let mut s = Sim::new(&c.image);
+    s.run_until(30_000, |_| false);
+    let sent: Vec<u8> = s.uart_tx.iter().map(|(b, _)| *b).collect();
+    assert_eq!(sent, vec![200, 7, b'a', b'2', b'0', b'0', 255]);
+}
+
+#[test]
+fn read_and_write_use_the_eeprom_and_pwmout_the_ccp_modules() {
+    let src = format!("{HEAD}WRITE 5, 77\nREAD 5, b0\nWRITE 6, b0 + 1\nREAD 6, b1\nEND\n");
+    let r = both(&src, &["b0", "b1"], 40_000);
+    assert_eq!(r, vec![(77, 77), (78, 78)]);
+    let src = format!("{HEAD}w0 = 703\nPWMOUT C.2, 255, w0\nw1 = 100\nPWMOUT C.1, 255, w1\nEND\n");
+    let (_, c) = build(&src);
+    let mut s = Sim::new(&c.image);
+    s.run_until(8_000, |_| false);
+    assert_eq!((s.read(0x15), s.read(0x17) & 0x3F), (175, 0x3C), "PWM1: CCPR1L = 703 >> 2 y DC1B = 3");
+    assert_eq!(s.read(0x1B), 25, "PWM2: CCPR2L = 100 >> 2");
+}
+
+#[test]
+fn the_sdk_needs_no_import_and_accepts_commands_without_parentheses_in_any_case() {
+    // los nombres del SDK se importan solos y no distinguen mayusculas; OBJETO.metodo argumentos equivale a OBJETO.metodo(argumentos)
+    let plain = format!("{HEAD}adc.start\nw0 = adc.read(an0)\nEND\n");
+    let explicit = format!("{HEAD}FROM pypic.periph.adc IMPORT ADC, AN0\nADC.start()\nw0 = ADC.read(AN0)\nEND\n");
+    let (a, b) = (build(&plain).1, build(&explicit).1);
+    assert_eq!(a.flash_words, b.flash_words, "mismo programa");
+    let src = format!("{HEAD}TMR2.every_ms 20\nEND\n");
+    build(&src);
+    // un nombre que no es del SDK sigue siendo un error del verificador
+    expect(&format!("{HEAD}b0 = FOSC_9\n"), "PYP2043");
+}
+
+#[test]
+fn the_new_commands_report_clear_errors() {
+    expect(&format!("{HEAD}PWMOUT D.0, 255, w0\n"), "PYB0065"); // el pin no es de un modulo PWM
+    expect(&format!("{HEAD}PWMOUT C.2, 300, w0\n"), "PYB0066"); // el periodo es PR2: 0 a 255
+    expect(&format!("{HEAD}PWMOUT C.2, 255, w0\nPWMOUT C.1, 200, w0\n"), "PYB0067"); // los dos comparten Timer2
+    expect(&format!("{HEAD}READ 0, w0\n"), "PYB0064"); // READ da un byte
+    expect(&format!("{HEAD}b0 = \"hola\"\n"), "PYB0090"); // el texto solo va en SERTXD
+    expect(&format!("{HEAD}SERRXD(w0)\n"), "PYB0064");
+}

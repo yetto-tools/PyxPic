@@ -45,6 +45,10 @@ pub enum BExprKind {
     Name(String),
     /// `B.0` o `pinB.0`: el pin RB0.
     Pin(char, u8),
+    /// Un texto entre comillas (solo en SERTXD).
+    Str(String),
+    /// `#expr` (solo en SERTXD): el valor en decimal.
+    Dec(Box<BExpr>),
     Neg(Box<BExpr>),
     /// `~x` y `NOT x`: negacion de bits o logica, segun el contexto.
     Not(Box<BExpr>),
@@ -337,6 +341,11 @@ impl<'a> Parser<'a> {
                 let x = self.unary_expr()?;
                 Some(BExpr { span: s.to(x.span), kind: BExprKind::Neg(Box::new(x)) })
             }
+            T::Hash => {
+                let s = self.bump().span;
+                let x = self.unary_expr()?;
+                Some(BExpr { span: s.to(x.span), kind: BExprKind::Dec(Box::new(x)) })
+            }
             T::Tilde => {
                 let s = self.bump().span;
                 let x = self.unary_expr()?;
@@ -382,6 +391,10 @@ impl<'a> Parser<'a> {
             T::Int(v) => {
                 self.bump();
                 Some(BExpr { span: sp, kind: BExprKind::Int(v) })
+            }
+            T::Str(text) => {
+                self.bump();
+                Some(BExpr { span: sp, kind: BExprKind::Str(text) })
             }
             T::LParen => {
                 self.bump();
@@ -593,10 +606,14 @@ impl<'a> Parser<'a> {
                 // objeto.metodo(args), o B.0 = ... (no se asigna a un pin: se usa HIGH/LOW)
                 let call = self.atom()?;
                 let sp = call.span;
-                let BExprKind::Call { obj, name, args } = call.kind else {
+                let BExprKind::Call { obj, name, mut args } = call.kind else {
                     self.err("PYB0025", sp, "un pin no se asigna: usa HIGH, LOW o TOGGLE");
                     return None;
                 };
+                // forma de comando, sin parentesis: `UART.start baud = 9600`, `TMR2.every_ms 20`
+                if !matches!(self.peek(), T::Newline | T::Eof | T::Colon) && !self.is_kw("ELSE") {
+                    args.extend(self.command_args()?);
+                }
                 if !self.end_of_statement() {
                     return None;
                 }
@@ -610,20 +627,42 @@ impl<'a> Parser<'a> {
                 }
                 self.bump();
                 let mut args = Vec::new();
-                if !matches!(self.peek(), T::Newline | T::Eof | T::Colon) {
-                    loop {
-                        args.push(BArg { name: None, value: self.expr()? });
-                        if matches!(self.peek(), T::Comma) {
-                            self.bump();
-                        } else {
-                            break;
-                        }
+                // SERTXD y SERRXD llevan sus datos entre parentesis, como en PICAXE: SERTXD("x = ", #b0, CR, LF)
+                let parens = matches!(name.to_ascii_uppercase().as_str(), "SERTXD" | "SERRXD") && matches!(self.peek(), T::LParen);
+                if parens {
+                    self.bump();
+                    if !matches!(self.peek(), T::RParen) {
+                        args = self.command_args()?;
                     }
+                    self.expect(T::RParen, "')'")?;
+                } else if !matches!(self.peek(), T::Newline | T::Eof | T::Colon) {
+                    args = self.command_args()?;
                 }
                 if !self.end_of_statement() {
                     return None;
                 }
                 Some(vec![BStmt { span: nsp.to(self.prev_span()), kind: BStmtKind::Cmd { obj: None, name, name_span: nsp, args } }])
+            }
+        }
+    }
+
+    /// Los argumentos de un comando sin parentesis: valores separados por comas; `nombre = valor` es un argumento con nombre.
+    fn command_args(&mut self) -> Option<Vec<BArg>> {
+        let mut args = Vec::new();
+        loop {
+            let name = match (self.peek(), self.peek_at(1)) {
+                (T::Ident(n), T::Eq) => Some(n.clone()),
+                _ => None,
+            };
+            if name.is_some() {
+                self.bump();
+                self.bump();
+            }
+            args.push(BArg { name, value: self.expr()? });
+            if matches!(self.peek(), T::Comma) {
+                self.bump();
+            } else {
+                return Some(args);
             }
         }
     }
@@ -881,5 +920,5 @@ fn is_keyword(upper: &str) -> bool {
 
 /// Los comandos al estilo PICAXE (se escriben como `HIGH B.0`, sin parentesis).
 pub fn is_command(name: &str) -> bool {
-    matches!(name.to_ascii_uppercase().as_str(), "HIGH" | "LOW" | "TOGGLE" | "OUTPUT" | "INPUT" | "PAUSE" | "PAUSEUS" | "READADC" | "READADC10")
+    matches!(name.to_ascii_uppercase().as_str(), "HIGH" | "LOW" | "TOGGLE" | "OUTPUT" | "INPUT" | "PAUSE" | "PAUSEUS" | "READADC" | "READADC10" | "READ" | "WRITE" | "PWMOUT" | "SERTXD" | "SERRXD")
 }

@@ -53,10 +53,9 @@ PyPIC BASIC parte del BASIC de PICAXE para que sus programas se reconozcan, pero
 ```basic
 DEVICE PIC16F887            ' obligatorio: dice para qué PIC está escrito el programa
 CLOCK INTERNAL 4 MHZ        ' INTERNAL, CRYSTAL o EXTERNAL; MHZ, KHZ o HZ (como CLOCK: Internal[4 * MHz] en Python)
-FROM pypic.periph.eeprom IMPORT EEPROM     ' módulos del SDK, con los mismos nombres que en Python
 ```
 
-`FROM ... IMPORT` trae un módulo del SDK (`pypic.periph.adc`, `.uart`, `.eeprom`, `.comparator`, `.vref`, `.pwm`, `.timer`, `pypic.regs`...). Los pines y las pausas **no** se importan: los comandos `HIGH`, `LOW`, `PAUSE`... y `B.0` los traen solos.
+**No hay importaciones.** Los periféricos del SDK (`ADC`, `UART`, `EEPROM`, `PWM1`, `CMP1`, `CVREF`, `TMR2`...) y sus constantes (`AN0`, `FOSC_8`, `C12IN0`, `REF_PIN`...) se importan solos cuando el programa los usa, y no distinguen mayúsculas (`adc`, `an0`). Los pines y las pausas también. Solo los módulos que no son periféricos (`pypic.regs`) se importan con `FROM pypic.regs IMPORT STATUS`; hacerlo con un periférico sigue funcionando.
 
 ## Variables
 
@@ -133,29 +132,35 @@ El `FOR` suma o resta una constante y **no puede desbordar**: `FOR b0 = 0 TO 255
 | `PAUSEUS n` | espera `n` microsegundos (`n` constante, como `delay_us`) |
 | `READADC canal, b0` | lee el canal `ANn` y guarda los **8 bits de arriba** (de 10) en un BYTE |
 | `READADC10 canal, w3` | lee los 10 bits en una variable WORD; el ADC se enciende solo al empezar |
+| `READ dirección, b0` / `WRITE dirección, valor` | lee y escribe un byte de la **EEPROM de datos** (256 bytes); `WRITE` espera hasta 6 ms a que el chip termine |
+| `PWMOUT C.2, periodo, ciclo` | PWM por el pin del módulo CCP (`C.2` es PWM1 y `C.1` es PWM2); `periodo` es PR2 (constante de 0 a 255, prescaler 1: periodo de PR2 + 1 ciclos de instrucción) y `ciclo` el ciclo de trabajo de 10 bits (0 a 1023). Los dos módulos comparten Timer2: un solo periodo por programa |
+| `SERTXD("x = ", #b0, CR, LF, b1)` | envía por la UART (9600 baudios 8N1, RC6/TX, se inicia sola): textos, `#valor` en decimal, `CR`, `LF`, `TAB`, un byte constante y un valor de 8 bits suelto (se envía tal cual) |
+| `SERRXD(b0)` | espera un byte por la UART (RC7/RX) y lo guarda en una variable BYTE |
 | `pinB.0`, `B.0` | en una condición o expresión lee el pin (0 o 1): `IF pinB.0 = 1 THEN ...` |
 
 `p` es un pin (`B.0`, `D.5`) o un nombre definido con `SYMBOL`. **No hay números de pin al estilo PICAXE** (el número cambia con el chip): el pin se nombra por su puerto y bit.
 
-## El SDK desde BASIC
+## El resto del SDK
 
-Cualquier objeto del SDK se usa con `objeto.método(argumentos)`, con los mismos nombres que en Python y **los argumentos con nombre dentro del paréntesis**:
+Lo que no tiene un comando PICAXE (comparadores, CVREF, temporizadores, el resto de la UART y del PWM) se maneja con `OBJETO.método`, con o sin paréntesis, con los mismos nombres que en Python. Sin paréntesis es un comando: los valores van separados por comas y `nombre = valor` es un argumento con nombre.
 
 ```basic
-FROM pypic.periph.adc IMPORT ADC, AN0, FOSC_8
-FROM pypic.periph.eeprom IMPORT EEPROM
-
-ADC.start(clock = FOSC_8)
-w1 = ADC.read(AN0)
-EEPROM.write(3, b0)
-b1 = EEPROM.read(3)
+CVREF.start step = 8                                  ' equivale a CVREF.start(step = 8)
+CMP1.start negative = C12IN0, positive = REF_CVREF
+TMR2.every_ms 20
+UART.start baud = 4800                                ' cambia los 9600 por defecto de SERTXD
+IF CMP1.out THEN HIGH led                             ' sin paréntesis también en una condición
+IF TMR2.expired THEN
+  TMR2.clear
+ENDIF
+w1 = ADC.read(AN0)                                    ' un método que devuelve un valor, en una expresión
 ```
 
-Las constantes del SDK (`AN0`, `FOSC_8`, `C12IN0`, `REF_PIN`...) se escriben como en Python. Los objetos y los métodos no distinguen mayúsculas (`adc.READ` funciona), pero los nombres importados se escriben como los exporta el SDK. Los tipos de los argumentos los comprueba el verificador de siempre.
+Los nombres de los métodos y de los objetos no distinguen mayúsculas. Un método del SDK que devuelve un booleano (`out`, `expired`, `rx_ready`, `overrun`...) se usa directamente como condición. Los tipos de los argumentos los comprueba el verificador de siempre.
 
 ## Errores
 
-Los errores propios de BASIC son `PYB0001`–`PYB0083` y salen con `archivo.bas:línea:columna`. Los demás (tipos, periféricos, pines, pila, interrupciones) son los `PYP...` de Python, con la posición en el `.bas`. Los principales:
+Los errores propios de BASIC son `PYB0001`–`PYB0090` y salen con `archivo.bas:línea:columna`. Los demás (tipos, periféricos, pines, pila, interrupciones) son los `PYP...` de Python, con la posición en el `.bas`. Los principales:
 
 | Código | Qué dice |
 |---|---|
@@ -175,6 +180,6 @@ La primera entrega es el núcleo y el SDK actual. Quedan para las siguientes (is
 
 - **Ensamblador en línea** dentro de un programa BASIC (`ASM ... END ASM` y `CLOBBERS`), con la misma sintaxis PIC-AS y el mismo mini-enlazador que `@asm_function`. Hoy el `.s` y `@asm_function` de Python lo cubren.
 - **Interrupciones** (`ON INTERRUPT` / `RETFIE`), **tablas en flash** (`DATA`/`READ`/`LOOKUP`) y **texto** (`SEROUT` con cadenas y números).
-- Los comandos PICAXE que no son un método del SDK (`PWMOUT`, `SERIN`, `SEROUT`, `SERTXD`, `READ`/`WRITE`, `PEEK`/`POKE`, `COUNT`, `PULSIN`...): hoy se escriben como `PWM1.start(...)`, `UART.write(...)` y `EEPROM.read(...)`.
+- Los comandos PICAXE que todavía no existen: `SERIN` y `SEROUT` (con pin y velocidad propios), `PEEK`/`POKE`, `COUNT`, `PULSIN`, `SERVO`, `SOUND`, `DATA`/`LOOKUP`... Se escriben con los métodos del SDK (`UART.write`, `TMR1.value`...).
 - `bit0`..`bit15`, `DIM x AS BYTE = 5` (valor inicial), arreglos de WORD, `SUB`/`FUNCTION` con parámetros, y que `w0` y `b0`/`b1` compartan memoria.
 - La extensión de VS Code (resaltado, diagnósticos y botones para `.bas`).
