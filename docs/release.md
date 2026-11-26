@@ -31,8 +31,9 @@ En cada `push` a `main` o `release` y en cada pull request: `cargo fmt --check` 
 
 Cada archivo `pypic-vX.Y.Z-<sistema>` lleva la CLI, los Device Packs (`devices/`), los ejemplos, `LICENSE` y `README.md`. Si algo falla antes de publicar, no se crea la Release: se corrige en `main`, se vuelve a mezclar en `release` y se mueve o se rehace la etiqueta.
 
-## Qué falta para estar "listo para publicar"
+## Estado
 
-- Nada de esto se ha **ejecutado en GitHub todavía**: los dos workflows están escritos y revisados, pero la primera ejecución real puede mostrar algo que ajustar (una ruta, un paso de Windows).
-- Las versiones son provisionales (`0.0.1` en el espacio de trabajo): decide cuándo es `0.1.0`.
-- Proteger `release` (requerir el CI en verde y prohibir `push --force`) es un ajuste de GitHub; hay que hacerlo cuando el CI haya corrido al menos una vez, porque la protección necesita el nombre exacto de los trabajos.
+- **CI:** corrió en GitHub por primera vez en el pull request #76 y pasó en Linux y en Windows, y las pruebas de la extensión. Desde entonces corre en cada push a `main` y `release` y en cada pull request.
+- **`release` está protegida:** exige que pasen los tres trabajos del CI (`Rust (ubuntu-latest)`, `Rust (windows-latest)`, `Extension de VS Code`) y no admite `push --force` ni borrarla. Los administradores pueden saltarse la exigencia de los trabajos (es una sola persona); `main` no tiene protección.
+- **`release.yml` todavía no se ha ejecutado:** se probará con la primera etiqueta. Conviene la primera vez una etiqueta con sufijo (`v0.1.0-rc1`): sale como pre-release y se puede borrar sin consecuencias si algo falla.
+- Las versiones siguen provisionales (`0.0.1` en el espacio de trabajo): decide cuándo es `0.1.0`.
