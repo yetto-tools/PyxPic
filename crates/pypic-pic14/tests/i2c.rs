@@ -235,11 +235,7 @@ fn the_ack_led_diagnostic_shows_the_bus_answer_on_rd0() {
 
 #[test]
 fn the_mapping_diagnostic_writes_its_text_under_both_pcf8574_layouts() {
-    let src = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/python/i2c/lcd_mapas.py")).unwrap().replace(
-        "
-", "
-",
-    );
+    let src = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/python/i2c/lcd_mapas.py")).unwrap().replace("\r\n", "\n");
     let c = build(&src);
     let mut s = Sim::new(&c.image);
     s.i2c.slaves.push(0x27);
