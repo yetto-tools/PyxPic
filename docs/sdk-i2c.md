@@ -23,7 +23,9 @@ if I2C.probe(0x27):               # START, dirección + W, ¿ACK?, STOP
 | `I2C.probe(addr)` → `bool` | START, envía `addr << 1` (escritura), lee `ACKSTAT`, STOP. Devuelve `True` si el esclavo respondió ACK. No modifica el dispositivo |
 | `I2C.stop()` | `SSPEN = 0`; los pines vuelven a ser E/S |
 
-`probe` es una transacción de detección segura: solo direcciona (escritura de la dirección, sin datos). `write(addr, ...)`, `read(addr, n)` y el acceso a registros vienen en la segunda entrega.
+| `I2C.write(addr, data)` → `bool` | START, dirección + W, cada byte de `data`, STOP; `True` si todos tuvieron ACK. Entra en la primera entrega porque la pantalla LCD lo necesita |
+
+`probe` es una transacción de detección segura: solo direcciona (escritura de la dirección, sin datos). `read(addr, n)` y el acceso a registros vienen en la segunda entrega.
 
 ## Lo leído del datasheet
 
@@ -44,6 +46,21 @@ if I2C.probe(0x27):               # START, dirección + W, ¿ACK?, STOP
 - Secuencia de transmisión maestro, `SSPIF` y los tiempos de START/STOP (pp. 189-198, figuras 13-15 y 13-16).
 - Requisitos de los pull-ups externos en SDA y SCL (el PIC no los tiene; el compilador no puede verificarlos).
 - Los tiempos de bus a 100 y 400 kHz (cap. 17, tablas de I²C) para documentar la velocidad real según el reloj.
+
+## Objetivo concreto: LCD 16x2 por I²C
+
+La pantalla HD44780 de 16x2 con la mochila **PCF8574** (dirección `0x27`, o `0x3F` con el PCF8574A) se maneja con `I2C.write` de un byte por vez: cada byte lleva los 4 bits de datos arriba y, abajo, `RS`, `RW`, `E` (el pulso) y la luz de fondo. Se envía en modo de 4 bits (`0x33`, `0x32`, `0x28`, `0x0C`, `0x06`, `0x01` para iniciar). El controlador va como **biblioteca escrita en PyPIC** (`pypic.lib.lcd_i2c`, sin hardware propio), no como parte del compilador:
+
+```python
+from pypic.periph.i2c import I2C
+from pypic.lib.lcd_i2c import LCD
+
+I2C.start(freq=100_000)
+LCD.start(addr=0x27)
+LCD.print_at(0, 0, "Hola PyPIC")
+```
+
+Los tiempos del HD44780 (pulso de `E` ≥ 450 ns, 1,52 ms tras `clear`, 37 µs por orden) se esperan con `pypic.system.time`, exactos al ciclo. En BASIC sería `LCD.print_at`. Las direcciones y el cableado de la mochila varían entre fabricantes (el orden de los bits `P0..P7`): se documenta el más común (`P0` = RS, `P1` = RW, `P2` = E, `P3` = luz, `P4..P7` = D4..D7) y hará falta poder cambiarlo.
 
 ## Cómo se prueba
 
