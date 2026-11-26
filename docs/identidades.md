@@ -14,6 +14,10 @@ Esta guardia lo detecta **antes** de que salga, y avisa que corregir.
 El `pre-push` solo juzga los commits que se van a subir, no lo que ya estaba en el remoto. Un colaborador legitimo se permite con
 `identity.allowedEmail`.
 
+## Atribucion: sin Claude entre los contribuyentes
+
+GitHub cuenta una linea `Co-Authored-By: ...` del mensaje de un commit como coautoria, y la herramienta aparece entre los contribuyentes del repositorio. Por eso `.githooks/commit-msg` **bloquea** un mensaje con `Co-Authored-By: Claude ...` (o `Anthropic`), `Claude-Session: ...` o `Generated with Claude`, y `.githooks/pre-push` bloquea subir commits nuevos que la tengan. Un coautor humano o una mencion de Claude en el texto no se bloquean. Los ganchos se activan con el mismo `core.hooksPath` de abajo.
+
 ## Activarla (una vez por clon)
 
 Los ganchos viven en `.githooks/`; Git no los activa solo. Lo esperado se guarda en la configuracion **local** del repositorio

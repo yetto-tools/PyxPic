@@ -1,0 +1,13 @@
+#!/bin/sh
+# Guardia de atribucion (docs/identidades.md): los commits de este repositorio llevan solo al autor real y una descripcion llana del cambio.
+# Bloquea el mensaje que tenga una linea de atribucion a una herramienta de IA: `Co-Authored-By: Claude ...`, `Claude-Session: ...` o `Generated with Claude`.
+# GitHub cuenta esas lineas como coautoria y la herramienta aparece entre los contribuyentes del repositorio.
+msg=$1
+if grep -i -E '^[[:space:]]*(co-authored-by:.*(claude|anthropic)|claude-session:|.*generated with.*claude)' "$msg" >/dev/null 2>&1; then
+  cat >&2 <<'EOF'
+atribucion: el mensaje del commit tiene una linea de atribucion a Claude/Anthropic (Co-Authored-By, Claude-Session o "Generated with Claude").
+Quitala: los commits de este repositorio llevan solo al autor real. Para saltarse la guardia a proposito: git commit --no-verify
+EOF
+  exit 1
+fi
+exit 0

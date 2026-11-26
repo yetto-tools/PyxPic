@@ -39,6 +39,15 @@ expect_blocked "sin identidad esperada configurada" git -c identity.expectedEmai
 env GIT_AUTHOR_NAME=Cruzado GIT_AUTHOR_EMAIL=cruzado@ejemplo.com git commit -q --no-verify --allow-empty -m cruzado
 crossed=$(git rev-parse HEAD)
 
+# ---- commit-msg (guardia de atribucion) -----------------------------------------------------------------------------------------------------
+before=$(git rev-list --count HEAD)
+expect_blocked "una linea Co-Authored-By de Claude" git commit -q --allow-empty -m "cambio" -m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
+expect_blocked "una linea Claude-Session" git commit -q --allow-empty -m "cambio" -m "Claude-Session: abc123"
+expect_blocked "una linea Generated with Claude Code" git commit -q --allow-empty -m "cambio" -m "Generated with [Claude Code](https://claude.com/claude-code)"
+expect_ok "un coautor humano" git commit -q --allow-empty -m "cambio" -m "Co-Authored-By: Ana Revisora <revisora@ejemplo.com>"
+expect_ok "un mensaje que solo menciona a Claude en el texto" git commit -q --allow-empty -m "Se documenta el flujo con Claude Code"
+[ "$(git rev-list --count HEAD)" = "$((before + 2))" ] && ok || no "solo los dos commits permitidos deben crearse"
+
 # ---- pre-push (se invoca como lo hace git: remoto y url como argumentos y las referencias por la entrada) -------------------------------------
 zero=0000000000000000000000000000000000000000
 push() { printf 'refs/heads/main %s refs/heads/main %s\n' "$1" "$2" | "$here/pre-push" origin "$3"; }
@@ -53,6 +62,11 @@ expect_blocked "un commit cruzado entre los que se suben (rama nueva)" push "$cr
 expect_blocked "un commit cruzado entre los que se suben (rama existente)" push "$crossed" "$good" "$mine"
 if push "$crossed" "$zero" "$mine" 2>&1 | grep -q "Cruzado <cruzado@ejemplo.com>"; then ok; else no "el mensaje debe decir cual commit esta cruzado"; fi
 expect_ok "un commit que ya estaba en el remoto no se vuelve a juzgar" push "$crossed" "$crossed" "$mine"
+env GIT_AUTHOR_NAME="Ana Prueba" GIT_AUTHOR_EMAIL=ana@ejemplo.com git commit -q --no-verify --allow-empty -m "con atribucion" -m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
+attributed=$(git rev-parse HEAD)
+expect_blocked "un commit nuevo con atribucion a Claude" push "$attributed" "$good" "$mine"
+if push "$attributed" "$good" "$mine" 2>&1 | grep -q "atribucion: estos commits NUEVOS"; then ok; else no "el mensaje debe decir que commit tiene la atribucion"; fi
+expect_ok "un commit con atribucion que ya estaba en el remoto no se vuelve a juzgar" push "$attributed" "$attributed" "$mine"
 expect_ok "borrar una rama no juzga commits" push "$zero" "$good" "$mine"
 
 git config --local --add identity.allowedEmail cruzado@ejemplo.com

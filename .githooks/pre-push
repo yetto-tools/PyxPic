@@ -2,7 +2,8 @@
 # Guardia de identidad antes de subir (docs/identidades.md): comprueba a donde y como se sube y con que identidad estan los commits NUEVOS.
 #  1. el propietario del remoto es el esperado (identity.expectedOwner): no se sube a un repositorio de otra cuenta u organizacion;
 #  2. la cuenta de credenciales fijada para esta carpeta es la esperada (identity.expectedAccount): el push no usa la cuenta equivocada;
-#  3. todos los commits que se van a subir tienen el autor esperado (o un correo de identity.allowedEmail, por ejemplo un colaborador).
+#  3. todos los commits que se van a subir tienen el autor esperado (o un correo de identity.allowedEmail, por ejemplo un colaborador);
+#  4. ningun commit nuevo lleva una linea de atribucion a Claude/Anthropic (Co-Authored-By, Claude-Session, Generated with Claude).
 # Lo que ya estaba en el remoto no se vuelve a juzgar.
 
 remote_name=$1
@@ -40,6 +41,7 @@ fi
 
 zero=0000000000000000000000000000000000000000
 bad_list=""
+attr_list=""
 while read -r local_ref local_sha remote_ref remote_sha; do
   [ "$local_sha" = "$zero" ] && continue
   if [ "$remote_sha" = "$zero" ]; then
@@ -60,12 +62,21 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   $(git log -1 --format='%h  %an <%ae>  %s' "$c")"
       status=1
     fi
+    if git log -1 --format=%B "$c" | grep -i -E '^[[:space:]]*(co-authored-by:.*(claude|anthropic)|claude-session:|.*generated with.*claude)' >/dev/null 2>&1; then
+      attr_list="$attr_list
+  $(git log -1 --format='%h  %s' "$c")"
+      status=1
+    fi
   done
 done
 
 if [ -n "$bad_list" ]; then
   echo "identidad: estos commits NUEVOS no tienen el autor esperado ('$expected_name <$expected_email>'):$bad_list" >&2
   echo "Para corregir el ultimo: git commit --amend --reset-author. Para un colaborador legitimo: git config --local --add identity.allowedEmail correo@ejemplo.com" >&2
+fi
+if [ -n "$attr_list" ]; then
+  echo "atribucion: estos commits NUEVOS tienen una linea de atribucion a Claude/Anthropic (Co-Authored-By, Claude-Session o Generated with Claude):$attr_list" >&2
+  echo "Quita la linea del mensaje (git commit --amend o un rebase) antes de subir: GitHub la cuenta como coautoria." >&2
 fi
 if [ "$status" != 0 ]; then
   echo "Push bloqueado. Para saltarse la guardia a proposito: git push --no-verify" >&2
