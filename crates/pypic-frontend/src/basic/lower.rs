@@ -31,6 +31,7 @@ fn sdk_lookup(name: &str) -> Option<(&'static str, String)> {
         "PWM1" | "PWM2" => "pypic.periph.pwm",
         "CMP1" | "CMP2" | "C12IN0" | "C12IN1" | "C12IN2" | "C12IN3" | "REF_PIN" | "REF_CVREF" | "REF_FIXED" => "pypic.periph.comparator",
         "CVREF" => "pypic.periph.vref",
+        "INTCON" | "PIE1" | "PIE2" | "PIR1" | "PIR2" | "OPTION_REG" | "STATUS" => "pypic.regs",
         "TMR0" | "TMR1" | "TMR2" => "pypic.periph.timer",
         n if crate::timer::CONSTANTS.iter().any(|(c, _)| *c == n) => "pypic.periph.timer",
         _ => return None,
@@ -88,6 +89,8 @@ struct Lw<'a> {
     /// Periodo (PR2) pedido con PWMOUT: los dos PWM comparten Timer2 y por eso el periodo.
     pwm_period: Option<(i128, Span)>,
     pwm_used: BTreeSet<&'static str>,
+    /// La etiqueta de `ON INTERRUPT` y los bloques `ASM`.
+    isr: Option<(String, Span)>,
 }
 
 pub fn lower(stmts: &[BStmt], d: &mut Diagnostics) -> Module {
@@ -113,6 +116,7 @@ pub fn lower(stmts: &[BStmt], d: &mut Diagnostics) -> Module {
         uses_adc: false,
         pwm_period: None,
         pwm_used: BTreeSet::new(),
+        isr: None,
     };
     lw.run(stmts)
 }
@@ -153,7 +157,12 @@ impl<'a> Lw<'a> {
         self.ex(span, ExprKind::Call { func: f.to_string(), func_span: span, args: vec![e] })
     }
     fn method(&mut self, span: Span, obj: &str, method: &str, args: Vec<Expr>, kwargs: Vec<Kwarg>) -> Expr {
-        self.ex(span, ExprKind::MethodCall { obj: obj.to_string(), obj_span: span, attr: None, method: method.to_string(), args, kwargs })
+        // `GIE.set` es el bit GIE del registro y su metodo
+        let (attr, method) = match method.split_once('.') {
+            Some((a, m)) => (Some(Ident { name: a.to_string(), span }), m),
+            None => (None, method),
+        };
+        self.ex(span, ExprKind::MethodCall { obj: obj.to_string(), obj_span: span, attr, method: method.to_string(), args, kwargs })
     }
     /// Un nombre del SDK usado sin `FROM ... IMPORT`: se anota para importarlo y se devuelve su escritura canonica.
     fn note_sdk(&mut self, name: &str) -> Option<String> {
@@ -311,7 +320,12 @@ impl<'a> Lw<'a> {
                 None => pos.push(v),
             }
         }
-        Some((obj_name, name.to_ascii_lowercase(), pos, kw))
+        // un bit de registro va en mayusculas y el metodo en minusculas
+        let method = match name.split_once('.') {
+            Some((a, m)) => format!("{}.{}", a.to_ascii_uppercase(), m.to_ascii_lowercase()),
+            None => name.to_ascii_lowercase(),
+        };
+        Some((obj_name, method, pos, kw))
     }
 
     /// La expresion `e` calculada en `t` bits (8 o 16): una variable mas estrecha se amplia.
@@ -607,6 +621,9 @@ impl<'a> Lw<'a> {
             BStmtKind::For { var, var_span, from, to, step, body } => self.for_stmt(sp, var, *var_span, from, to, step.as_ref(), body, cx, out),
             BStmtKind::Select { subject, cases, default } => self.select_stmt(sp, subject, cases, default, cx, out),
             BStmtKind::Cmd { obj, name, name_span, args } => self.command(sp, obj.as_deref(), name, *name_span, args, cx, out),
+            BStmtKind::OnInterrupt(_) | BStmtKind::Asm { .. } => {
+                self.err("PYB0104", sp, "ON INTERRUPT y los bloques ASM van en el nivel principal del programa, fuera de IF, FOR, DO...");
+            }
             BStmtKind::Device(_) | BStmtKind::Clock { .. } | BStmtKind::Import { .. } | BStmtKind::Symbol { .. } | BStmtKind::Dim { .. } => {
                 self.err("PYB0052", sp, "DEVICE, CLOCK, FROM...IMPORT, SYMBOL y DIM van al principio del programa, fuera de los bloques");
             }
@@ -884,6 +901,18 @@ impl<'a> Lw<'a> {
                 let c = self.method(sp, "UART", "read", Vec::new(), Vec::new()); // read espera el byte; recv solo lo toma si ya llego
                 out.push(self.st(sp, StmtKind::Assign { target: Ident { name: v.name.clone(), span: args[0].value.span }, value: c }));
             }
+            "ENABLE" | "DISABLE" => {
+                if !want(self, 1) || !matches!(&args[0].value.kind, BExprKind::Name(n) if n.eq_ignore_ascii_case("INTERRUPTS")) {
+                    if args.len() == 1 {
+                        self.err("PYB0102", args[0].value.span, format!("{upper} INTERRUPTS: habilita o inhabilita las interrupciones (GIE)"));
+                    }
+                    return;
+                }
+                // INTCON.GIE.set() o .clear(): los bits de cada fuente se habilitan aparte (TMR2.interrupt_on, por ejemplo)
+                self.note_sdk("INTCON");
+                let c = self.method(sp, "INTCON", if upper == "ENABLE" { "GIE.set" } else { "GIE.clear" }, Vec::new(), Vec::new());
+                out.push(self.st(sp, StmtKind::Expr(c)));
+            }
             "SERTXD" => self.sertxd(sp, args, out),
             _ => unreachable!("is_command ya filtro el nombre"),
         }
@@ -978,6 +1007,7 @@ impl<'a> Lw<'a> {
     fn run(&mut self, stmts: &[BStmt]) -> Module {
         let mut items: Vec<Item> = Vec::new();
         let mut body: Vec<&BStmt> = Vec::new();
+        let mut asms: Vec<(String, String, usize, Span)> = Vec::new();
         let mut device: Option<(String, Span)> = None;
         let mut clock: Option<Item> = None;
         for s in stmts {
@@ -1012,6 +1042,13 @@ impl<'a> Lw<'a> {
                 }
                 BStmtKind::Symbol { name, value } => self.symbol(name, value, s.span),
                 BStmtKind::Dim { name, bits, len, init } => self.dim(name, *bits, *len, init.as_ref(), s.span),
+                BStmtKind::OnInterrupt(l) => {
+                    if self.isr.is_some() {
+                        self.err("PYB0105", s.span, "ya hay una rutina de interrupcion: el PIC16 tiene una sola");
+                    }
+                    self.isr = Some((l.clone(), s.span));
+                }
+                BStmtKind::Asm { name, text, offset } => asms.push((name.clone(), text.clone(), *offset, s.span)),
                 _ => body.push(s),
             }
         }
@@ -1020,7 +1057,18 @@ impl<'a> Lw<'a> {
         for s in &body {
             collect_gosubs(s, &mut gosubs);
         }
-        let labels: BTreeSet<&str> = body.iter().filter_map(|s| if let BStmtKind::Label(l) = &s.kind { Some(l.as_str()) } else { None }).collect();
+        let mut labels: BTreeSet<&str> = body.iter().filter_map(|s| if let BStmtKind::Label(l) = &s.kind { Some(l.as_str()) } else { None }).collect();
+        labels.extend(asms.iter().map(|(n, ..)| n.as_str()));
+        // la rutina de interrupcion es una etiqueta que termina en RETURN y a la que no se llama
+        let mut sub_labels: BTreeSet<String> = gosubs.iter().filter(|g| !asms.iter().any(|(n, ..)| n == *g)).cloned().collect();
+        if let Some((l, sp)) = self.isr.clone() {
+            if !labels.contains(l.as_str()) {
+                self.err("PYB0103", sp, format!("ON INTERRUPT {l}: no hay una etiqueta '{l}:' en el programa"));
+            } else if gosubs.contains(&l) {
+                self.err("PYB0106", sp, format!("'{l}' es la rutina de interrupcion: no se llama con GOSUB (la ejecuta el hardware)"));
+            }
+            sub_labels.insert(l);
+        }
         for g in &gosubs {
             if !labels.contains(g.as_str()) {
                 self.err("PYB0072", stmts.iter().find(|s| matches!(&s.kind, BStmtKind::Gosub(x) if x == g)).map_or(Span::new(0, 0), |s| s.span), format!("GOSUB {g}: no hay una etiqueta '{g}:' al principio del programa"));
@@ -1031,11 +1079,11 @@ impl<'a> Lw<'a> {
         let mut it = body.iter().peekable();
         while let Some(s) = it.next() {
             match &s.kind {
-                BStmtKind::Label(l) if gosubs.contains(l) => {
+                BStmtKind::Label(l) if sub_labels.contains(l) => {
                     let mut sub: Vec<&BStmt> = Vec::new();
                     let mut closed = false;
                     while let Some(n) = it.peek() {
-                        if matches!(&n.kind, BStmtKind::Label(x) if gosubs.contains(x)) {
+                        if matches!(&n.kind, BStmtKind::Label(x) if sub_labels.contains(x)) {
                             break;
                         }
                         let n = it.next().unwrap();
@@ -1058,7 +1106,24 @@ impl<'a> Lw<'a> {
             let owned: Vec<BStmt> = sub.iter().map(|s| (*s).clone()).collect();
             let mut cx = Fn { is_sub: true, ..Default::default() };
             let b = self.block(&owned, &mut cx);
-            funcs.push(self.func(name, *span, b, cx.assigned));
+            let is_isr = self.isr.as_ref().is_some_and(|(l, _)| l == name);
+            let mut f = self.func(name, *span, b, cx.assigned);
+            if let (true, Item::Func(fd)) = (is_isr, &mut f) {
+                fd.decorators.push(Ident { name: "interrupt".into(), span: *span });
+            }
+            funcs.push(f);
+        }
+        for (name, text, offset, span) in &asms {
+            let text = self.asm_text(text);
+            funcs.push(Item::Func(FuncDef {
+                span: *span,
+                name: Ident { name: name.clone(), span: *span },
+                decorators: vec![Ident { name: "asm_function".into(), span: *span }],
+                params: Vec::new(),
+                ret: Some(TypeExpr { span: *span, kind: TypeExprKind::None }),
+                body: Vec::new(),
+                asm: Some(AsmSource { text, offset: *offset, first_line: 0, span: *span }),
+            }));
         }
         let owned: Vec<BStmt> = main_body.iter().map(|s| (*s).clone()).collect();
         let mut cx = Fn::default();
@@ -1169,6 +1234,32 @@ impl<'a> Lw<'a> {
             body.insert(0, Stmt { span, kind: StmtKind::Global(names) });
         }
         Item::Func(FuncDef { span, name: Ident { name: name.to_string(), span }, decorators: Vec::new(), params: Vec::new(), ret: Some(TypeExpr { span, kind: TypeExprKind::None }), body, asm: None })
+    }
+
+    /// El cuerpo de ensamblador: las variables `b0`..`b27` y `w0`..`w13` que nombra se declaran (el ensamblador las usa por su nombre) y se escriben en minusculas,
+    /// como se declaran.
+    fn asm_text(&mut self, text: &str) -> String {
+        let mut out = String::with_capacity(text.len());
+        let mut word = String::new();
+        let flush = |this: &mut Self, word: &mut String, out: &mut String| {
+            if implicit(word).is_some() {
+                this.resolve(word, Span::new(0, 0));
+                out.push_str(&word.to_ascii_lowercase());
+            } else {
+                out.push_str(word);
+            }
+            word.clear();
+        };
+        for c in text.chars() {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                word.push(c);
+            } else {
+                flush(self, &mut word, &mut out);
+                out.push(c);
+            }
+        }
+        flush(self, &mut word, &mut out);
+        out
     }
 
     fn declare(&mut self, name: &str, span: Span) -> bool {

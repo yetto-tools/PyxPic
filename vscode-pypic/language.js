@@ -77,6 +77,9 @@ const basicInfo = {
   sertxd: "`SERTXD(\"x = \", #b0, CR, LF)`: envia por la UART (9600 8N1): textos, #valor en decimal, CR, LF y bytes.",
   serrxd: "`SERRXD(b0)`: espera un byte por la UART y lo guarda en una variable BYTE.",
   gosub: "`GOSUB etiqueta`: llama a una subrutina (la etiqueta termina en `RETURN`); cuenta en la pila de hardware.",
+  interrupt: "`ON INTERRUPT etiqueta`: la etiqueta (que termina en RETURN) es la rutina de interrupcion; `ENABLE INTERRUPTS` sube GIE y la fuente se habilita aparte (TMR2.interrupt_on, INTCON.T0IE.set...).",
+  asm: "`ASM nombre ... END ASM`: una rutina en ensamblador PIC-AS, que se llama con `GOSUB nombre`; usa las variables por su nombre y termina en RETURN.",
+  enable: "`ENABLE INTERRUPTS`: sube GIE (`DISABLE INTERRUPTS` lo baja).",
   select: "`SELECT CASE variable ... CASE 1, 2 ... CASE 5 TO 9 ... CASE ELSE ... END SELECT`.",
 };
 
@@ -89,7 +92,7 @@ const members = {
 };
 
 /** Palabras que se sugieren en un programa BASIC; despues de `OBJETO.` van los metodos del SDK. */
-const basicWords = ["DEVICE", "CLOCK", "SYMBOL", "DIM", "AS", "BYTE", "WORD", "BIT", "LET", "IF", "THEN", "ELSE", "ELSEIF", "ENDIF", "FOR", "TO", "STEP", "NEXT", "DO", "LOOP", "WHILE", "WEND", "UNTIL", "SELECT CASE", "CASE", "END SELECT", "GOTO", "GOSUB", "RETURN", "EXIT", "END", "HIGH", "LOW", "TOGGLE", "OUTPUT", "INPUT", "PAUSE", "PAUSEUS", "READADC", "READADC10", "READ", "WRITE", "PWMOUT", "SERTXD", "SERRXD", "AND", "OR", "XOR", "NOT", "MOD", "INTERNAL", "CRYSTAL", "EXTERNAL", "MHZ", "KHZ", "HZ", "CR", "LF", "TAB"];
+const basicWords = ["DEVICE", "CLOCK", "SYMBOL", "DIM", "AS", "BYTE", "WORD", "BIT", "LET", "IF", "THEN", "ELSE", "ELSEIF", "ENDIF", "FOR", "TO", "STEP", "NEXT", "DO", "LOOP", "WHILE", "WEND", "UNTIL", "SELECT CASE", "CASE", "END SELECT", "GOTO", "GOSUB", "RETURN", "EXIT", "END", "HIGH", "LOW", "TOGGLE", "OUTPUT", "INPUT", "PAUSE", "PAUSEUS", "READADC", "READADC10", "READ", "WRITE", "PWMOUT", "SERTXD", "SERRXD", "ON INTERRUPT", "ENABLE INTERRUPTS", "DISABLE INTERRUPTS", "ASM", "END ASM", "AND", "OR", "XOR", "NOT", "MOD", "INTERNAL", "CRYSTAL", "EXTERNAL", "MHZ", "KHZ", "HZ", "CR", "LF", "TAB"];
 
 function basicCompletions(prefix) {
   const match = /\b(ADC|UART|EEPROM|PWM[12])\.\w*$/i.exec(prefix);

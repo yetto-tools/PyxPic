@@ -140,6 +140,39 @@ El `FOR` suma o resta una constante y **no puede desbordar**: `FOR b0 = 0 TO 255
 
 `p` es un pin (`B.0`, `D.5`) o un nombre definido con `SYMBOL`. **No hay números de pin al estilo PICAXE** (el número cambia con el chip): el pin se nombra por su puerto y bit.
 
+## Interrupciones
+
+```basic
+ON INTERRUPT aviso        ' la etiqueta aviso es la rutina de interrupcion
+TMR2.every_ms 20
+TMR2.interrupt_on         ' habilita la fuente (la interrupcion de Timer2)
+ENABLE INTERRUPTS         ' GIE: DISABLE INTERRUPTS lo baja
+main:
+  GOTO main
+
+aviso:
+  TMR2.clear
+  b0 = b0 + 1
+  RETURN
+```
+
+`ON INTERRUPT etiqueta` convierte la etiqueta (que termina en `RETURN`) en la función `@interrupt` del PIC (guardado de contexto incluido). El PIC16 tiene **una sola** rutina de interrupción, y no se llama con `GOSUB`. Comparte las variables con el programa principal. Las demás reglas son las de Python: no se espera ni se llama a lo que también usa `main` (`PYP2060`). `ENABLE INTERRUPTS` sube `GIE`; la fuente se habilita aparte, con `TMRx.interrupt_on` o con un bit de registro: `INTCON.T0IE.set`, `PIE1.RCIE.set` (la forma `REGISTRO.BIT.set` o `.clear`).
+
+## Ensamblador en línea
+
+```basic
+b0 = $A5
+GOSUB intercambiar
+END
+
+ASM intercambiar
+    SWAPF b0,F            ; ensamblador de pic-as: los comentarios van con punto y coma
+    RETURN
+END ASM
+```
+
+Un bloque `ASM nombre ... END ASM` es una rutina escrita en **ensamblador PIC-AS** (la misma sintaxis y el mismo mini-enlazador que `@asm_function` en Python, ver `docs/asm-inline.md`) que se llama con `GOSUB nombre`. Las variables se usan por su nombre (`b0`, `w1`, las de `DIM`; `b0` se escribe en minúsculas aunque el bloque diga `B0`, y una variable que solo nombra el bloque se declara) y el bloque debe terminar en `RETURN`. Va en el nivel principal del programa, no dentro de un `IF` o un bucle. Un error del ensamblador sale con la línea del `.bas`: `linea 7:5: error[ASM002]: instruccion o directiva desconocida 'FOOBAR'`. Valen las mismas reglas que en Python: no se llama desde la rutina de interrupción (`PYP2111`) y vuelve al banco 0 (`PYP2112`).
+
 ## El resto del SDK
 
 Lo que no tiene un comando PICAXE (comparadores, CVREF, temporizadores, el resto de la UART y del PWM) se maneja con `OBJETO.método`, con o sin paréntesis, con los mismos nombres que en Python. Sin paréntesis es un comando: los valores van separados por comas y `nombre = valor` es un argumento con nombre.
@@ -160,7 +193,7 @@ Los nombres de los métodos y de los objetos no distinguen mayúsculas. Un méto
 
 ## Errores
 
-Los errores propios de BASIC son `PYB0001`–`PYB0090` y salen con `archivo.bas:línea:columna`. Los demás (tipos, periféricos, pines, pila, interrupciones) son los `PYP...` de Python, con la posición en el `.bas`. Los principales:
+Los errores propios de BASIC son `PYB0001`–`PYB0106` y salen con `archivo.bas:línea:columna`. Los demás (tipos, periféricos, pines, pila, interrupciones) son los `PYP...` de Python, con la posición en el `.bas`. Los principales:
 
 | Código | Qué dice |
 |---|---|
@@ -178,8 +211,8 @@ Los errores propios de BASIC son `PYB0001`–`PYB0090` y salen con `archivo.bas:
 
 La primera entrega es el núcleo y el SDK actual. Quedan para las siguientes (issue de seguimiento en GitHub):
 
-- **Ensamblador en línea** dentro de un programa BASIC (`ASM ... END ASM` y `CLOBBERS`), con la misma sintaxis PIC-AS y el mismo mini-enlazador que `@asm_function`. Hoy el `.s` y `@asm_function` de Python lo cubren.
-- **Interrupciones** (`ON INTERRUPT` / `RETFIE`), **tablas en flash** (`DATA`/`READ`/`LOOKUP`) y **texto** (`SEROUT` con cadenas y números).
+- **Tablas en flash** (`DATA`/`LOOKUP`) y `SEROUT` con pin y velocidad propios.
+- Bloques `ASM` con parámetros y valor de retorno (hoy son rutinas sin parámetros: se pasan los valores por variables).
 - Los comandos PICAXE que todavía no existen: `SERIN` y `SEROUT` (con pin y velocidad propios), `PEEK`/`POKE`, `COUNT`, `PULSIN`, `SERVO`, `SOUND`, `DATA`/`LOOKUP`... Se escriben con los métodos del SDK (`UART.write`, `TMR1.value`...).
 - `bit0`..`bit15`, `DIM x AS BYTE = 5` (valor inicial), arreglos de WORD, `SUB`/`FUNCTION` con parámetros, y que `w0` y `b0`/`b1` compartan memoria.
 - La extensión de VS Code (resaltado, diagnósticos y botones para `.bas`).

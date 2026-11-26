@@ -316,3 +316,94 @@ fn the_new_commands_report_clear_errors() {
     expect(&format!("{HEAD}b0 = \"hola\"\n"), "PYB0090"); // el texto solo va en SERTXD
     expect(&format!("{HEAD}SERRXD(w0)\n"), "PYB0064");
 }
+
+// ---- interrupciones y ensamblador en linea ----
+
+#[test]
+fn on_interrupt_makes_the_label_the_interrupt_routine() {
+    let src = format!("{HEAD}ON INTERRUPT tick\nENABLE INTERRUPTS\nmain:\n  b1 = b1 + 1\n  GOTO main\ntick:\n  b0 = b0 + 1\n  RETURN\n");
+    let (m, c) = build(&src);
+    assert!(m.functions.iter().any(|f| f.name == "tick" && f.is_interrupt), "tick es la funcion de interrupcion");
+    let mut s = Sim::new(&c.image);
+    s.run_until(300, |_| false);
+    assert_eq!(s.read(0x0B) & 0x80, 0x80, "ENABLE INTERRUPTS sube GIE");
+    for _ in 0..5 {
+        s.interrupt();
+        s.run_until(150, |_| false);
+    }
+    assert_eq!(global(&c, &s, "b0"), 5, "la rutina de interrupcion corrio cinco veces");
+    assert!(global(&c, &s, "b1") > 0, "y main siguio contando");
+    // DISABLE INTERRUPTS baja GIE
+    let (_, c) = build(&format!("{HEAD}ENABLE INTERRUPTS\nDISABLE INTERRUPTS\nEND\n"));
+    let mut s = Sim::new(&c.image);
+    s.run_until(300, |_| false);
+    assert_eq!(s.read(0x0B) & 0x80, 0);
+}
+
+#[test]
+fn an_asm_block_is_a_subroutine_written_in_pic_as() {
+    let src = format!("{HEAD}b0 = 165\nGOSUB swap\nEND\nASM swap\n    SWAPF b0,F      ; las variables se usan por su nombre\n    RETURN\nEND ASM\n");
+    let r = both_asm(&src);
+    assert_eq!(r, 0x5A, "SWAPF intercambia los nibbles de 0xA5");
+    // una variable que solo nombra el ensamblador tambien se declara, y se escribe en minusculas aunque se nombre en mayusculas
+    let src = format!("{HEAD}GOSUB poner\nEND\nASM poner\n    MOVLW 77\n    MOVWF B9\n    RETURN\nEND ASM\n");
+    let (_, c) = build(&src);
+    let mut s = Sim::new(&c.image);
+    s.run_until(500, |_| false);
+    assert_eq!(global(&c, &s, "b9"), 77);
+}
+
+fn both_asm(src: &str) -> u16 {
+    let (_, c) = build(src);
+    let mut s = Sim::new(&c.image);
+    s.run_until(1_000, |_| false);
+    global(&c, &s, "b0")
+}
+
+#[test]
+fn register_bits_can_be_set_and_cleared_with_command_syntax() {
+    let (_, c) = build(&format!("{HEAD}INTCON.GIE.set\nINTCON.T0IE.set\nINTCON.GIE.clear\nEND\n"));
+    let mut s = Sim::new(&c.image);
+    s.run_until(500, |_| false);
+    assert_eq!(s.read(0x0B) & 0xA0, 0x20, "T0IE sube y GIE queda en cero");
+}
+
+#[test]
+fn interrupt_and_asm_errors_are_clear() {
+    expect(&format!("{HEAD}ON INTERRUPT nada\nEND\n"), "PYB0103"); // sin etiqueta
+    expect(&format!("{HEAD}ON INTERRUPT tick\nGOSUB tick\nEND\ntick:\n  RETURN\n"), "PYB0106"); // a la ISR no se llama
+    expect(&format!("{HEAD}ON INTERRUPT a\nON INTERRUPT b\nEND\na:\n  RETURN\nb:\n  RETURN\n"), "PYB0105");
+    expect(&format!("{HEAD}ON INTERRUPT tick\nEND\ntick:\n  b0 = 1\n"), "PYB0073"); // no termina en RETURN
+    expect(&format!("{HEAD}IF b0 = 1 THEN\n  ASM x\n    NOP\n  END ASM\nENDIF\n"), "PYB0104");
+    expect(&format!("{HEAD}ENABLE b0\n"), "PYB0102");
+    expect(&format!("{HEAD}ASM x\n  NOP\n"), "PYB0101"); // falta END ASM
+    // un error de ensamblador sale con la linea del .bas
+    let src = format!("{HEAD}GOSUB x\nEND\nASM x\n    NOP\n    FOOBAR 1\n    RETURN\nEND ASM\n");
+    let r = analyze_in(Language::Basic, &src, &pack().target_profile());
+    let m = lower(&r.program.expect("el verificador no ensambla"));
+    let e = match compile(&m, &Options::default()) {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("FOOBAR no es una instruccion"),
+    };
+    eprintln!("{e}");
+    assert!(e.contains("linea 7:5") && e.contains("FOOBAR"), "{e}");
+}
+
+#[test]
+fn the_interrupt_and_asm_examples_work() {
+    let (_, c) = build(&example("temporizadores/timer_interrupcion.bas"));
+    let mut s = Sim::new(&c.image);
+    s.run_until(3_000, |_| false);
+    assert_eq!(s.pin('D', 0), Some(false));
+    for _ in 0..25 {
+        s.interrupt();
+        s.run_until(100, |_| false);
+    }
+    assert_eq!(s.pin('D', 0), Some(true), "25 avisos de Timer2 = un cambio de RD0");
+    assert_eq!(global(&c, &s, "b0"), 0);
+    let (_, c) = build(&example("asm-en-linea/intercambiar.bas"));
+    let mut s = Sim::new(&c.image);
+    s.run_until(30_000, |_| false);
+    let sent: Vec<u8> = s.uart_tx.iter().map(|(b, _)| *b).collect();
+    assert_eq!(sent, vec![0x5A], "SWAPF 0xA5 = 0x5A");
+}

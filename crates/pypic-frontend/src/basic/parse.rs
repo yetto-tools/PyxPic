@@ -85,6 +85,11 @@ pub enum BStmtKind {
     Return,
     End,
     Exit,
+    /// `ON INTERRUPT etiqueta`: la etiqueta (una subrutina que termina en RETURN) es la rutina de interrupcion.
+    OnInterrupt(String),
+    /// `ASM nombre ... END ASM`: una rutina escrita en ensamblador PIC-AS (`text`), que se llama con `GOSUB nombre`. `offset` es la posicion en bytes del
+    /// primer caracter del cuerpo en el fuente.
+    Asm { name: String, text: String, offset: usize },
     If { arms: Vec<(BExpr, Vec<BStmt>)>, orelse: Vec<BStmt> },
     For { var: String, var_span: Span, from: BExpr, to: BExpr, step: Option<BExpr>, body: Vec<BStmt> },
     /// `DO [WHILE|UNTIL c] ... LOOP [WHILE|UNTIL c]`: cada condicion es (es_until, condicion).
@@ -101,11 +106,47 @@ struct Parser<'a> {
     toks: Vec<Token>,
     pos: usize,
     d: &'a mut Diagnostics,
+    /// Los cuerpos `ASM ... END ASM` sacados del fuente antes de analizarlo, en orden.
+    asm: std::collections::VecDeque<(String, usize)>,
+}
+
+/// Saca los cuerpos de ensamblador del fuente: en el texto que se analiza quedan en blanco (con los mismos saltos de linea y la misma longitud en bytes, para que
+/// las posiciones no cambien) y aparte van su texto y su posicion.
+fn extract_asm(src: &str) -> (String, std::collections::VecDeque<(String, usize)>) {
+    let mut out = String::with_capacity(src.len());
+    let mut blocks = std::collections::VecDeque::new();
+    let mut current: Option<(usize, String)> = None;
+    let mut offset = 0;
+    for line in src.split_inclusive('\n') {
+        let words: Vec<&str> = line.split('\'').next().unwrap_or("").split_whitespace().collect();
+        let is_header = words.len() == 2 && words[0].eq_ignore_ascii_case("ASM") && words[1].chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        let is_end = words.len() == 2 && words[0].eq_ignore_ascii_case("END") && words[1].eq_ignore_ascii_case("ASM");
+        match current.as_mut() {
+            None => {
+                out.push_str(line);
+                if is_header {
+                    current = Some((offset + line.len(), String::new()));
+                }
+            }
+            Some(_) if is_end => {
+                let (start, text) = current.take().unwrap();
+                blocks.push_back((text, start));
+                out.push_str(line);
+            }
+            Some((_, text)) => {
+                text.push_str(line);
+                out.extend(line.chars().map(|c| if c == '\n' { "\n".to_string() } else { " ".repeat(c.len_utf8()) }));
+            }
+        }
+        offset += line.len();
+    }
+    (out, blocks)
 }
 
 pub fn parse(src: &str, d: &mut Diagnostics) -> Vec<BStmt> {
-    let toks = lex(src, d);
-    let mut p = Parser { toks, pos: 0, d };
+    let (clean, asm) = extract_asm(src);
+    let toks = lex(&clean, d);
+    let mut p = Parser { toks, pos: 0, d, asm };
     let mut out = Vec::new();
     loop {
         p.skip_newlines();
@@ -418,9 +459,17 @@ impl<'a> Parser<'a> {
                         return Some(BExpr { span: sp.to(self.prev_span()), kind: BExprKind::Pin(port.chars().next().unwrap(), bit as u8) });
                     }
                     // objeto.metodo(args)
-                    if let T::Ident(m) = self.peek_at(1).clone() {
+                    if let T::Ident(mut m) = self.peek_at(1).clone() {
                         self.bump();
                         self.bump();
+                        // REGISTRO.BIT.metodo: `INTCON.GIE.set`; el bit y el metodo van juntos en el nombre (`GIE.set`)
+                        if matches!(self.peek(), T::Dot) {
+                            if let T::Ident(method) = self.peek_at(1).clone() {
+                                self.bump();
+                                self.bump();
+                                m = format!("{m}.{method}");
+                            }
+                        }
                         let args = if matches!(self.peek(), T::LParen) {
                             self.bump();
                             self.args()?
@@ -563,6 +612,28 @@ impl<'a> Parser<'a> {
                 self.bump();
                 let (l, _) = self.ident("el nombre de una etiqueta")?;
                 if upper == "GOTO" { BStmtKind::Goto(l) } else { BStmtKind::Gosub(l) }
+            }
+            "ON" => {
+                self.bump();
+                if !self.eat_kw("INTERRUPT") {
+                    let s = self.span();
+                    self.err("PYB0100", s, "se esperaba INTERRUPT: ON INTERRUPT etiqueta");
+                    return None;
+                }
+                let (l, _) = self.ident("el nombre de la etiqueta de la interrupcion")?;
+                BStmtKind::OnInterrupt(l)
+            }
+            "ASM" => {
+                self.bump();
+                let (name, _) = self.ident("el nombre de la rutina: ASM nombre")?;
+                self.skip_newlines();
+                let (text, offset) = self.asm.pop_front().unwrap_or_default();
+                if !(self.eat_kw("END") && self.eat_kw("ASM")) {
+                    let s = self.span();
+                    self.err("PYB0101", s, "falta END ASM para cerrar el bloque de ensamblador");
+                    return None;
+                }
+                BStmtKind::Asm { name, text, offset }
             }
             "RETURN" => {
                 self.bump();
@@ -914,11 +985,11 @@ impl<'a> Parser<'a> {
 fn is_keyword(upper: &str) -> bool {
     matches!(
         upper,
-        "DEVICE" | "CLOCK" | "FROM" | "IMPORT" | "SYMBOL" | "DIM" | "AS" | "LET" | "GOTO" | "GOSUB" | "RETURN" | "EXIT" | "END" | "IF" | "THEN" | "ELSE" | "ELSEIF" | "ENDIF" | "FOR" | "TO" | "STEP" | "NEXT" | "DO" | "LOOP" | "WHILE" | "WEND" | "UNTIL" | "SELECT" | "CASE" | "ENDSELECT" | "AND" | "OR" | "XOR" | "NOT" | "MOD"
+        "ON" | "ASM" | "DEVICE" | "CLOCK" | "FROM" | "IMPORT" | "SYMBOL" | "DIM" | "AS" | "LET" | "GOTO" | "GOSUB" | "RETURN" | "EXIT" | "END" | "IF" | "THEN" | "ELSE" | "ELSEIF" | "ENDIF" | "FOR" | "TO" | "STEP" | "NEXT" | "DO" | "LOOP" | "WHILE" | "WEND" | "UNTIL" | "SELECT" | "CASE" | "ENDSELECT" | "AND" | "OR" | "XOR" | "NOT" | "MOD"
     )
 }
 
 /// Los comandos al estilo PICAXE (se escriben como `HIGH B.0`, sin parentesis).
 pub fn is_command(name: &str) -> bool {
-    matches!(name.to_ascii_uppercase().as_str(), "HIGH" | "LOW" | "TOGGLE" | "OUTPUT" | "INPUT" | "PAUSE" | "PAUSEUS" | "READADC" | "READADC10" | "READ" | "WRITE" | "PWMOUT" | "SERTXD" | "SERRXD")
+    matches!(name.to_ascii_uppercase().as_str(), "HIGH" | "LOW" | "TOGGLE" | "OUTPUT" | "INPUT" | "PAUSE" | "PAUSEUS" | "READADC" | "READADC10" | "READ" | "WRITE" | "PWMOUT" | "SERTXD" | "SERRXD" | "ENABLE" | "DISABLE")
 }
