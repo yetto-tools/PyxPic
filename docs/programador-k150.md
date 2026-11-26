@@ -27,7 +27,7 @@ repositorio.
 | `UART.write_text` a 9600 8N1 desde RC6/TX hacia un adaptador USB CP210x | Funciona |
 | Recepción en RC7/RX (`rx_ready`/`recv`) con comandos y eco desde PuTTY, 9600 8N1 | Funciona (respuestas coherentes en pantalla) |
 | PIC alimentado a 3,3 V desde el adaptador, INTOSC a 4 MHz, sin brown-out | Funciona |
-| ¿**Erase** borra la EEPROM? | **Sin probar** |
+| **Blank → Erase Chip** borra la EEPROM | Funciona: `07` leído antes, `FF` leído después, con MicroBrn reiniciado antes de la primera lectura |
 
 Incluir CONFIG2 en el HEX no impide la grabación. Eso **no** demuestra que MicroBrn la grabe: `0x3FFF` es el mismo
 valor que deja un borrado.
@@ -104,8 +104,15 @@ Para ver datos sin contar parpadeos: `UART.start(baud=9600)` y un adaptador TTL-
 4. **Erase**, **Program** y **Verify**.
 5. Pasar el chip al montaje y comprobar el programa.
 
+**Borrar sin grabar:** el botón **Blank** abre un cuadro con *Erase Check* (solo comprueba) y *Erase Chip* (borra). Al pulsar
+**Program** sobre un chip con datos, MicroBrn avisa y pide permiso para borrarlo.
+
+**Tamaño de los archivos de Save:** parece omitir las zonas en blanco del final. La lectura de un chip borrado se guardó en
+30 bytes, solo con CONFIG1 = `0x3FFF`. Por eso un archivo con menos de 8192 palabras no indica por sí solo una lectura
+incompleta.
+
 Antes de borrar un chip que ya tiene un programa que interese, léelo (**Read**) y guárdalo. Una lectura guardada no
-garantiza que se pueda restaurar: compara dos lecturas y revisa que su tamaño sea el esperado (8192 palabras).
+garantiza que se pueda restaurar: compara dos lecturas y revisa en pantalla la memoria completa y la EEPROM.
 
 ## Entrada del 16F887 en `chipdata.cid`
 
@@ -169,9 +176,10 @@ no dejarse volver a grabar o borrar con este programador.
 
 ## Pendiente
 
-- Probar `MCLRE=OFF`, incluida la regrabación posterior.
+- Probar `MCLRE=OFF`, incluida la regrabación posterior. **No se probó a propósito** (2026-11-25): solo había un PIC16F887
+  y ningún programador con VPP primero, así que un fallo habría dejado sin forma de regrabarlo. No hace falta daño en el
+  chip para eso: DS41287D indica que la entrada con VPP primero vale con cualquier configuración.
 - Probar CONFIG2 distinta del valor borrado.
-- Comprobar si **Erase** borra la EEPROM.
 - Medir los tiempos con instrumento.
 
 ## Referencias
@@ -179,3 +187,9 @@ no dejarse volver a grabar o borrar con este programador.
 - Microchip, *PIC16F88X Memory Programming Specification*, DS41287D.
 - Microchip, *PIC16F887 Data Sheet*, DS40001291H.
 - [Blink en Proteus](proteus-blink.md).
+- Introducción de terceros, **no oficial**:
+  [PIC16F887 en microcontrollerslab.com](https://microcontrollerslab.com/pic16f887-microcontroller-pinout-programming-examples-applications-features/)
+  (pinout, periféricos y herramientas de programación; en inglés). Sirve para orientarse; ante cualquier duda mandan el
+  datasheet y la especificación de programación. Al revisarla (2026-11-25) tenía errores: los números que llama «GPIO»
+  conviene verificarlos como pines en el datasheet, mezcla pines de CCP y de oscilador, presenta la RAM y la flash con
+  unidades equivocadas o ambiguas y en algún punto nombra otro PIC.
