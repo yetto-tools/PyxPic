@@ -301,3 +301,24 @@ fn the_address_search_shows_each_responding_address_on_its_own_screen_and_on_the
         _ => true,
     }));
 }
+
+#[test]
+fn the_controller_example_sends_control_and_data_bytes_to_address_0x3e() {
+    let src = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/python/i2c/lcd_controlador.py")).unwrap().replace("\r\n", "\n");
+    let c = build(&src);
+    let mut s = Sim::new(&c.image);
+    s.i2c.slaves.push(0x3E);
+    s.run_until(2_000_000, |_| false);
+    assert!(s.i2c.violations.is_empty(), "{:?}", s.i2c.violations);
+    // cada transaccion: START, direccion 0x3E con ACK, control, dato, STOP
+    for t in s.i2c.events.chunks(5) {
+        assert_eq!((t[0].clone(), t[4].clone()), (I2cEvent::Start, I2cEvent::Stop), "{t:?}");
+        assert_eq!(t[1], I2cEvent::Address { addr: 0x3E, read: false, ack: true });
+    }
+    let bytes = s.i2c.received_by(0x3E);
+    let pairs: Vec<(u8, u8)> = bytes.chunks(2).map(|p| (p[0], p[1])).collect();
+    let commands: Vec<u8> = pairs.iter().filter(|(c, _)| *c == 0x00).map(|(_, b)| *b).collect();
+    assert_eq!(commands, vec![0x38, 0x0C, 0x01, 0x06, 0x80, 0xC0]);
+    let text: String = pairs.iter().filter(|(c, _)| *c == 0x40).map(|(_, b)| *b as char).collect();
+    assert_eq!(text, "Hola PyPICI2C 100 kHz");
+}
