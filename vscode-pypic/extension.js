@@ -12,6 +12,7 @@ const welcome = require("./welcome");
 const pinout = require("./pinout");
 const resources = require("./resources");
 const extensionVersion = require("./package.json").version;
+const { registerSpelling } = require("./spelling");
 
 const welcomeCommands = Object.freeze({
   newProject: "pypic.newProject",
@@ -30,6 +31,7 @@ function activate(context) {
   const checks = new Map();
   let welcomePanel;
   context.subscriptions.push(output, diagnostics);
+  registerSpelling(vscode, context.extensionPath, (message) => output.appendLine(message));
 
   // Archivo suelto o proyecto (projectmode.js): un archivo abierto con "Abrir archivo" se trata como suelto aunque haya un pypic.toml cerca.
   const standalone = new Set();

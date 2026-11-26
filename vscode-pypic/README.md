@@ -1,6 +1,6 @@
 # PyPIC IDE para VS Code
 
-**Versión de la extensión: 0.1.17.** VS Code muestra este número en el resumen y desde el manifiesto de la extensión en la vista Extensiones.
+**Versión de la extensión: 0.1.18.** VS Code muestra este número en el resumen y desde el manifiesto de la extensión en la vista Extensiones.
 
 Extensión para VS Code de escritorio. Usa el compilador PyPIC instalado en el host; no necesita GPASM ni XC8 para crear, comprobar y compilar proyectos.
 
@@ -31,6 +31,8 @@ La extensión distingue dos formas de trabajar; la barra de estado dice cuál es
 La sección persistente **Recursos** compara el uso medido durante la última compilación con la ROM y RAM disponibles del Device Pack. También muestra RAM total, EEPROM y los periféricos referenciados por los imports del archivo frente al catálogo del PIC.
 
 Los archivos Python con imports `from pypic... import ...` se abren en el modo PyPIC: se mantiene el resaltado de Python y se evita aplicarles los diagnósticos de Pylance para Python convencional. **Comprobar archivo** y **Compilar** muestran en Problemas los errores y avisos del compilador; al editar se eliminan y al guardar se comprueba el archivo de nuevo. La opción `pypic.checkOnSave` desactiva esa comprobación. Si la CLI no está configurada, no hay diagnóstico semántico automático: consulta Salida → PyPIC. El texto emergente ofrece una ayuda inicial para tipos y funciones comunes, y el autocompletado propone tipos y métodos de ADC y UART; todavía no cubren toda la API. Para volver manualmente a Python, usa el selector de lenguaje de VS Code.
+
+Si tienes **Code Spell Checker** (`streetsidesoftware.code-spell-checker`), la extensión le registra para el modo PyPIC los diccionarios de Python y las palabras de la API (`cspell/pypic-words.txt`), para que `elif`, `pypic` o `UART` no salgan como palabras desconocidas. Es opcional: sin él no cambia nada. Los comentarios en español necesitan además su diccionario de español.
 
 El autocompletado y la ayuda también incluyen `CLOCK`, `Internal`, `Crystal`, `ExternalClock`, `Hz`, `kHz` y `MHz`. La configuración real del reloj se describe en [la guía del SDK](../docs/sdk-reloj.md).
 
