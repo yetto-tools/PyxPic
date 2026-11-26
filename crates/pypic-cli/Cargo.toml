@@ -16,3 +16,5 @@ pypic-pic14 = { path = "../pypic-pic14" }
 toml = "1"
 serde_json = { version = "1", features = ["preserve_order"] }
 toml_edit = "0.25"
+serialport = { version = "4.10", default-features = false }
+regex = "1"

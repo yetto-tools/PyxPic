@@ -7,6 +7,7 @@ use pypic_pic14::{disassemble, Image};
 
 mod clean;
 mod memory;
+mod monitor;
 mod project;
 mod report;
 mod workflow;
@@ -16,6 +17,7 @@ const USAGE: &str = "uso:
   pypic ir [archivo.py] [opciones]
   pypic build [archivo.py] [-o salida.hex] [--listing] [--timing] [opciones]
   pypic memory [archivo] [--details] [--format text|json] [opciones]   memoria usada por el programa (programa, RAM, pila), sin grabar nada
+  pypic monitor --list | --port COM3 [--baud 9600] | --sim programa     terminal serial (ver pypic monitor --help)
   pypic clean [archivo.py] [-o salida.hex] [--project pypic.toml] [--target perfil] [--dry-run]   borra el .hex que build escribe (solo ese archivo)
   pypic asm <archivo.s> [-mcpu=16F887] [-Wl,-pNOMBRE=dir,...] [-o salida.hex] [--listing]
   pypic disasm <archivo.hex> [--pic-as] [-mcpu=16F887] [--devices-dir <dir>]
@@ -145,6 +147,7 @@ fn main() -> ExitCode {
         Some("init") => workflow::init(&args[1..]),
         Some("project") => workflow::project_cmd(&args[1..]),
         Some("clean") => clean::clean(&args[1..]),
+        Some("monitor") => monitor::monitor(&args[1..]),
         Some("disasm") => disasm(&args[1..]),
         Some("asm") => asm_cmd(&args[1..]),
         Some(c @ ("check" | "ir" | "build" | "memory")) => compile(c, &args[1..]),
