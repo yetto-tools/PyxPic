@@ -21,6 +21,6 @@ def main() -> None:
     RD0.output()
     while True:
         RD0.on()
-        pause(500)
+        pause(2000)
         RD0.off()
-        pause(500)
+        pause(2000)
