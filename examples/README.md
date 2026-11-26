@@ -8,6 +8,7 @@ examples/
     gpio/                      pines, botones y contadores
     temporizadores/            Timer0, Timer1 y Timer2
     adc/                       convertidor analógico-digital
+    i2c/                       bus I2C con el MSSP (LCD 16x2 con mochila PCF8574; docs/sdk-i2c.md)
     uart/                      puerto serie (ver su README)
     eeprom/                    EEPROM de datos
     pwm/                       PWM de CCP1 y CCP2
@@ -40,6 +41,7 @@ Varios ejemplos existen en los tres lenguajes y hacen lo mismo (cada uno nombra 
 | Contador de arranques en la EEPROM | `python/eeprom/eeprom_arranques.py` | `basic/eeprom/eeprom_arranques.bas` | `asm/eeprom/eeprom_arranques.s` |
 | Eco por el puerto serie | `python/uart/eco.py` | `basic/uart/eco.bas` | `asm/uart/eco.s` |
 | PWM con un potenciometro | `python/pwm/pwm.py` | `basic/pwm/pwm.bas` | `asm/pwm/pwm.s` |
+| Pantalla LCD 16x2 por I2C | `python/i2c/lcd_i2c.py` | — | — |
 | Saludo con un contador por la UART | `python/uart/saludo_texto.py` | `basic/uart/saludo.bas` | — |
 | Media móvil del ADC | `python/adc/media_movil.py` | `basic/adc/media_movil.bas` | — |
 | Comparador contra CVREF | `python/comparadores/comparador.py` | `basic/comparadores/comparador.bas` | — |

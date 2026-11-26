@@ -10,6 +10,7 @@
 pub mod asm;
 pub mod codegen;
 pub mod hex;
+pub mod i2c_sim;
 pub mod isa;
 pub mod samples;
 pub mod sim;

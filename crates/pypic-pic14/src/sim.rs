@@ -119,6 +119,8 @@ pub struct Sim {
     adc_prev_chs: u8,
     adc_acq_from: u64,
     adc_remaining: u32,
+    /// El MSSP en modo I2C maestro y su bus con esclavos virtuales (`i2c.slaves`); ver `i2c_sim.rs`.
+    pub i2c: crate::i2c_sim::I2cBus,
 }
 
 impl Sim {
@@ -176,6 +178,7 @@ impl Sim {
             ee_stage: 0,
             ee_done_at: None,
             ee_pending: (0, 0),
+            i2c: Default::default(),
         };
         s.reset();
         s
@@ -205,6 +208,7 @@ impl Sim {
         self.ram[0x98] = 0x02; // TXSTA: TRMT = 1 tras el reset
         self.ram[0x8F] = 0x64; // OSCCON: IRCF = 110 (4 MHz) y HFINTOSC estable
         self.osc_ready_at = 0;
+        self.i2c.reset();
         self.pc = 0;
         self.pclath = 0;
         self.sp = 0;
@@ -279,6 +283,12 @@ impl Sim {
                 }
                 if a == 0x19 {
                     self.uart_tx_write(v);
+                }
+                if a == 0x13 {
+                    self.i2c.sspbuf_write(&mut self.ram, old, self.cycles + 1);
+                }
+                if a == 0x91 {
+                    self.i2c.sspcon2_write(&mut self.ram, old, self.cycles + 1);
                 }
                 if a == 0x8F {
                     self.osc_write(v);
@@ -558,6 +568,7 @@ impl Sim {
         self.tick_comparators();
         self.tick_eeprom(now);
         self.tick_uart(now);
+        self.i2c.tick(&mut self.ram, now);
         let (option, intcon) = (self.ram[0x81], 0x0B);
         // Timer0: T0CS = 0 (reloj interno); PSA = 0 asigna el preescalador a Timer0
         if option & 0x20 == 0 {

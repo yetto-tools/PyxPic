@@ -1,71 +1,51 @@
-# SDK: I²C maestro por hardware (`pypic.periph.i2c`)
+# I²C maestro por hardware y pantalla LCD 16x2 (MSSP)
 
-**Estado: diseño (primera entrega de #45 para I²C, sin implementar).** El MSSP del PIC16F887 (DS40001291H, cap. 13, pp. 175-205). Esta página fija qué se construye y qué se leyó del datasheet; lo que falta por leer está marcado.
+**Estado: el módulo `pypic.periph.i2c` todavía no existe. Lo hecho es el modelo del MSSP en el simulador y un ejemplo funcional con `pypic.regs`.** El MSSP del PIC16F887 (DS40001291H, cap. 13, pp. 175-205) en modo maestro de 7 bits, solo transmisión. Sin pruebas en Proteus ni en hardware.
 
-## Alcance de la primera entrega
+## Lo que ya funciona
 
-Solo el **maestro de 7 bits** a 100 kHz y 400 kHz, en los pines fijos del MSSP (SCL = RC3, SDA = RC4). Sin esclavo, sin 10 bits, sin multi-maestro ni arbitraje (`BCLIF`), sin alargamiento de reloj del esclavo más allá de lo que hace el hardware. El I²C por software sobre cualquier pin es `pypic.soft.i2c` (#47).
+`examples/python/i2c/lcd_i2c.py` maneja una pantalla HD44780 de 16x2 con la mochila PCF8574 y escribe una línea de texto en cada renglón. Usa el MSSP por medio de `pypic.regs` (`SSPADD`, `SSPCON`, `SSPCON2`, `SSPBUF`, `SSPSTAT`), que ya compila:
 
 ```python
 from pypic.device import PIC16F887
-from pypic.periph.i2c import I2C
+from pypic.regs import SSPADD, SSPBUF, SSPCON, SSPCON2, SSPSTAT, TRISC
 
-CLOCK: Crystal[8 * MHz]
-
-I2C.start(freq=100_000)           # SSPADD = Fosc/(4*freq) - 1
-if I2C.probe(0x27):               # START, dirección + W, ¿ACK?, STOP
-    ...
+SSPADD.write(9)                  # Fosc/(4*(SSPADD+1)) = 4 MHz / 40 = 100 kHz
+SSPCON.write(0x28)               # SSPEN = 1 y SSPM = 1000: I²C maestro
+SSPCON2.SEN.set()                # START; el hardware baja SEN al terminar
+SSPBUF.write(0x4E)               # dirección 0x27 con R/W = 0
+while SSPSTAT.R_W.value() != 0:  # R/W = 1 mientras sale el byte y su ACK
+    pass
 ```
 
-| Operación | Qué hace |
-|---|---|
-| `I2C.start(freq=)` | Pone SCL/SDA como entradas (el MSSP los controla), `SSPCON = 0x28` (`SSPEN` y modo maestro, `SSPM = 1000`), `SSPADD` según el reloj, `SMP` según la velocidad. Solo con nombre |
-| `I2C.probe(addr)` → `bool` | START, envía `addr << 1` (escritura), lee `ACKSTAT`, STOP. Devuelve `True` si el esclavo respondió ACK. No modifica el dispositivo |
-| `I2C.stop()` | `SSPEN = 0`; los pines vuelven a ser E/S |
+La mochila más común: dirección `0x27` (PCF8574) o `0x3F` (PCF8574A), con `P0` = RS, `P1` = RW, `P2` = E, `P3` = luz y `P4` a `P7` = D4 a D7. Si la tuya cambia el orden de los bits, se ajustan las constantes del ejemplo. Los tiempos del HD44780 (E mayor de 450 ns, 37 µs por orden, 1,52 ms tras borrar) son los de su datasheet y el ejemplo espera más que ellos.
 
-| `I2C.write(addr, data)` → `bool` | START, dirección + W, cada byte de `data`, STOP; `True` si todos tuvieron ACK. Entra en la primera entrega porque la pantalla LCD lo necesita |
+**Pull-ups:** el PIC no los tiene; SCL (RC3) y SDA (RC4) necesitan resistencias a VDD (4,7 kΩ típico a 100 kHz). Muchas mochilas ya las traen. El compilador no puede comprobarlo.
 
-`probe` es una transacción de detección segura: solo direcciona (escritura de la dirección, sin datos). `read(addr, n)` y el acceso a registros vienen en la segunda entrega.
+## El modelo del simulador
 
-## Lo leído del datasheet
+`crates/pypic-pic14/src/i2c_sim.rs`, con esclavos virtuales: `sim.i2c.slaves.push(0x27)` y, tras correr, `sim.i2c.events` (START, dirección con su ACK, datos con su ACK, STOP) y `sim.i2c.received_by(0x27)`.
 
-| Dato | Valor | Página |
+| Qué se modela | Detalle | Página |
 |---|---|---|
-| `SSPSTAT.SMP` en maestro | 1 = control de pendiente desactivado (100 kHz y 1 MHz); 0 = activado (400 kHz) | 176 |
-| `SSPSTAT.R/W` en maestro | 1 = transmisión en curso; **se hace OR con `SEN`, `RSEN`, `PEN`, `RCEN` y `ACKEN` para saber si el MSSP está en reposo** | 176 |
-| `SSPCON.SSPEN` | habilita el puerto y entrega SDA/SCL al MSSP | 177 |
-| `SSPCON.SSPM<3:0>` | `1000` = I²C maestro, reloj = Fosc / (4 × (SSPADD + 1)); `1011` = maestro controlado por firmware | 177 |
-| `SSPCON.WCOL` | escribir `SSPBUF` sin estar el MSSP en reposo lo activa (hay que limpiarlo por software) | 177 |
-| `SSPCON2.SEN / RSEN / PEN / RCEN / ACKEN` | inician START, START repetido, STOP, recepción y secuencia ACK; el hardware los baja solo | 178 |
-| `SSPCON2.ACKSTAT` | 0 = el esclavo respondió ACK; 1 = no hubo ACK | 178 |
-| Nota 1 de `SSPCON2` | si el módulo no está en reposo, esos bits no se pueden activar y escribir `SSPBUF` se ignora | 178 |
+| `SEN`, `RSEN`, `PEN` | inician START, START repetido y STOP; el hardware los baja solo y sube `SSPIF` (`PIR1<3>`); `S` y `P` de `SSPSTAT` | 176, 178, 192 |
+| Un solo evento a la vez | con el MSSP ocupado esos bits no se activan | 178 (nota 1), 189 |
+| Escribir `SSPBUF` | transmite 8 bits; `R/W` y `BF` valen 1 mientras tanto | 176 |
+| `ACKSTAT` | 0 si algún esclavo respondió ACK a la dirección; 1 si no | 178 |
+| `WCOL` | escribir `SSPBUF` con una operación en curso lo sube y no escribe | 177, 192 |
+| Modo apagado | `SEN`/`RSEN`/`PEN` o `SSPBUF` sin `SSPEN` y `SSPM = 1000` es una violación registrada | 177 |
 
-## Pendiente de leer antes de implementar
+**Tiempos (aproximados, no medidos en el chip):** el reloj de SCL es Fosc/(4 × (SSPADD + 1)), es decir, un periodo de SSPADD + 1 ciclos de instrucción; START, START repetido y STOP duran un periodo y un byte con su ACK, nueve.
 
-- Fórmula y límites del generador de baudios (13.4.5, p. 191) y el retardo mínimo entre eventos.
-- Secuencia de transmisión maestro, `SSPIF` y los tiempos de START/STOP (pp. 189-198, figuras 13-15 y 13-16).
-- Requisitos de los pull-ups externos en SDA y SCL (el PIC no los tiene; el compilador no puede verificarlos).
-- Los tiempos de bus a 100 y 400 kHz (cap. 17, tablas de I²C) para documentar la velocidad real según el reloj.
+**No se modela:** recepción (`RCEN`, `ACKEN`), arbitraje y colisión de bus (`BCLIF`), alargamiento de reloj del esclavo, direcciones de 10 bits, modo esclavo, las interrupciones del MSSP ni el control de pendiente (`SMP`).
 
-## Objetivo concreto: LCD 16x2 por I²C
+## Pruebas (`crates/pypic-pic14/tests/i2c.rs`)
 
-La pantalla HD44780 de 16x2 con la mochila **PCF8574** (dirección `0x27`, o `0x3F` con el PCF8574A) se maneja con `I2C.write` de un byte por vez: cada byte lleva los 4 bits de datos arriba y, abajo, `RS`, `RW`, `E` (el pulso) y la luz de fondo. Se envía en modo de 4 bits (`0x33`, `0x32`, `0x28`, `0x0C`, `0x06`, `0x01` para iniciar). El controlador va como **biblioteca escrita en PyPIC** (`pypic.lib.lcd_i2c`, sin hardware propio), no como parte del compilador:
+El ejemplo corre en el simulador con un esclavo en `0x27`: todas las transacciones son START, dirección con ACK, un dato con ACK y STOP; el decodificador del HD44780 reconstruye los nibbles en cada bajada de E y encuentra el arranque a 4 bits (3, 3, 3, 2), las órdenes `0x28`, `0x0C`, `0x01`, `0x06`, `0x80` y `0xC0` y el texto de las dos líneas. Con el esclavo en otra dirección, nadie responde ACK. Además: el `ACKSTAT` de una sonda a una dirección presente y a una ausente, `WCOL`, el MSSP apagado y los tiempos según `SSPADD`.
 
-```python
-from pypic.periph.i2c import I2C
-from pypic.lib.lcd_i2c import LCD
+## Siguiente
 
-I2C.start(freq=100_000)
-LCD.start(addr=0x27)
-LCD.print_at(0, 0, "Hola PyPIC")
-```
-
-Los tiempos del HD44780 (pulso de `E` ≥ 450 ns, 1,52 ms tras `clear`, 37 µs por orden) se esperan con `pypic.system.time`, exactos al ciclo. En BASIC sería `LCD.print_at`. Las direcciones y el cableado de la mochila varían entre fabricantes (el orden de los bits `P0..P7`): se documenta el más común (`P0` = RS, `P1` = RW, `P2` = E, `P3` = luz, `P4..P7` = D4..D7) y hará falta poder cambiarlo.
-
-## Cómo se prueba
-
-Pruebas diferenciales como las de los otros módulos: intérprete de IR contra el simulador del núcleo, con un **esclavo virtual** en el simulador (una dirección que responde ACK) que modela START, dirección, `ACKSTAT` y STOP. Sin pruebas en Proteus ni en hardware hasta que el usuario las haga.
-
-## Después
-
-El escáner I²C (#77) es un programa de PyPIC que llama a `probe` de `0x08` a `0x77` y manda las respuestas por UART; la Terminal serial (#72) lo muestra.
+- Recepción (`RCEN`, `ACKEN`) para leer dispositivos y registros.
+- El módulo `pypic.periph.i2c` (`start`, `probe`, `write`, `read`, `stop`) y su validación contra el Device Pack; el escáner I²C (#77) y el explorador de registros (#78).
+- Una biblioteca de LCD con `print_at` cuando el lenguaje tenga cadenas.
+- Pendiente de leer: los tiempos de bus del cap. 17 para documentar la velocidad real según el reloj.
