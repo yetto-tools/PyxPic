@@ -2,7 +2,7 @@
 
 **Estado: el módulo `pypic.periph.i2c` todavía no existe. Lo hecho es el modelo del MSSP en el simulador y un ejemplo funcional con `pypic.regs`.** El MSSP del PIC16F887 (DS40001291H, cap. 13, pp. 175-205) en modo maestro de 7 bits, solo transmisión.
 
-**Verificación.** Simulador de PyPIC: pruebas diferenciales. **Proteus (simulación, no hardware real):** el usuario lo ha visto funcionar con un LCD de 16x2 y un `PCF8574` como piezas separadas (RS, RW y E en P0 a P2, D4 a D7 en P4 a P7). El componente combinado `JHD-2X16-I2C` de Proteus no mostró texto aunque el bus y los bytes eran correctos (ACK en cada transacción en el depurador I²C), así que no está confirmado que ese modelo use la misma disposición de bits. Con A0, A1 y A2 a tierra el `PCF8574` es `0x20` (se escribe `0x40`), no `0x27`. **Hardware real: sin probar.**
+**Verificación.** Simulador de PyPIC: pruebas diferenciales. **Proteus (simulación, no hardware real):** el usuario vio `lcd_i2c.hex` mostrar «Hola PyPIC» e «I2C 100 kHz» en un `LM016L` (LCD de 16x2) con un `PCF8574` como pieza separada, con A0, A1 y A2 a VDD (dirección `0x27`) y RS, RW y E en P0 a P2, D4 a D7 en P4 a P7 (captura del 2026-11-26). El componente combinado `JHD-2X16-I2C` de Proteus no mostró texto aunque el bus y los bytes eran correctos (ACK en cada transacción en el depurador I²C), así que no está confirmado que ese modelo use la misma disposición de bits. Con A0, A1 y A2 a tierra el `PCF8574` es `0x20` (se escribe `0x40`), no `0x27`. **Hardware real: sin probar.**
 
 ## Lo que ya funciona
 
