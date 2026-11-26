@@ -41,7 +41,7 @@ AGENTS.md  TASKS.md
 ```
 Guías del SDK y del compilador (`docs/`): [frontend](docs/frontend.md) · [Device Packs](docs/device-packs.md) · [backend PIC14](docs/backend-pic14.md) · [ABI](docs/abi-pic14.md) · [principios de diseño](docs/principios-de-diseno.md) ·
 [módulos del SDK](docs/sdk-modulos.md) · [GPIO](docs/sdk-gpio.md) · [tiempo](docs/sdk-time.md) · [temporizadores](docs/sdk-timer.md) · [registros](docs/sdk-regs.md) · [bits y acarreo](docs/sdk-bits.md) ·
-[tablas](docs/sdk-tablas.md) · [runtime: `*` `//` `%`](docs/sdk-runtime.md) · [ensamblador](docs/asm-pic14.md) · [ensamblador en línea](docs/asm-inline.md) · [catálogo del PIC16F887](docs/catalogo-pic16f887.md) · [Proteus](docs/proteus-blink.md).
+[tablas](docs/sdk-tablas.md) · [runtime: `*` `//` `%`](docs/sdk-runtime.md) · [ensamblador](docs/asm-pic14.md) · [ensamblador en línea](docs/asm-inline.md) · [catálogo del PIC16F887](docs/catalogo-pic16f887.md) · [Proteus](docs/proteus-blink.md) · [grabar con un K150](docs/programador-k150.md).
 
 Las pruebas de cada crate viven en su propio `tests/` (convención de Cargo).
 
