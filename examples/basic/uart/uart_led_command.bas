@@ -1,25 +1,54 @@
-' Comandos por la UART a 9600 baudios 8N1 (RC6/TX, RC7/RX): "a" enciende RB0 y "b" o "c" lo apagan.
-' Cada tecla recibida responde con el valor de RB0 y vuelve a imprimir el saludo.
 DEVICE PIC16F887
 CLOCK INTERNAL 4 MHZ
-BAUD 9600             ' velocidad de la UART (8N1); sin esta linea son 9600
+BAUD 9600
 
-RB0 = 0
+RD0 = 0
+b1 = 0
+
+TMR2.every_ms 500
+
+SERTXD("Hola PyxPic", CR, LF)
+
 main:
-  SERTXD("Hola PyxPic ", #RB0, CR, LF)
-  GOSUB serial
+  IF UART.rx_ready THEN
+    GOSUB serial
+  ENDIF
+
+  IF TMR2.expired THEN
+    TMR2.clear
+
+    IF b1 = 1 THEN
+      TOGGLE RD0
+      SERTXD("LED: ", #RD0, CR, LF)
+    ENDIF
+  ENDIF
+
   GOTO main
 
 serial:
-  SERRXD(b0)                      ' espera un byte por la UART (RC7/RX) y lo guarda en b0
+  SERRXD(b0)
+
   IF b0 = "a" THEN
-    SERTXD("Boton A presionado. Valor: ", #RB0, CR, LF)
-    RB0 = 1
+    b1 = 0
+    RD0 = 1
+    SERTXD("LED encendido", CR, LF)
+
   ELSEIF b0 = "b" THEN
-    SERTXD("Boton B presionado. Valor: ", #RB0, CR, LF)
-    RB0 = 0
+    b1 = 0
+    RD0 = 0
+    SERTXD("LED apagado", CR, LF)
+
+  ELSEIF b0 = "t" THEN
+    b1 = 1
+    RD0 = 1
+    TMR2.clear
+    SERTXD("Blink activado", CR, LF)
+
   ELSEIF b0 = "c" THEN
-    SERTXD("Boton C presionado. Valor: ", #RB0, CR, LF)
-    RB0 = 0
+    b1 = 0
+    RD0 = 0
+    SERTXD("Blink cancelado", CR, LF)
+
   ENDIF
+
   RETURN
