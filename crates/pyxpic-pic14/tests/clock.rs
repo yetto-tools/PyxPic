@@ -479,6 +479,8 @@ fn python_source(clock_lines: &str) -> pyxpic_frontend::ClockSource {
 fn basic_accepts_unit_literals_and_every_clock_setting_like_python() {
     for (bas, py) in [
         ("CLOCK CRYSTAL 16MHZ", "CLOCK: Crystal\nFREQUENCY: 16MHz"),
+        ("clock crystal 16mhz", "CLOCK: Crystal\nFREQUENCY: 16MHz"),
+        ("Clock Internal 8Mhz\nClockOutput on", "CLOCK: Internal\nFREQUENCY: 8MHz\nCLOCK_OUTPUT: On"),
         ("CLOCK CRYSTAL 16 MHZ", "CLOCK: Crystal\nFREQUENCY: 16MHz"),
         ("CLOCK CRYSTAL 11.0592MHz", "CLOCK: Crystal\nFREQUENCY: 11.0592MHz"),
         ("CLOCK CRYSTAL 7.3728mhz", "CLOCK: Crystal\nFREQUENCY: 7372800Hz"),
@@ -527,5 +529,7 @@ fn basic_commands_take_units_and_generate_the_same_firmware() {
         compile(&m, &Options::default()).unwrap().image.iter().collect()
     };
     assert_eq!(words("  PAUSE 500ms"), words("  PAUSE 500"));
+    assert_eq!(words("  pause 500MS"), words("  PAUSE 500"));
+    assert_eq!(words("  Pause 2S"), words("  PAUSE 2000"));
     assert_eq!(words("  PAUSE 2s"), words("  PAUSE 2000"));
 }

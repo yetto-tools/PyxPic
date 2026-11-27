@@ -280,7 +280,7 @@ pub enum Scan {
 /// Lee en `src[start..]` un numero decimal pegado a un sufijo de unidad (`8MHz`, `11.0592MHz`, `8e6Hz`, `500ms`). Devuelve el final del
 /// literal y su valor, o `None` si ahi no hay un literal con unidad. Con `loose_hz` (BASIC, que no distingue mayusculas) los sufijos de
 /// frecuencia se aceptan en cualquier caso (`MHZ`, `khz`).
-pub fn scan(src: &str, start: usize, loose_hz: bool) -> Option<(usize, Scan)> {
+pub fn scan(src: &str, start: usize, loose: bool) -> Option<(usize, Scan)> {
     let b = src.as_bytes();
     let digits = |j: &mut usize| {
         while *j < b.len() && (b[*j].is_ascii_digit() || b[*j] == b'_') {
@@ -313,12 +313,11 @@ pub fn scan(src: &str, start: usize, loose_hz: bool) -> Option<(usize, Scan)> {
     let raw = &src[num_end..j];
     let canon = if lookup(raw).is_some() {
         raw
-    } else if loose_hz {
-        match raw.to_ascii_uppercase().as_str() {
-            "HZ" => "Hz",
-            "KHZ" => "kHz",
-            "MHZ" => "MHz",
-            "GHZ" => "GHz",
+    } else if loose {
+        // sin distinguir mayusculas: vale si exactamente una unidad coincide (`MS` es ms, `khz` es kHz, `3.3v` es V)
+        let mut found = UNITS.iter().filter(|u| u.suffix.eq_ignore_ascii_case(raw)).map(|u| u.suffix);
+        match (found.next(), found.next()) {
+            (Some(one), None) => one,
             _ => return None,
         }
     } else {
@@ -376,6 +375,25 @@ mod tests {
         assert_eq!(lookup("MB"), Some(Dim::Memory));
         assert_eq!(lookup("mV"), Some(Dim::Voltage));
         assert_eq!(lookup("MV"), None);
+    }
+
+    #[test]
+    fn loose_scan_ignores_case_and_keeps_the_only_ambiguity_exact() {
+        let v = |t: &str| match scan(t, 0, true) {
+            Some((_, Scan::Value(v, d))) => Some((v, d)),
+            _ => None,
+        };
+        assert_eq!(v("8MHZ"), Some((8_000_000, Dim::Frequency)));
+        assert_eq!(v("32.768khz"), Some((32_768, Dim::Frequency)));
+        assert_eq!(v("500MS"), Some((500_000_000, Dim::Time)));
+        assert_eq!(v("3.3v"), Some((3_300_000, Dim::Voltage)));
+        assert_eq!(v("50PCT"), Some((50_000, Dim::Percent)));
+        assert_eq!(v("1kib"), Some((1_024, Dim::Memory)));
+        // h (hora) y H (henrio) solo se distinguen por la mayuscula: la forma exacta manda y no hay otra lectura
+        assert_eq!(v("2h"), Some((7_200_000_000_000, Dim::Time)));
+        assert_eq!(v("2H"), Some((2_000_000_000, Dim::Inductance)));
+        // en Python (estricto) sigue distinguiendo
+        assert!(scan("500MS", 0, false).is_none());
     }
 
     #[test]
