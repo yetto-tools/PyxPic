@@ -11,7 +11,15 @@
 
 ## Qué hace el CI (`.github/workflows/ci.yml`)
 
-En cada `push` a `main` o `release` y en cada pull request: `cargo fmt --check` (con `rustfmt.toml`), `cargo clippy -D warnings`, `cargo test --workspace` y la validación de cada Device Pack, en **Linux y Windows**; y las pruebas de la extensión de VS Code (que ejecutan la CLI real). La versión de Rust está fijada en el propio archivo (`RUST_VERSION`) para que un aviso nuevo de una versión posterior no ponga el CI en rojo sin que cambie nada.
+En cada `push` a `main` o `release` y en cada pull request: `cargo fmt --check` (con `rustfmt.toml`), `cargo clippy -D warnings`, `cargo test --workspace`, la validación de cada Device Pack y un build optimizado de la CLI, en **Linux y Windows**; y las pruebas de la extensión de VS Code (que ejecutan la CLI real). Los comandos de Cargo usan `Cargo.lock`. La versión de Rust está fijada en el propio archivo (`RUST_VERSION`) para que un aviso nuevo de una versión posterior no ponga el CI en rojo sin que cambie nada.
+
+Cada ejecución conserva durante 14 días dos artefactos descargables desde GitHub Actions: `pyxpic-<commit>-linux-x64` y `pyxpic-<commit>-windows-x64`. Cada archivo incluye la CLI nativa, los Device Packs, los ejemplos, `LICENSE` y `README.md`. Son builds de verificación asociados a un commit; las versiones publicadas siguen saliendo del workflow `Release` mediante una etiqueta.
+
+### Criterios de aceptación del build
+
+- Los trabajos `Rust (ubuntu-latest)` y `Rust (windows-latest)` compilan `pyxpic` con `--release --locked` después de pasar formato, Clippy, pruebas y validación de Device Packs.
+- Cada trabajo falla si no puede crear o subir su archivo `.tar.gz` o `.zip`.
+- Los nombres de los artefactos incluyen el SHA completo del commit y la plataforma, para que el binario sea trazable al código que lo produjo.
 
 ## Publicar una versión
 

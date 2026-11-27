@@ -1,4 +1,4 @@
-# Integracion continua de PyxPic (#17): formato, clippy, pruebas y Device Packs en Linux y Windows, y la extension de VS Code.
+# Integracion continua de PyxPic (#17): formato, clippy, pruebas, build y Device Packs en Linux y Windows, y la extension de VS Code.
 #
 # La version de Rust esta fijada (la misma con la que se limpio clippy) para que un aviso nuevo de una version posterior no ponga el CI en
 # rojo sin que cambie nada. Se sube a proposito: cambia RUST_VERSION, corre `cargo clippy --workspace --all-targets -- -D warnings` y
@@ -22,7 +22,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            artifact: linux-x64
+            binary: pyxpic
+            archive: tar.gz
+          - os: windows-latest
+            artifact: windows-x64
+            binary: pyxpic.exe
+            archive: zip
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -33,15 +41,36 @@ jobs:
       - name: Formato (rustfmt.toml)
         run: cargo fmt --all -- --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Pruebas
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
       - name: Device Packs
         shell: bash
         run: |
           for pack in devices/*/; do
-            cargo run -q -p pyxpic-cli -- device validate "$pack"
+            cargo run -q --locked -p pyxpic-cli -- device validate "$pack"
           done
+      - name: Compilar la CLI optimizada
+        run: cargo build --locked --release -p pyxpic-cli
+      - name: Empaquetar el build
+        shell: bash
+        run: |
+          dir="pyxpic-${{ github.sha }}-${{ matrix.artifact }}"
+          mkdir "$dir"
+          cp "target/release/${{ matrix.binary }}" "$dir/"
+          cp -r devices examples LICENSE README.md "$dir/"
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            7z a "$dir.zip" "$dir" > /dev/null
+          else
+            tar czf "$dir.tar.gz" "$dir"
+          fi
+      - name: Subir el build
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyxpic-${{ github.sha }}-${{ matrix.artifact }}
+          path: pyxpic-${{ github.sha }}-${{ matrix.artifact }}.${{ matrix.archive }}
+          if-no-files-found: error
+          retention-days: 14
 
   extension:
     name: Extension de VS Code
@@ -54,7 +83,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # las pruebas de la extension ejecutan la CLI real
       - name: Compilar la CLI
-        run: cargo build -p pyxpic-cli
+        run: cargo build --locked -p pyxpic-cli
       - uses: actions/setup-node@v4
         with:
           node-version: 22
