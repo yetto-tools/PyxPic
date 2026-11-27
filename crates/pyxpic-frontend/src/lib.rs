@@ -95,7 +95,7 @@ pub fn parse_clock(text: &str, target: &TargetProfile) -> Result<ClockSource, St
 
 /// Diagnosticos del verificador que, sobre un AST incompleto, pueden ser falsos porque dependen de una declaracion que el parser descarto: nombre o
 /// funcion no definidos, asignar a lo no declarado, `global` de lo no declarado y el inicio (`start`) del ADC o la UART que estaba en codigo descartado.
-const DEPEND_ON_DROPPED_CODE: &[&str] = &["PYP2043", "PYP2022", "PYP2020", "PYP2023", "PYP2171", "PYP2181"];
+const DEPEND_ON_DROPPED_CODE: &[&str] = &["PYP2043", "PYP2022", "PYP2020", "PYP2023", "PYP2171", "PYP2181", "PYP2150"];
 
 /// El lenguaje de un programa: Python (`.py`) o PyxPic BASIC (`.bas`). Los dos producen el mismo AST y comparten todo lo demas.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -134,7 +134,7 @@ pub fn analyze_in(lang: Language, source: &str, target: &TargetProfile) -> Analy
         Language::Python => analyze(source, target),
         Language::Basic => {
             let mut d = Diagnostics::default();
-            let module = basic::to_module(source, &mut d);
+            let module = basic::to_module(source, &mut d, target);
             analyze_parsed(source, module, d, target)
         }
     }

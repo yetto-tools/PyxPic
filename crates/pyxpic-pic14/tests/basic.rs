@@ -447,3 +447,66 @@ fn baud_errors_are_clear() {
     expect(&format!("{HEAD}BAUD 9600\nUART.start baud = 4800\nSERTXD(\"a\")\n"), "PYB0109");
     // dos veces la velocidad
 }
+
+#[test]
+fn a_pin_is_assigned_by_its_name_like_high_and_low() {
+    let words = |body: &str| -> Vec<(u32, u16)> { build(&format!("{HEAD}DIM x AS BYTE\n\nmain:\n{body}\n  GOTO main\n")).1.image.iter().collect() };
+    // RB0 = 1 es HIGH RB0 y RB0 = 0 es LOW RB0, con cualquier pin RA0..RE7
+    assert_eq!(words("  RB0 = 1\n  RD7 = 0"), words("  HIGH RB0\n  LOW RD7"));
+    assert_eq!(words("  RB0 = 5"), words("  HIGH RB0"), "distinto de cero es alto");
+    // con un valor de ejecucion: distinto de cero es alto
+    let (_, c) = build(&format!("{HEAD}DIM x AS BYTE\nx = 1\n\nmain:\n  RB3 = x\n  END\n"));
+    let mut s = Sim::new(&c.image);
+    s.run_until(100_000, |s| s.halted);
+    assert_eq!(s.pin('B', 3), Some(true));
+    // un nombre de pin en minusculas vale igual, y las lecturas siguen siendo por el nombre
+    let (ok, t) = diagnostics(&format!("{HEAD}DIM v AS BYTE\n\nmain:\n  rb2 = 1\n  v = RC0\n  IF RB2 = 1 THEN\n    RB0 = 0\n  ENDIF\n  GOTO main\n"));
+    assert!(ok, "{t}");
+    // un pin que no existe no es un pin
+    let (ok, t) = diagnostics(&format!("{HEAD}main:\n  RB9 = 1\n  GOTO main\n"));
+    assert!(!ok && t.contains("PYB0047"), "{t}");
+}
+
+#[test]
+fn pin_names_come_from_the_device_and_depend_on_how_the_pin_is_configured() {
+    let diag = |body: &str| diagnostics(&format!("{HEAD}DIM v AS BYTE\n\nmain:\n{body}\n  GOTO main\n"));
+    // solo existen los pines del dispositivo: el puerto E del PIC16F887 llega a RE3
+    for (body, code, frag) in [
+        ("  RE5 = 1", "PYB0049", "el puerto E tiene RE0, RE1, RE2, RE3"),
+        ("  HIGH RE4", "PYB0049", "no existe en PIC16F887"),
+        ("  SYMBOL_BAD = 1", "PYB0047", "no existe"),
+        // RE3 es solo entrada: se lee, no se escribe
+        ("  RE3 = 1", "PYB0053", "RE3 es solo entrada"),
+        ("  TOGGLE RE3", "PYB0053", "solo entrada"),
+        // el canal analogico sale del pin: solo los pines ANn lo tienen
+        ("  READADC RC1, v", "PYB0066", "los analogicos son RA0 (AN0)"),
+        // una funcion a la vez: la UART toma RC6 y RC7; READADC deja el pin como analogico
+        ("  SERTXD(\"x\")\n  HIGH RC6", "PYB0054", "RC6 es TX o CK de EUSART"),
+        ("  SERTXD(\"x\")\n  v = RC7", "PYB0054", "RC7 es RX o DT de EUSART"),
+        ("  READADC RA0, v\n  HIGH RA0", "PYB0054", "RA0 es analogico (AN0)"),
+    ] {
+        let (ok, t) = diag(body);
+        assert!(!ok && t.contains(code) && t.contains(frag), "{body}: {t}");
+    }
+    // lo que si vale: RE3 se lee, un pin analogico se lee por su nombre, y los demas pines digitales se usan libres
+    for body in ["  v = RE3", "  READADC RA0, v", "  READADC RE1, v\n  RB0 = 1", "  SERTXD(\"x\")\n  HIGH RB5\n  RD7 = 0"] {
+        let (ok, t) = diag(body);
+        assert!(ok, "{body}: {t}");
+    }
+    // READADC por el nombre del pin da el mismo firmware que por el numero del canal
+    let words = |body: &str| -> Vec<(u32, u16)> { build(&format!("{HEAD}DIM v AS BYTE\n\nmain:\n{body}\n  GOTO main\n")).1.image.iter().collect() };
+    assert_eq!(words("  READADC RA3, v"), words("  READADC 3, v"));
+    assert_eq!(words("  READADC RB0, v"), words("  READADC 12, v"), "RB0 es AN12 en este dispositivo");
+}
+
+#[test]
+fn pin_names_ignore_case_like_the_rest_of_basic() {
+    let words = |body: &str| -> Vec<(u32, u16)> { build(&format!("{HEAD}DIM v AS BYTE\n\nmain:\n{body}\n  GOTO main\n")).1.image.iter().collect() };
+    assert_eq!(words("  rb0 = 1\n  Rd7 = 0\n  READADC ra3, v"), words("  RB0 = 1\n  RD7 = 0\n  READADC RA3, v"));
+    assert_eq!(words("  high rb0\n  toggle Rc2"), words("  HIGH RB0\n  TOGGLE RC2"));
+    // el error nombra el pin en su forma canonica
+    let (ok, t) = diagnostics(&format!("{HEAD}main:\n  re5 = 1\n  GOTO main\n"));
+    assert!(!ok && t.contains("RE5 no existe en PIC16F887"), "{t}");
+    let (ok, t) = diagnostics(&format!("{HEAD}main:\n  rE3 = 1\n  GOTO main\n"));
+    assert!(!ok && t.contains("RE3 es solo entrada"), "{t}");
+}

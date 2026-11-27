@@ -92,6 +92,32 @@ b4 = 300            ' ERROR PYB0040: 300 no cabe en un BYTE
 
 Una constante que no cabe en el destino es un error; una expresión más ancha que el destino se trunca con una conversión explícita en el IR (visible en el listado).
 
+## Los pines: por su nombre, según el dispositivo
+
+Un pin se escribe con el nombre del dispositivo: **`RA0`…`RA7`, `RB0`…`RB7`, `RC0`…`RC7`, `RD0`…`RD7`, `RE0`…`RE3`** (en mayúsculas o minúsculas: `RB0`, `rb0`, `Rb0`). La forma de PICAXE (`B.0`, `pinB.0`) y los nombres de `SYMBOL led = RB0` siguen valiendo. **Qué pines existen no es una lista fija: sale del Device Pack del PIC** (`pins.json`), así que el puerto E del PIC16F887 llega a `RE3` y `RE5` es un error que lo dice (`PYB0049`: «el puerto E tiene RE0, RE1, RE2, RE3»).
+
+```basic
+RB0 = 1               ' alto (como HIGH RB0); RB0 = 0 es LOW; con una variable, distinto de cero es alto
+RD7 = x
+IF RC0 = 1 THEN       ' leer un pin por su nombre
+  TOGGLE RB1
+ENDIF
+READADC RA0, v        ' el canal ANn sale del pin: RA0 es AN0, RB0 es AN12...
+```
+
+Cada pin tiene un **tipo** según el dispositivo y según cómo el programa lo configura, y el compilador lo comprueba:
+
+| Tipo | Cómo se usa | Error si no corresponde |
+|---|---|---|
+| **Digital, salida (OUT)** | `HIGH`, `LOW`, `TOGGLE`, `OUTPUT`, `RB0 = 1`: el pin pasa a salida y, si era analógico, a digital | — |
+| **Digital, entrada (IN)** | `INPUT RB0`, `x = RB0`, `IF RB0 = 1`: se lee | — |
+| **Solo entrada** (`RE3`/MCLR en el PIC16F887) | solo se lee | `PYB0053`: «RE3 es solo entrada» al escribirlo |
+| **Analógico (ANALOG)** | `READADC RA0, v`: solo los pines con canal ANn; `READADC` deja el pin analógico | `PYB0066` si el pin no es analógico (la lista de los que sí lo son sale del dispositivo) |
+| **Función de un periférico** (TX/RX de la UART: `SERTXD`, `SERRXD`, `BAUD`) | el periférico toma el pin | `PYB0054`: «RC6 es TX o CK de EUSART»: no es a la vez E/S digital |
+| **Analógico y digital a la vez** | — | `PYB0054`: «RA0 es analógico (AN0) por READADC y también se usa como E/S digital» |
+
+Los errores señalan la línea del primer uso del pin. Los pines que cada periférico toma salen de la tabla del dispositivo (`peripherals.json`), no de una lista del compilador. Los demás roles del dispositivo (comparadores, referencia, reloj, SDA/SCL del MSSP, PWM) los comprueba el mismo verificador que en Python (`PYP2150`, `PYP3010`).
+
 ## Sentencias
 
 ```basic

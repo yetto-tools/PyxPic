@@ -68,6 +68,17 @@ type Import = (String, Span, Vec<(String, Span)>);
 
 struct Lw<'a> {
     d: &'a mut Diagnostics,
+    /// El dispositivo y sus pines (de su Device Pack): solo existen RA0..RE7 los que el PIC tiene. `None` = sin validar.
+    device: String,
+    dev_pins: Option<std::collections::BTreeMap<String, crate::target::PinInfo>>,
+    /// `pin_of` ya reporto un error: el llamador no repite el suyo.
+    pin_reported: bool,
+    /// Lo que cada bit de configuracion hace con los pines (`SPEN` -> TX y RX de la UART...), del Device Pack.
+    claims: Option<std::collections::BTreeMap<String, Vec<crate::target::PinClaim>>>,
+    /// Donde se uso cada pin por primera vez (para ubicar un conflicto de funcion).
+    pin_span: HashMap<(char, u8), Span>,
+    /// Pines que leyo `READADC` (funcion analogica ANn), con el canal y donde.
+    adc_pins: BTreeMap<(char, u8), (u8, Span)>,
     next_id: u32,
     vars: HashMap<String, Var>,
     decl_order: Vec<String>,
@@ -98,9 +109,15 @@ struct Lw<'a> {
     isr: Option<(String, Span)>,
 }
 
-pub fn lower(stmts: &[BStmt], d: &mut Diagnostics) -> Module {
+pub fn lower(stmts: &[BStmt], d: &mut Diagnostics, target: &crate::target::TargetProfile) -> Module {
     let mut lw = Lw {
         d,
+        device: target.device.clone().unwrap_or_else(|| target.name.clone()),
+        dev_pins: target.pins.clone(),
+        pin_reported: false,
+        claims: target.pin_claims.clone(),
+        pin_span: HashMap::new(),
+        adc_pins: BTreeMap::new(),
         next_id: 0,
         vars: HashMap::new(),
         decl_order: Vec::new(),
@@ -208,21 +225,120 @@ impl<'a> Lw<'a> {
             self.first_use.insert(key, span);
             return Res::Var(v);
         }
-        if let Some(p) = pin_name_of(name) {
+        if let Some(p) = pin_name_of(name).filter(|p| self.device_has(*p)) {
             return Res::Pin(p.0, p.1);
         }
         Res::Other
     }
 
-    fn pin_of(&mut self, e: &BExpr) -> Option<(char, u8)> {
+    // ---------------------------------------------------------------- pines del dispositivo
+    fn device_has(&self, p: (char, u8)) -> bool {
+        self.dev_pins.as_ref().is_none_or(|m| m.contains_key(&Self::pin_ident(p)))
+    }
+
+    fn device_pin(&self, p: (char, u8)) -> Option<crate::target::PinInfo> {
+        self.dev_pins.as_ref().and_then(|m| m.get(&Self::pin_ident(p)).cloned())
+    }
+
+    /// `RE5 no existe en PIC16F887: el puerto E tiene RE0, RE1, RE2, RE3`.
+    fn missing_pin_msg(&self, p: (char, u8)) -> String {
+        let ident = Self::pin_ident(p);
+        let same_port: Vec<String> = self.dev_pins.iter().flat_map(|m| m.keys()).filter(|k| k.as_bytes().get(1) == Some(&(p.0 as u8))).cloned().collect();
+        if same_port.is_empty() {
+            format!("{ident} no existe en {}: este dispositivo no tiene puerto {}", self.device, p.0)
+        } else {
+            format!("{ident} no existe en {}: el puerto {} tiene {}", self.device, p.0, same_port.join(", "))
+        }
+    }
+
+    /// Un pin tiene una funcion a la vez segun como se configura: E/S digital (IN/OUT), analogico (ANn), o la de un periferico encendido
+    /// (TX y RX de la UART). Un pin que el programa usa como digital no puede ser a la vez la funcion de un periferico que el mismo programa
+    /// enciende (PYB0054). Los datos salen del Device Pack: los pines de cada funcion no son una lista fija.
+    fn check_pin_functions(&mut self, uart_used: bool) {
+        let mut found: Vec<(Span, String)> = Vec::new();
+        if uart_used {
+            if let Some(list) = self.claims.as_ref().and_then(|c| c.get("SPEN")) {
+                // un pin puede tener varias funciones del periferico (RC6 es TX y CK): un solo mensaje con todas
+                let mut by_pin: BTreeMap<String, (Vec<String>, String)> = BTreeMap::new();
+                for claim in list {
+                    for name in &claim.pins {
+                        let e = by_pin.entry(name.clone()).or_insert_with(|| (Vec::new(), claim.peripheral.clone()));
+                        if !e.0.contains(&claim.function) {
+                            e.0.push(claim.function.clone());
+                        }
+                    }
+                }
+                for (name, (functions, peripheral)) in by_pin {
+                    if let Some(p) = pin_name_of(&name).filter(|p| self.pin_out.contains_key(p)) {
+                        let sp = self.pin_span.get(&p).copied().unwrap_or(Span::new(0, 0));
+                        found.push((sp, format!("{name} es {} de {peripheral} (la UART la encienden SERTXD, SERRXD o BAUD): con la UART no es un pin de E/S digital", functions.join(" o "))));
+                    }
+                }
+            }
+        }
+        for (p, (ch, _)) in self.adc_pins.clone() {
+            if self.pin_out.contains_key(&p) {
+                let sp = self.pin_span.get(&p).copied().unwrap_or(Span::new(0, 0));
+                found.push((sp, format!("{} es analogico (AN{ch}) por READADC y tambien se usa como E/S digital (HIGH, LOW, TOGGLE, asignacion o lectura): un pin tiene una funcion a la vez", Self::pin_ident(p))));
+            }
+        }
+        for (sp, msg) in found {
+            self.err("PYB0054", sp, msg);
+        }
+    }
+
+    /// `los analogicos son RA0 (AN0), RA1 (AN1)...` segun el dispositivo.
+    fn analog_pins_msg(&self) -> String {
+        let mut a: Vec<(u8, String)> = self.dev_pins.iter().flat_map(|m| m.iter()).filter_map(|(k, i)| i.analog.map(|c| (c, k.clone()))).collect();
+        a.sort();
+        let list: Vec<String> = a.iter().map(|(c, k)| format!("{k} (AN{c})")).collect();
+        format!("los analogicos son {}", list.join(", "))
+    }
+
+    /// El pin de una expresion sin reportar nada (`RB0`, `B.0`, o un nombre de `SYMBOL`), exista o no en el dispositivo.
+    fn pin_quiet(&mut self, e: &BExpr) -> Option<(char, u8)> {
         match &e.kind {
             BExprKind::Pin(p, b) => Some((*p, *b)),
             BExprKind::Name(n) => match self.resolve(n, e.span) {
                 Res::Pin(p, b) => Some((p, b)),
-                _ => None,
+                _ => pin_name_of(n),
             },
             _ => None,
         }
+    }
+
+    /// Un pin que se escribe: no puede ser solo entrada (RE3/MCLR en el PIC16F887).
+    fn writable(&mut self, p: (char, u8), span: Span) -> bool {
+        if self.device_pin(p).is_some_and(|i| i.input_only) {
+            self.err("PYB0053", span, format!("{} es solo entrada en {}: se lee, no se escribe (ni HIGH, LOW, TOGGLE, OUTPUT ni asignacion)", Self::pin_ident(p), self.device));
+            return false;
+        }
+        true
+    }
+
+    fn pin_of(&mut self, e: &BExpr) -> Option<(char, u8)> {
+        self.pin_reported = false;
+        let p = match &e.kind {
+            BExprKind::Pin(p, b) => (*p, *b),
+            BExprKind::Name(n) => match self.resolve(n, e.span) {
+                Res::Pin(p, b) => (p, b),
+                _ => {
+                    let p = pin_name_of(n)?;
+                    let msg = self.missing_pin_msg(p);
+                    self.err("PYB0049", e.span, msg);
+                    self.pin_reported = true;
+                    return None;
+                }
+            },
+            _ => return None,
+        };
+        if !self.device_has(p) {
+            let msg = self.missing_pin_msg(p);
+            self.err("PYB0049", e.span, msg);
+            self.pin_reported = true;
+            return None;
+        }
+        Some(p)
     }
 
     fn const_eval(&mut self, e: &BExpr) -> Option<i128> {
@@ -424,6 +540,7 @@ impl<'a> Lw<'a> {
 
     fn pin_read(&mut self, sp: Span, p: (char, u8), t: u8) -> Option<Expr> {
         self.pin_out.entry(p).or_insert(false);
+        self.pin_span.entry(p).or_insert(sp);
         let call = self.method(sp, &Self::pin_ident(p), "value", Vec::new(), Vec::new());
         Some(if t > 8 { self.cast(call, t) } else { call })
     }
@@ -522,7 +639,12 @@ impl<'a> Lw<'a> {
                 None
             }
             Res::Pin(..) => {
-                self.err("PYB0046", span, format!("'{name}' es un pin: se maneja con HIGH, LOW y TOGGLE"));
+                self.err("PYB0046", span, format!("'{name}' es un pin: se asigna con '{name} = 1' o se maneja con HIGH, LOW y TOGGLE"));
+                None
+            }
+            Res::Other if pin_name_of(name).is_some() => {
+                let msg = self.missing_pin_msg(pin_name_of(name).unwrap());
+                self.err("PYB0049", span, msg);
                 None
             }
             Res::Other => {
@@ -536,6 +658,26 @@ impl<'a> Lw<'a> {
         let sp = s.span;
         match &s.kind {
             BStmtKind::Assign { target, target_span, index, value } => {
+                // `RB0 = 1`: un pin se asigna por su nombre (RA0..RE7), como HIGH / LOW; con un valor de ejecucion, distinto de 0 es alto
+                if index.is_none() {
+                    if let Res::Pin(pn, pb) = self.resolve(target, *target_span) {
+                        let p = (pn, pb);
+                        if !self.writable(p, *target_span) {
+                            return;
+                        }
+                        self.pin_out.insert(p, true);
+                        self.pin_span.entry(p).or_insert(sp);
+                        let call = match self.const_eval(value) {
+                            Some(v) => self.method(sp, &Self::pin_ident(p), if v != 0 { "on" } else { "off" }, Vec::new(), Vec::new()),
+                            None => {
+                                let Some(val) = self.int_expr(value, 8) else { return };
+                                self.method(sp, &Self::pin_ident(p), "value", vec![val], Vec::new())
+                            }
+                        };
+                        out.push(self.st(sp, StmtKind::Expr(call)));
+                        return;
+                    }
+                }
                 let Some(v) = self.target_var(target, *target_span) else { return };
                 // un arreglo se escribe por indice, sin `global`; solo las variables simples necesitan declararse
                 if v.array.is_none() {
@@ -767,10 +909,16 @@ impl<'a> Lw<'a> {
                     return;
                 }
                 let Some(p) = self.pin_of(&args[0].value) else {
-                    self.err("PYB0062", args[0].value.span, format!("{upper} necesita un pin: B.0, o un nombre definido con SYMBOL led = B.0"));
+                    if !self.pin_reported {
+                        self.err("PYB0062", args[0].value.span, format!("{upper} necesita un pin: RB0, o un nombre definido con SYMBOL led = RB0"));
+                    }
                     return;
                 };
                 let as_output = upper != "INPUT";
+                if as_output && !self.writable(p, args[0].value.span) {
+                    return;
+                }
+                self.pin_span.entry(p).or_insert(sp);
                 let entry = self.pin_out.entry(p).or_insert(as_output);
                 *entry = *entry || as_output;
                 let m = match upper.as_str() {
@@ -808,9 +956,30 @@ impl<'a> Lw<'a> {
                 if !want(self, 2) {
                     return;
                 }
-                let Some(ch) = self.const_eval(&args[0].value).filter(|c| (0..=13).contains(c)) else {
-                    self.err("PYB0063", args[0].value.span, format!("{upper} necesita un canal constante de 0 a 13 (el canal ANn del PIC)"));
-                    return;
+                // el canal por el nombre del pin (RA0, RE1...) o por su numero: solo los pines analogicos del dispositivo tienen canal
+                let ch = if let Some(p) = self.pin_quiet(&args[0].value) {
+                    if !self.device_has(p) {
+                        let msg = self.missing_pin_msg(p);
+                        self.err("PYB0049", args[0].value.span, msg);
+                        return;
+                    }
+                    match self.device_pin(p).and_then(|i| i.analog) {
+                        Some(c) => {
+                            self.adc_pins.entry(p).or_insert((c, args[0].value.span));
+                            c as i128
+                        }
+                        None => {
+                            let analog = self.analog_pins_msg();
+                            self.err("PYB0066", args[0].value.span, format!("{} no es un pin analogico de {}: {analog}", Self::pin_ident(p), self.device));
+                            return;
+                        }
+                    }
+                } else {
+                    let Some(ch) = self.const_eval(&args[0].value).filter(|c| (0..=13).contains(c)) else {
+                        self.err("PYB0063", args[0].value.span, format!("{upper} necesita un pin analogico (RA0) o un canal constante de 0 a 13 (el canal ANn del PIC)"));
+                        return;
+                    };
+                    ch
                 };
                 let BExprKind::Name(vn) = &args[1].value.kind else {
                     self.err("PYB0063", args[1].value.span, format!("{upper} guarda el resultado en una variable"));
@@ -1174,6 +1343,7 @@ impl<'a> Lw<'a> {
         }
         // la UART se inicia sola con BAUD (9600 si no se declara) cuando el programa la usa por SERTXD/SERRXD o por sus metodos; un UART.start propio manda y BAUD no se combina con el
         let uart_used = self.uses_uart || self.auto.contains_key("pyxpic.periph.uart") || (self.baud.is_some() && self.explicit_names.contains("uart"));
+        self.check_pin_functions(uart_used);
         if let (Some((_, sp)), true) = (self.baud, self.explicit_uart_start) {
             self.err("PYB0109", sp, "BAUD y UART.start a la vez: la velocidad se declara una sola vez (BAUD, o el argumento baud de UART.start)");
         }
@@ -1318,6 +1488,11 @@ impl<'a> Lw<'a> {
         }
         let key = name.to_ascii_lowercase();
         if let BExprKind::Pin(p, b) = &value.kind {
+            if !self.device_has((*p, *b)) {
+                let msg = self.missing_pin_msg((*p, *b));
+                self.err("PYB0049", value.span, msg);
+                return;
+            }
             self.pins.insert(key, (*p, *b));
         } else if let Some(v) = self.const_eval(value) {
             self.consts.insert(key, v);
