@@ -1,0 +1,82 @@
+{
+  "DO WHILE ... LOOP": {
+    "prefix": ["dowhile", "while"],
+    "description": "Repite mientras la condición sea verdadera (se evalúa antes de cada vuelta)",
+    "body": ["DO WHILE ${1:b0} < ${2:10}", "\t$0", "LOOP"]
+  },
+  "DO UNTIL ... LOOP": {
+    "prefix": "dountil",
+    "description": "Repite hasta que la condición sea verdadera (se evalúa antes de cada vuelta)",
+    "body": ["DO UNTIL ${1:b0} = ${2:10}", "\t$0", "LOOP"]
+  },
+  "DO ... LOOP WHILE": {
+    "prefix": "doloopwhile",
+    "description": "Ejecuta al menos una vez y repite mientras la condición sea verdadera",
+    "body": ["DO", "\t$0", "LOOP WHILE ${1:b0} < ${2:10}"]
+  },
+  "DO ... LOOP UNTIL": {
+    "prefix": "doloopuntil",
+    "description": "Ejecuta al menos una vez y repite hasta que la condición sea verdadera",
+    "body": ["DO", "\t$0", "LOOP UNTIL ${1:b0} = ${2:10}"]
+  },
+  "DO ... LOOP (infinito)": {
+    "prefix": "do",
+    "description": "Bucle sin fin (se sale con EXIT)",
+    "body": ["DO", "\t$0", "LOOP"]
+  },
+  "FOR ... NEXT": {
+    "prefix": "for",
+    "description": "Cuenta de inicio a fin, de uno en uno",
+    "body": ["FOR ${1:b0} = ${2:1} TO ${3:10}", "\t$0", "NEXT ${1:b0}"]
+  },
+  "FOR ... STEP ... NEXT": {
+    "prefix": "forstep",
+    "description": "Cuenta de inicio a fin con un paso",
+    "body": ["FOR ${1:b0} = ${2:0} TO ${3:100} STEP ${4:10}", "\t$0", "NEXT ${1:b0}"]
+  },
+  "WHILE ... WEND": {
+    "prefix": "wend",
+    "description": "Repite mientras la condición sea verdadera (forma WHILE ... WEND)",
+    "body": ["WHILE ${1:b0} < ${2:10}", "\t$0", "WEND"]
+  },
+  "Contador por UART": {
+    "prefix": "contador",
+    "description": "Cuenta de 0 a 9 e imprime cada valor por SERTXD",
+    "body": ["${1:b0} = 0", "DO WHILE ${1:b0} < ${2:10}", "\tSERTXD(\"Contador: \", #${1:b0}, CR, LF)", "\t${1:b0} = ${1:b0} + 1", "LOOP"]
+  },
+  "IF ... ENDIF": {
+    "prefix": "if",
+    "description": "Condicional",
+    "body": ["IF ${1:b0} = ${2:1} THEN", "\t$0", "ENDIF"]
+  },
+  "IF ... ELSE ... ENDIF": {
+    "prefix": "ifelse",
+    "description": "Condicional con alternativa",
+    "body": ["IF ${1:b0} = ${2:1} THEN", "\t$0", "ELSE", "\t", "ENDIF"]
+  },
+  "IF ... ELSEIF ... ENDIF": {
+    "prefix": "ifelseif",
+    "description": "Condicional con varias alternativas",
+    "body": ["IF ${1:b0} = ${2:1} THEN", "\t$0", "ELSEIF ${1:b0} = ${3:2} THEN", "\t", "ELSE", "\t", "ENDIF"]
+  },
+  "SELECT CASE": {
+    "prefix": "select",
+    "description": "Elige según el valor de una variable",
+    "body": ["SELECT CASE ${1:b0}", "CASE ${2:1}", "\t$0", "CASE ${3:2}", "\t", "CASE ELSE", "\t", "END SELECT"]
+  },
+  "Programa principal (bucle)": {
+    "prefix": "main",
+    "description": "Etiqueta main que se repite para siempre",
+    "body": ["main:", "\t$0", "\tGOTO main"]
+  },
+  "Subrutina (GOSUB ... RETURN)": {
+    "prefix": "sub",
+    "description": "Subrutina que se llama con GOSUB nombre",
+    "body": ["${1:rutina}:", "\t$0", "\tRETURN"]
+  },
+  "Recibir un byte por la UART": {
+    "prefix": "serrxd",
+    "description": "Espera un byte por la UART y lo compara con caracteres",
+    "body": ["SERRXD(${1:b0})", "IF ${1:b0} = \"${2:a}\" THEN", "\t$0", "ENDIF"]
+  }
+}

@@ -1,23 +1,26 @@
 {
   "name": "pyxpic-ide",
   "displayName": "PyxPic IDE",
-  "description": "v0.1.30 · Comprueba y compila programas PyxPic desde VS Code.",
-  "version": "0.1.30",
+  "description": "v0.1.31 · Comprueba y compila programas PyxPic desde VS Code.",
+  "version": "0.1.31",
   "publisher": "pyxpic",
   "license": "MIT",
   "icon": "media/icon.png",
   "repository": { "type": "git", "url": "https://github.com/yetto-tools/PyxPic.git" },
-  "files": ["extension.js", "language.js", "pinout.js", "resources.js", "variables.js", "serial.js", "project.js", "projectmode.js", "sidebar.js", "welcome.js", "spelling.js", "cspell", "README.md", "LICENSE", "media", "syntaxes", "language-configuration-basic.json"],
+  "files": ["extension.js", "language.js", "pinout.js", "resources.js", "variables.js", "serial.js", "project.js", "projectmode.js", "sidebar.js", "welcome.js", "spelling.js", "cspell", "README.md", "LICENSE", "media", "syntaxes", "snippets", "language-configuration-basic.json"],
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Programming Languages"],
   "main": "./extension.js",
-  "scripts": { "test": "node --test test/commands.test.js test/projectmode.test.js test/pinout.test.js test/resources.test.js test/variables.test.js test/serial.test.js test/spelling.test.js" },
+  "scripts": { "test": "node --test test/commands.test.js test/projectmode.test.js test/pinout.test.js test/resources.test.js test/variables.test.js test/snippets.test.js test/serial.test.js test/spelling.test.js" },
   "activationEvents": ["onView:pyxpic.actions", "onView:pyxpic.resources", "onView:pyxpic.pinout", "onView:pyxpic.variables", "onView:pyxpic.serial", "onLanguage:python", "onLanguage:pyxpic", "onLanguage:pyxpic-basic", "workspaceContains:pyxpic.toml"],
   "capabilities": { "untrustedWorkspaces": { "supported": false } },
   "contributes": {
     "languages": [
       { "id": "pyxpic", "aliases": ["PyxPic"] },
       { "id": "pyxpic-basic", "aliases": ["PyxPic BASIC"], "extensions": [".bas"], "configuration": "./language-configuration-basic.json" }
+    ],
+    "snippets": [
+      { "language": "pyxpic-basic", "path": "./snippets/pyxpic-basic.json" }
     ],
     "grammars": [
       { "language": "pyxpic", "scopeName": "source.pyxpic", "path": "./syntaxes/pyxpic.tmLanguage.json" },
