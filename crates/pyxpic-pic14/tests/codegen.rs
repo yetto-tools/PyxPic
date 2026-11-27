@@ -326,8 +326,10 @@ fn compile_err(src: &str) -> CodegenError {
 
 #[test]
 fn unsupported_features_fail_with_a_clear_error() {
-    let e = compile_err("a: u32 = 3\ndef main() -> None:\n    pass\n");
-    assert!(matches!(&e, CodegenError::Unsupported(s) if s.contains("uint32")), "{e}");
+    // uint32 ya se soporta (#32): ocupa 4 bytes
+    let (_, c) = build("a: u32 = 3\ndef main() -> None:\n    pass\n");
+    assert_eq!(c.globals.iter().find(|g| g.name == "a").map(|g| g.ty.bits()), Some(32));
+    assert_eq!(c.ram_bytes, 4);
     assert_eq!(compile_err("def f() -> None:\n    pass\n"), CodegenError::NoMain);
 }
 

@@ -162,10 +162,34 @@ fn a_fixed_point_function_takes_and_returns_fixed_point_values() {
 }
 
 #[test]
-fn what_needs_more_than_16_bits_is_rejected_until_the_backend_has_32_bits() {
-    // el producto de dos de 16 bits, multiplicar por 3/2 un int16 y subir de escala un int16: intermedio de 32 bits (#32)
-    rejected("a: Fixed[uint16, 3] = 3.300\nb: Fixed[uint16, 3] = 0.250\n\n\ndef main() -> None:\n    x: Fixed[uint16, 3] = a * b\n", "PYP2255", "#32");
-    rejected("t: Fixed[int16, 2] = 25.37\n\n\ndef main() -> None:\n    x: Fixed[int16, 2] = t * 1.5\n", "PYP2255", "16 bits");
-    rejected("t: Fixed[int16, 2] = 25.37\n\n\ndef main() -> None:\n    x: Fixed[int16, 3] = Fixed[int16, 3](t)\n", "PYP2255", "16 bits");
+fn sixteen_bit_bases_use_a_32_bit_intermediate_and_say_so() {
+    // el ejemplo del diseno: 3.300 V x 0.250 A = 0.825 W con base de 16 bits (3300 * 250 = 825000 cabe en 32 bits)
+    let (c, s) = same("voltage: Fixed[uint16, 3] = 3.300\ncurrent: Fixed[uint16, 3] = 0.250\npower: Fixed[uint16, 3] = 0\n\n\ndef main() -> None:\n    global power\n    power = voltage * current\n");
+    assert_eq!(pic_global(&c, &s, "power"), 825);
+    let (ok, t) = diagnostics(&format!("{HEAD}voltage: Fixed[uint16, 3] = 3.300\npower: Fixed[uint16, 3] = 0\n\n\ndef main() -> None:\n    global power\n    power = voltage * voltage\n"));
+    assert!(ok && t.contains("PYP3025") && t.contains("32 bits"), "{t}");
+    // con signo, escala por una fraccion y subida de escala (todo necesitaba 32 bits)
+    let (c, s) = same("a: Fixed[int16, 2] = -2.5\nb: Fixed[int16, 2] = 1.5\nm: Fixed[int16, 2] = 0\nt: Fixed[int16, 2] = 25.37\nx: Fixed[int16, 2] = 0\nfine: Fixed[int16, 3] = 0\nback: Fixed[int16, 2] = 0\n\n\ndef main() -> None:\n    global m, x, fine, back\n    m = a * b\n    x = t * 1.5\n    fine = Fixed[int16, 3](t)\n    back = Fixed[int16, 2](fine)\n");
+    assert_eq!(pic_global(&c, &s, "m"), -375);
+    assert_eq!(pic_global(&c, &s, "x"), 3805); // 2537 * 3 / 2 = 3805,5: trunca
+    assert_eq!(pic_global(&c, &s, "fine"), 25370);
+    assert_eq!(pic_global(&c, &s, "back"), 2537);
+    // QFixed con 8 bits fraccionarios sobre 16 bits: 1.5 x 1.5 = 2.25 y -1.5 x 1.5
+    let (c, s) = same("q: QFixed[int16, 8] = 1.5\nn: QFixed[int16, 8] = -1.5\nr: QFixed[int16, 8] = 0\nm: QFixed[int16, 8] = 0\n\n\ndef main() -> None:\n    global r, m\n    r = q * q\n    m = n * q\n");
+    assert_eq!(pic_global(&c, &s, "r"), 576);
+    assert_eq!(pic_global(&c, &s, "m"), -576);
 }
 
+#[test]
+fn the_intermediate_width_follows_what_the_device_supports() {
+    // un dispositivo que solo llegue a 16 bits: lo que pide 32 es PYP2255 con el ancho del dispositivo en el mensaje
+    let mut t = pack().target_profile();
+    t.max_int_bits = 16;
+    let src = format!("{HEAD}a: Fixed[uint16, 3] = 3.300\nb: Fixed[uint16, 3] = 0.250\n\n\ndef main() -> None:\n    x: Fixed[uint16, 3] = a * b\n");
+    let r = analyze(&src, &t);
+    let msg = r.diagnostics.render(&src, "t.py");
+    assert!(r.program.is_none() && msg.contains("PYP2255") && msg.contains("16 bits"), "{msg}");
+    // la base de 8 bits cabe en 16 bits y sigue valiendo en ese dispositivo
+    let src = format!("{HEAD}a: Fixed[uint8, 2] = 1.10\nb: Fixed[uint8, 2] = 0.50\n\n\ndef main() -> None:\n    x: Fixed[uint8, 2] = a * b\n");
+    assert!(analyze(&src, &t).program.is_some());
+}

@@ -204,7 +204,7 @@ impl<'a> FnLower<'a> {
         }
     }
 
-    /// Una operacion de punto fijo (`FixedOp`): producto o escala por una fraccion exacta con un intermedio de 16 bits. Todo son
+    /// Una operacion de punto fijo (`FixedOp`): producto o escala por una fraccion exacta con un intermedio de 16 o 32 bits. Todo son
     /// instrucciones enteras de la IR (Cast, Mul, Div, Shr): el PIC no sabe de punto fijo.
     fn fixed_op(&mut self, e: &Expr, op: FixedOp, dst: Place) {
         let child = |this: &mut Self, idx: u8| -> Operand {
@@ -223,8 +223,8 @@ impl<'a> FnLower<'a> {
             Operand::Place(t)
         };
         match op {
-            FixedOp::Mul { binary, scale, signed } => {
-                let w = Type::Int { bits: 16, signed };
+            FixedOp::Mul { binary, scale, signed, wide } => {
+                let w = Type::Int { bits: wide, signed };
                 let (a, b) = (child(self, 0), child(self, 1));
                 let (wa, wb) = (widen(self, a, w), widen(self, b, w));
                 let p = self.new_temp(w);
@@ -237,8 +237,8 @@ impl<'a> FnLower<'a> {
                 }
                 self.emit(Inst::Cast { dst, src: Operand::Place(q) });
             }
-            FixedOp::Scale { num, den, child: idx, signed } => {
-                let w = Type::Int { bits: 16, signed };
+            FixedOp::Scale { num, den, child: idx, signed, wide } => {
+                let w = Type::Int { bits: wide, signed };
                 let v = child(self, idx);
                 let mut cur = widen(self, v, w);
                 if num != 1 {

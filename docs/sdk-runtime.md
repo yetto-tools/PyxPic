@@ -19,6 +19,9 @@ que se compilan a **rutinas nativas estáticas** (nunca un intérprete), con el 
 | `a // b`, `a % b` sin signo, 16 bits | `divmod16` | 371–515 ciclos; 35 palabras |
 | `a // b`, `a % b` con signo, 8 bits | `sdivmod8` (llama a `divmod8`) | 17 (divisor 0) – 195 ciclos; 31 palabras |
 | `a // b`, `a % b` con signo, 16 bits | `sdivmod16` (llama a `divmod16`) | 28 (divisor 0) – 543 ciclos; 48 palabras |
+| `a * b` (32 bits) | `mul32` | **1817 ciclos**, siempre |
+| `a // b`, `a % b` sin signo, 32 bits | `divmod32` | 1145–2425 ciclos |
+| `a // b`, `a % b` con signo, 32 bits | `sdivmod32` (llama a `divmod32`) | 42 (divisor 0) – unos 1800–2600 ciclos |
 | `x << n`, `x >> n` con `n` variable (8 bits) | bucle **en línea**, sin `CALL` | 13 + 8 por bit; con `n ≥ 8`: 78 |
 | `x << n`, `x >> n` con `n` variable (16 bits) | bucle en línea | 19 + 9 por bit; con `n ≥ 16`: 164 |
 
@@ -33,7 +36,7 @@ Los ciclos de las rutinas incluyen la carga de operandos y la lectura del result
   (`255`, `65535`, y `-1` con signo) y `a % 0` es **`a`**. Es lo que sale de dividir por restas sucesivas, y el intérprete de referencia hace lo mismo.
 - **Desplazamientos variables**: la cantidad se acota al ancho del tipo. `x << n` y `x >> n` sin signo dan `0` si `n ≥ 8·bytes`; `>>` con signo rellena con el signo (`-2 >> 200 = -1`).
   Una cantidad de 16 bits con byte alto distinto de cero es una cantidad enorme.
-- Solo 8 y 16 bits. `uint32`/`int32` son #32.
+- **8, 16 y 32 bits** (#32). Con 32 bits las rutinas son de 4 bytes: `mul32` y `divmod32` recorren 32 pasos y el bloque de trabajo mide `3 × ancho + 3` bytes (15 con 32 bits, 9 si solo hay 8 y 16 bits). Una suma de 32 bits suma el acarreo de los bytes intermedios en dos pasos (`0xFF + 1` descartaria el acarreo de salida). Una función puede recibir y devolver 32 bits: el byte 0 sale en W, el 1 en `RETV` y los bytes 2 y 3 en dos bytes de RAM del contexto.
 
 ## Una copia por contexto
 
@@ -48,5 +51,5 @@ Los desplazamientos variables y las operaciones por potencia de 2 no usan pila.
 
 ## Verificación
 
-`crates/pyxpic-pic14/tests/runtime.rs` (todo contra el intérprete de la IR): **todos los pares** de `uint8` e `int8` (65 536) para `*`, `//` y `%` incluido el divisor 0; 24 valores de borde de 16 bits (576 pares) con y sin signo;
+`crates/pyxpic-pic14/tests/wide32.rs` (32 bits, contra el intérprete: suma, resta, bits, desplazamientos fijos y variables, comparaciones con y sin signo, negación, `*`, `//`, `%` con divisor 0 y conversiones entre anchos, más los costos de arriba) y `crates/pyxpic-pic14/tests/runtime.rs` (todo contra el intérprete de la IR): **todos los pares** de `uint8` e `int8` (65 536) para `*`, `//` y `%` incluido el divisor 0; 24 valores de borde de 16 bits (576 pares) con y sin signo;
 todos los desplazamientos de 0 a 39 en `uint8`, `int8`, `uint16` e `int16`; resultados conocidos; potencias de 2 sin rutina; una copia por contexto con interrupciones inyectadas; pila; y los costos de esta tabla.

@@ -303,6 +303,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         uart_calls: BTreeMap::new(),
         uart_fmt: BTreeMap::new(),
         fixed_ops: BTreeMap::new(),
+        warned_wide: HashSet::new(),
         uart_started: false,
         uart_needs: None,
         uart_pending: Vec::new(),
@@ -369,25 +370,27 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
     }
 }
 
-/// Una operacion de punto fijo que la IR expande con un intermedio de 16 bits (`docs/punto-fijo.md`).
+/// Una operacion de punto fijo que la IR expande con un intermedio de `wide` bits (16 o 32 segun lo que pida el valor y soporte el dispositivo)
+/// (`docs/punto-fijo.md`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FixedOp {
     /// `a * b` del mismo tipo: producto de 32 bits y reescala (`Fixed` divide entre 10^scale; `QFixed` desplaza `scale` bits).
-    Mul { binary: bool, scale: u8, signed: bool },
+    Mul { binary: bool, scale: u8, signed: bool, wide: u8 },
     /// `raw * num / den` (conversiones y multiplicar o dividir por una constante); `child` es el operando que se escala: 0 = el izquierdo
     /// (o el unico), 1 = el derecho. La division por una potencia de dos sin signo es un desplazamiento.
-    Scale { num: i128, den: i128, child: u8, signed: bool },
+    Scale { num: i128, den: i128, child: u8, signed: bool, wide: u8 },
 }
 
-/// ¿`valor * num` cabe en el intermedio de 16 bits (con signo si `signed`) para todo valor del tipo `src`? El backend PIC14 llega a 16 bits
-/// (#32: sin 32 bits todavia), asi que una operacion cuyo intermedio no cabe se rechaza al compilar.
-fn fits_wide(src: Type, num: i128, signed: bool) -> bool {
-    let m = src.max().max(-src.min());
-    let lim = if signed { 32_768 } else { 65_535 };
-    m.checked_mul(num.abs()).is_some_and(|p| p <= lim)
+/// ¿`max_abs` cabe en un entero de `w` bits (con signo si `signed`)?
+fn fits_bits(max_abs: i128, signed: bool, w: u8) -> bool {
+    let lim = if signed { 1i128 << (w - 1) } else { (1i128 << w) - 1 };
+    max_abs <= lim
 }
 
-const WIDE_MSG: &str = "el intermedio pasa de 16 bits y el backend PIC14 todavia no tiene 32 bits (#32)";
+/// El mayor valor absoluto de un tipo.
+fn max_abs(t: Type) -> i128 {
+    t.max().max(-t.min())
+}
 
 /// `num/den` como decimal legible (solo para los mensajes).
 fn show_ratio(num: i128, den: i128) -> String {
@@ -520,6 +523,8 @@ struct Checker<'a> {
     uart_calls: BTreeMap<u32, UartCall>,
     uart_fmt: BTreeMap<u32, Vec<FmtPart>>,
     fixed_ops: BTreeMap<u32, FixedOp>,
+    /// Anchos de intermedio de punto fijo ya avisados (PYP3025).
+    warned_wide: HashSet<u8>,
     uart_started: bool,
     uart_needs: Option<Span>,
     uart_pending: Vec<UartPending>,
@@ -3248,6 +3253,36 @@ impl<'a> Checker<'a> {
     }
 
     /// Los dos lados de `+ - ==...` con punto fijo: el mismo tipo, o un lado constante que se convierte al tipo del otro.
+    /// El menor intermedio (16 o 32 bits) en el que cabe `valor * num` para todo valor de `src`, dentro de lo que soporta el dispositivo.
+    /// Un intermedio mayor que el ancho nativo del PIC se emula por software (rutinas de 4 bytes): se avisa una vez (`PYP3025`).
+    fn wide_for(&mut self, src: Type, num: i128, signed: bool, span: Span) -> Option<u8> {
+        let need = max_abs(src).checked_mul(num.abs())?;
+        self.wide_fit(need, signed, span)
+    }
+
+    fn wide_fit(&mut self, need: i128, signed: bool, span: Span) -> Option<u8> {
+        for w in [16u8, 32] {
+            if w as u32 > self.target.max_int_bits {
+                break;
+            }
+            if fits_bits(need, signed, w) {
+                if w > 16 && self.warned_wide.insert(w) {
+                    self.d.warning(
+                        "PYP3025",
+                        span,
+                        format!("esta operacion de punto fijo usa un intermedio de {w} bits: el producto y la division son rutinas de {} bytes del runtime (docs/sdk-runtime.md), mas lentas y grandes que las de 16 bits", w / 8),
+                    );
+                }
+                return Some(w);
+            }
+        }
+        None
+    }
+
+    fn wide_err(&self) -> String {
+        format!("el intermedio no cabe en los {} bits que soporta {}", self.target.max_int_bits.min(32), self.target.name)
+    }
+
     fn fixed_unify(&mut self, l: &Expr, r: &Expr, lt: Type, rt: Type, op: &str) -> Option<Type> {
         match (lt.is_fixed(), rt.is_fixed()) {
             (true, true) if lt == rt => Some(lt),
@@ -3303,11 +3338,13 @@ impl<'a> Checker<'a> {
                     }
                     return self.set(e, lt, Some(v));
                 }
-                if bits > 8 {
-                    self.d.error("PYP2255", e.span, format!("el producto de dos {lt} necesita un intermedio de {} bits: {WIDE_MSG}; con una base de 8 bits (Fixed[uint8, n]) si cabe", 2 * bits));
+                let m = max_abs(lt);
+                let Some(wide) = self.wide_fit(m * m, signed, e.span) else {
+                    let msg = self.wide_err();
+                    self.d.error("PYP2255", e.span, format!("el producto de dos {lt} necesita un intermedio de {} bits: {msg}", 2 * bits));
                     return err(self);
-                }
-                self.fixed_ops.insert(e.id, FixedOp::Mul { binary, scale, signed });
+                };
+                self.fixed_ops.insert(e.id, FixedOp::Mul { binary, scale, signed, wide });
                 self.set(e, lt, None)
             }
             _ => {
@@ -3377,11 +3414,12 @@ impl<'a> Checker<'a> {
                     }
                     return self.set(e, fx, Some(v));
                 }
-                if !fits_wide(fx, num, signed) {
-                    self.d.error("PYP2255", e.span, format!("{fx} por {num}/{den} necesita un intermedio de mas de 16 bits: {WIDE_MSG}; divide (el numerador 1) o usa una base de 8 bits"));
+                let Some(wide) = self.wide_for(fx, num, signed, e.span) else {
+                    let msg = self.wide_err();
+                    self.d.error("PYP2255", e.span, format!("{fx} por {num}/{den}: {msg}"));
                     return err(self);
-                }
-                self.fixed_ops.insert(e.id, FixedOp::Scale { num, den, child, signed });
+                };
+                self.fixed_ops.insert(e.id, FixedOp::Scale { num, den, child, signed, wide });
                 self.set(e, fx, None)
             }
         }
@@ -3414,11 +3452,12 @@ impl<'a> Checker<'a> {
                     }
                     return self.set(e, target, Some(v));
                 }
-                if !fits_wide(at, num, signed_any(at)) {
-                    self.d.error("PYP2255", e.span, format!("convertir {at} a {target} necesita un intermedio de mas de 16 bits: {WIDE_MSG}"));
+                let Some(wide) = self.wide_for(at, num, signed_any(at), e.span) else {
+                    let msg = self.wide_err();
+                    self.d.error("PYP2255", e.span, format!("convertir {at} a {target}: {msg}"));
                     return self.set(e, Type::Error, None);
-                }
-                self.fixed_ops.insert(e.id, FixedOp::Scale { num, den, child: 0, signed: signed_any(at) });
+                };
+                self.fixed_ops.insert(e.id, FixedOp::Scale { num, den, child: 0, signed: signed_any(at), wide });
                 self.set(e, target, None)
             }
             other => {
@@ -5192,11 +5231,12 @@ impl<'a> Checker<'a> {
                     return self.set(e, target, Some(target.wrap(v)));
                 }
                 let signed = t.is_signed() || target.is_signed();
-                if !fits_wide(t, 1, signed) {
-                    self.d.error("PYP2255", e.span, format!("convertir {t} a {target} no cabe en el intermedio de 16 bits: {WIDE_MSG}"));
+                let Some(wide) = self.wide_for(t, 1, signed, e.span) else {
+                    let msg = self.wide_err();
+                    self.d.error("PYP2255", e.span, format!("convertir {t} a {target}: {msg}"));
                     return self.set(e, Type::Error, None);
-                }
-                self.fixed_ops.insert(e.id, FixedOp::Scale { num: 1, den: t.factor(), child: 0, signed });
+                };
+                self.fixed_ops.insert(e.id, FixedOp::Scale { num: 1, den: t.factor(), child: 0, signed, wide });
                 self.set(e, target, None)
             }
             Type::Int { .. } | Type::Bool => {

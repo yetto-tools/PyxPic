@@ -9,10 +9,10 @@ pyxpic build programa.py -o salida.hex [--listing] [--device devices/pic16f887]
 
 ## Qué soporta
 
-- Tipos `uint8`, `int8`, `bool`, `uint16`, `int16`. Little-endian, aritmética modular.
-- `+ - & | ^ ~`, negación, `not`, comparaciones (con y sin signo, 8 y 16 bits), desplazamientos por **constante**, conversiones.
+- Tipos `uint8`, `int8`, `bool`, `uint16`, `int16`, `uint32`, `int32` (#32). Little-endian, aritmética modular.
+- `+ - & | ^ ~`, negación, `not`, comparaciones (con y sin signo, 8, 16 y 32 bits), desplazamientos por **constante**, conversiones.
 - `if/elif/else`, `while`, `for range`, `break/continue`, `and/or/not` con cortocircuito.
-- Funciones con argumentos y retorno (8/16 bits), globales inicializados en el arranque, `@interrupt` con guardado de contexto.
+- Funciones con argumentos y retorno (8, 16 y 32 bits), globales inicializados en el arranque, `@interrupt` con guardado de contexto.
 - Pines: `RD0.output()/input()/on()/off()/toggle()/value()` (limpia `ANSEL`/`ANSELH`, fija `TRISx`, vuelve al banco 0).
 - Programas con `main()`; solo se compilan las funciones alcanzables desde `main` o la ISR.
 
@@ -22,8 +22,8 @@ pyxpic build programa.py -o salida.hex [--listing] [--device devices/pic16f887]
 |---|---|
 | Memoria | Todo en el banco 0 (`20h–6Fh`, 80 bytes): globales, parámetros, locales y temporales, sin solapamiento. Así se cumple la invariante de banco 0 |
 | Zona común `70h–7Fh` | `70h W_TEMP`, `71h STATUS_TEMP`, `72h PCLATH_TEMP`; `74h–77h` temporales del contexto principal, `78h–7Bh` de la ISR; `7Ch`/`7Dh` byte alto del retorno de 16 bits (principal/ISR) |
-| Llamada | Argumentos a las posiciones del llamado, `CALL`, retorno en W (byte bajo) y `RETV` (byte alto) |
-| Comparaciones | `SUBWF`/`SUBLW` y bit C; con signo se invierte el bit 7 (`XORLW 0x80`); 16 bits: primero el byte alto, y el bajo solo si empatan |
+| Llamada | Argumentos a las posiciones del llamado, `CALL`, retorno en W (byte 0), `RETV` (byte 1) y, con 32 bits, dos bytes de RAM del contexto (bytes 2 y 3) |
+| Comparaciones | `SUBWF`/`SUBLW` y bit C; con signo se invierte el bit 7 (`XORLW 0x80`); varios bytes: de arriba abajo, el primer byte que difiere decide |
 | Arranque | `0000h: GOTO startup`; `startup` inicializa las variables globales (la RAM no está definida tras el reset; las constantes `Const` no ocupan RAM), pone a 0 los latches de los puertos usados, llama a la función `@init_device` (si existe), luego a `main`, y duerme |
 | Parámetros del dispositivo | RAM útil del banco 0, tamaño de programa y direcciones de CONFIG vienen del Device Pack (`Options`); el backend comprueba además que el dispositivo declarado coincida |
 | Interrupción | `0004h: GOTO isr` (o `RETFIE` si no hay ISR); prólogo/epílogo del ejemplo 14-1 del datasheet (p.219) |
@@ -32,8 +32,7 @@ pyxpic build programa.py -o salida.hex [--listing] [--device devices/pic16f887]
 ## Límites actuales (el compilador los rechaza con un error claro)
 
 - Solo genera código para el **PIC16F887**: el mapa de registros (PORTx, TRISx, ANSEL) está fijo en el backend (#22). Con otro dispositivo, o si el programa declara uno distinto del compilado, da un error en vez de código equivocado.
-- `*`, `//`, `%` sobre más de 16 bits (`uint32`/`int32`, #32).
-- `uint32` / `int32`.
+- Enteros de 64 bits, y valores de retorno de más de 32 bits.
 - Más de 80 bytes de datos: no hay otros bancos ni solapamiento de locales (#26).
 - Más de 2048 palabras: no se maneja PCLATH.
 - Acceso a pines (`pyxpic.periph.gpio`, ver `docs/sdk-gpio.md`) solo en los puertos A–E; sin retardos (`sleep_ms`) todavía.

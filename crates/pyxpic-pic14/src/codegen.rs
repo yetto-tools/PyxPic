@@ -1,6 +1,6 @@
 //! Generador de codigo PIC14: IR tipada -> instrucciones nativas (ABI en docs/abi-pic14.md).
 //!
-//! Primer corte: enteros de 8 y 16 bits y bool. Todos los datos en el banco 0 (20h-6Fh), asi se
+//! Enteros de 8, 16 y 32 bits y bool. Todos los datos en el banco 0 (20h-6Fh), asi se
 //! cumple la invariante de banco 0 sin cambiar de banco. Sin multiplicacion/division ni
 //! desplazamientos por variable (necesitan rutinas de runtime) ni u32/i32. Programas de hasta
 //! 2048 palabras (no se maneja PCLATH). Todo corre en el host; el MCU ejecuta solo instrucciones nativas.
@@ -305,8 +305,9 @@ fn size(ty: Type) -> Result<usize, CodegenError> {
         Type::Bool => Ok(1),
         Type::Int { bits: 8, .. } => Ok(1),
         Type::Int { bits: 16, .. } => Ok(2),
+        Type::Int { bits: 32, .. } => Ok(4),
         Type::Void => Ok(0),
-        other => unsupported(format!("el tipo {other} (solo 8 y 16 bits y bool)")),
+        other => unsupported(format!("el tipo {other} (solo 8, 16 y 32 bits y bool)")),
     }
 }
 
@@ -321,6 +322,10 @@ struct Alloc {
     delay_ws: u8,
     /// Bloque de trabajo de las rutinas de runtime de cada contexto (main, interrupcion): 0 si no las usa.
     rt: [u8; 2],
+    /// Ancho en bytes del bloque de trabajo de cada contexto (2 o 4): A, B y R miden lo mismo; el bloque ocupa `3 * ancho + 3` bytes.
+    rt_w: [usize; 2],
+    /// Los bytes 2 y 3 del valor de retorno de 32 bits de cada contexto (el byte 0 sale en W y el 1 en RETV): 0 si ninguna funcion lo devuelve.
+    ret_hi: [u8; 2],
     globals: Vec<u8>,
     /// Direccion (banco 0) del primer elemento de cada arreglo de RAM.
     arrays: Vec<u8>,
@@ -368,23 +373,32 @@ fn allocate(m: &Module, live: &[usize], isr_ctx: &HashSet<usize>, opts: &Options
     });
     let delay_ws = if uses_delay { take(5) } else { 0 };
     // cada contexto que use una rutina de runtime (`*`, `//`, `%`) tiene su propio bloque de 9 bytes
-    let uses_rt = |isr: bool| {
-        live.iter().filter(|fi| isr_ctx.contains(fi) == isr).any(|&fi| {
+    // el ancho del bloque es el de la rutina mas ancha del contexto (minimo 2 bytes: el bloque de 9 bytes de siempre)
+    let rt_width = |isr: bool| -> usize {
+        let mut w = 0usize;
+        for &fi in live.iter().filter(|fi| isr_ctx.contains(fi) == isr) {
             let f = &m.functions[fi];
-            f.blocks.iter().flat_map(|b| b.insts.iter()).any(|i| {
-                let pyxpic_ir::ir::Inst::Binary { dst, op, lhs, rhs } = i else { return false };
+            for i in f.blocks.iter().flat_map(|b| b.insts.iter()) {
+                let pyxpic_ir::ir::Inst::Binary { dst, op, lhs, rhs } = i else { continue };
                 let konst = |o: &Operand| if let Operand::Const { value, .. } = o { Some(*value) } else { None };
-                pyxpic_frontend::routine_for(*op, m.place_ty(f, *dst), konst(lhs), konst(rhs)).is_some()
-            })
-        })
+                let ty = m.place_ty(f, *dst);
+                if pyxpic_frontend::routine_for(*op, ty, konst(lhs), konst(rhs)).is_some() {
+                    w = w.max(size(ty).unwrap_or(2).max(2));
+                }
+            }
+        }
+        w
     };
-    let rt = [if uses_rt(false) { take(9) } else { 0 }, if uses_rt(true) { take(9) } else { 0 }];
+    let rt_w = [rt_width(false), rt_width(true)];
+    let rt = [if rt_w[0] > 0 { take(3 * rt_w[0] + 3) } else { 0 }, if rt_w[1] > 0 { take(3 * rt_w[1] + 3) } else { 0 }];
+    let returns32 = |isr: bool| live.iter().filter(|fi| isr_ctx.contains(fi) == isr).any(|&fi| m.functions[fi].ret.bits() == 32);
+    let ret_hi = [if returns32(false) { take(2) } else { 0 }, if returns32(true) { take(2) } else { 0 }];
     let used = next - opts.ram_start as usize;
     let available = (opts.ram_end - opts.ram_start + 1) as usize;
     if used > available {
         return Err(CodegenError::OutOfRam { needed: used, available });
     }
-    Ok(Alloc { delay_ws, rt, globals, arrays, locals, temps, used })
+    Ok(Alloc { delay_ws, rt, rt_w, ret_hi, globals, arrays, locals, temps, used })
 }
 
 // ---- grafo de llamadas -----------------------------------------------------------------------
@@ -551,6 +565,81 @@ impl<'a> Gen<'a> {
         });
     }
     /// W = b - W
+    /// `d = l + r` o `d = l - r` byte a byte con el acarreo (o el prestamo) del byte anterior. En el ultimo byte basta sumar el acarreo a un
+    /// operando (el que sale se descarta); en un byte **intermedio** (de 32 bits) `0xFF + 1` perderia el acarreo de salida: ahi se suma en dos pasos
+    /// y se une el de cada uno.
+    fn addsub_bytes(&mut self, add: bool, d: &[u8], l: &[B], r: &[B]) {
+        let n = d.len();
+        for i in 0..n {
+            if add {
+                if i > 0 && i + 1 < n {
+                    self.add_mid(d[i], l[i], r[i]);
+                    continue;
+                }
+                self.ld(l[i]);
+                if i > 0 {
+                    self.asm.i(Btfsc(STATUS, BIT_C));
+                    self.asm.i(Addlw(1)); // acarreo del byte anterior
+                }
+                self.add_w(r[i]);
+            } else {
+                if i > 0 && i + 1 < n {
+                    self.sub_mid(d[i], l[i], r[i]);
+                    continue;
+                }
+                self.ld(r[i]);
+                if i > 0 {
+                    self.asm.i(Btfss(STATUS, BIT_C));
+                    self.asm.i(Addlw(1)); // prestamo del byte anterior (modular: correcto aun con 0xFF + 1)
+                }
+                self.sub_from(l[i]);
+            }
+            self.st(d[i]);
+        }
+    }
+
+    /// Byte intermedio de una suma: `d = l + r + C` y C = el acarreo de salida (el de `l + r` o el de sumar el acarreo de entrada).
+    fn add_mid(&mut self, d: u8, l: B, r: B) {
+        let s0 = self.scratch();
+        self.asm.i(Movlw(0));
+        self.asm.i(Btfsc(STATUS, BIT_C));
+        self.asm.i(Movlw(1));
+        self.st(s0); // s0 = acarreo de entrada
+        self.ld(l);
+        self.add_w(r);
+        self.st(d); // C = acarreo de l + r
+        self.asm.i(Movlw(0));
+        self.asm.i(Btfsc(STATUS, BIT_C));
+        self.asm.i(Movlw(2));
+        self.asm.i(Addwf(s0, F)); // s0 = entrada + 2 * acarreo de l + r
+        self.asm.i(Movf(s0, W));
+        self.asm.i(Andlw(1));
+        self.asm.i(Addwf(d, F)); // d += entrada; C = su acarreo
+        self.asm.i(Btfsc(s0, 1));
+        self.asm.i(Bsf(STATUS, BIT_C)); // C = el de uno o el del otro
+    }
+
+    /// Byte intermedio de una resta: `d = l - r - !C` y C = 1 si no hubo prestamo (en los dos pasos).
+    fn sub_mid(&mut self, d: u8, l: B, r: B) {
+        let s0 = self.scratch();
+        self.asm.i(Movlw(0));
+        self.asm.i(Btfss(STATUS, BIT_C));
+        self.asm.i(Movlw(1));
+        self.st(s0); // s0 = prestamo de entrada
+        self.ld(r);
+        self.sub_from(l);
+        self.st(d); // C = 1 si l >= r
+        self.asm.i(Movlw(0));
+        self.asm.i(Btfss(STATUS, BIT_C));
+        self.asm.i(Movlw(2));
+        self.asm.i(Addwf(s0, F)); // s0 = entrada + 2 * prestamo de l - r
+        self.asm.i(Movf(s0, W));
+        self.asm.i(Andlw(1));
+        self.asm.i(Subwf(d, F)); // d -= entrada; C = 1 si no hubo prestamo
+        self.asm.i(Btfsc(s0, 1));
+        self.asm.i(Bcf(STATUS, BIT_C)); // prestamo si lo hubo en cualquiera de los dos
+    }
+
     fn sub_from(&mut self, b: B) {
         self.asm.i(match b {
             B::Imm(k) => Sublw(k),
@@ -592,24 +681,7 @@ impl<'a> Gen<'a> {
         match op {
             BinOp::Add | BinOp::Sub => {
                 let (l, r) = (self.bytes(lhs)?, self.bytes(rhs)?);
-                for i in 0..n {
-                    if op == BinOp::Add {
-                        self.ld(l[i]);
-                        if i > 0 {
-                            self.asm.i(Btfsc(STATUS, BIT_C));
-                            self.asm.i(Addlw(1)); // acarreo del byte anterior
-                        }
-                        self.add_w(r[i]);
-                    } else {
-                        self.ld(r[i]);
-                        if i > 0 {
-                            self.asm.i(Btfss(STATUS, BIT_C));
-                            self.asm.i(Addlw(1)); // prestamo del byte anterior (modular: correcto aun con 0xFF + 1)
-                        }
-                        self.sub_from(l[i]);
-                    }
-                    self.st(d[i]);
-                }
+                self.addsub_bytes(op == BinOp::Add, &d, &l, &r);
             }
             BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => {
                 let (l, r) = (self.bytes(lhs)?, self.bytes(rhs)?);
@@ -714,11 +786,14 @@ impl<'a> Gen<'a> {
             self.sub_from(a[hi]);
         }
         if hi > 0 {
+            // de arriba abajo: el primer byte que difiere decide; si son iguales se sigue con el siguiente
             let done = self.asm.label("cmp.fin");
-            self.asm.i(Btfss(STATUS, BIT_Z));
-            self.asm.goto(done); // los bytes altos difieren: C ya es el resultado
-            self.ld(b[0]);
-            self.sub_from(a[0]);
+            for i in (0..hi).rev() {
+                self.asm.i(Btfss(STATUS, BIT_Z));
+                self.asm.goto(done); // los bytes altos difieren: C ya es el resultado
+                self.ld(b[i]);
+                self.sub_from(a[i]);
+            }
             self.asm.place(done);
         }
     }
@@ -732,12 +807,15 @@ impl<'a> Gen<'a> {
             CmpOp::Eq | CmpOp::Ne => {
                 self.ld(l[0]);
                 self.xor_w(r[0]);
-                if l.len() == 2 {
+                if l.len() > 1 {
+                    // la diferencia de cada byte, unida con OR: Z si todos son iguales
                     let s0 = self.scratch();
                     self.st(s0);
-                    self.ld(l[1]);
-                    self.xor_w(r[1]);
-                    self.asm.i(Iorwf(s0, W));
+                    for i in 1..l.len() {
+                        self.ld(l[i]);
+                        self.xor_w(r[i]);
+                        self.asm.i(Iorwf(s0, if i + 1 == l.len() { W } else { F }));
+                    }
                 }
                 self.asm.i(Movlw(0));
                 self.st(d);
@@ -808,10 +886,15 @@ impl<'a> Gen<'a> {
         if let Some(d) = dst {
             let d = self.regs(d)?;
             self.st(d[0]); // el byte bajo vuelve en W
-            if d.len() == 2 {
+            if d.len() >= 2 {
                 let r = self.retv();
                 self.asm.i(Movf(r, W));
                 self.st(d[1]);
+            }
+            for (k, &b) in d.iter().enumerate().skip(2) {
+                let hi = self.al.ret_hi[self.in_isr() as usize] + (k - 2) as u8;
+                self.asm.i(Movf(hi, W));
+                self.st(b);
             }
         }
         Ok(())
@@ -1031,10 +1114,15 @@ impl<'a> Gen<'a> {
     fn epilogue_return(&mut self, value: &Option<Operand>) -> Result<(), CodegenError> {
         if let Some(op) = value {
             let b = self.bytes(op)?;
-            if b.len() == 2 {
+            if b.len() >= 2 {
                 self.ld(b[1]);
                 let r = self.retv();
                 self.st(r);
+            }
+            for (k, &byte) in b.iter().enumerate().skip(2) {
+                self.ld(byte);
+                let hi = self.al.ret_hi[self.in_isr() as usize] + (k - 2) as u8;
+                self.st(hi);
             }
             self.ld(b[0]); // el byte bajo sale en W
         }
@@ -2270,7 +2358,7 @@ impl<'a> Gen<'a> {
 
     // ---- rutinas de runtime: * // % y desplazamientos por una cantidad variable (docs/sdk-runtime.md) ----
 
-    /// Base del bloque de 9 bytes de rutinas del contexto actual: A (2) B (2) R (2) CNT M SGN.
+    /// Base del bloque de trabajo de las rutinas del contexto actual: A, B y R (de `rt_w` bytes cada uno), CNT, M y SGN.
     fn rt_base(&self) -> u8 {
         if self.in_isr() {
             self.al.rt[1]
@@ -2372,9 +2460,6 @@ impl<'a> Gen<'a> {
     fn runtime_binop(&mut self, dst: Place, op: BinOp, lhs: &Operand, rhs: &Operand) -> Result<(), CodegenError> {
         let d = self.regs(dst)?;
         let n = d.len();
-        if n > 2 {
-            return unsupported(format!("'{}' sobre mas de 16 bits (las rutinas de runtime son de 8 y 16 bits)", op.symbol()));
-        }
         let ty = self.m.place_ty(self.f(), dst);
         let konst = |o: &Operand| if let Operand::Const { value, .. } = o { Some(*value) } else { None };
         let (lk, rk) = (konst(lhs), konst(rhs));
@@ -2438,7 +2523,8 @@ impl<'a> Gen<'a> {
         let isr = self.in_isr();
         let label = self.rt_label(isr, kind_id, n);
         let base = self.rt_base();
-        let (a, b, r) = (base, base + 2, base + 4);
+        let w = self.al.rt_w[self.in_isr() as usize] as u8;
+        let (a, b, r) = (base, base + w, base + 2 * w);
         let (l, rr) = (self.bytes(lhs)?, self.bytes(rhs)?);
         for i in 0..n {
             self.ld(l[i]);
@@ -2464,7 +2550,8 @@ impl<'a> Gen<'a> {
             i += 1;
             self.force_isr = Some(isr);
             let base = if isr { self.al.rt[1] } else { self.al.rt[0] };
-            let (a, b, r, cnt, m, sgn) = (base, base + 2, base + 4, base + 6, base + 7, base + 8);
+            let w = self.al.rt_w[isr as usize] as u8;
+            let (a, b, r, cnt, m, sgn) = (base, base + w, base + 2 * w, base + 3 * w, base + 3 * w + 1, base + 3 * w + 2);
             let label = self.rt_labels[&(isr, kind, n)];
             self.asm.items.push(Item::FuncStart(label));
             self.asm.place(label);
@@ -2497,6 +2584,27 @@ impl<'a> Gen<'a> {
         self.asm.i(Btfsc(STATUS, BIT_C));
         self.asm.i(Comf(m, F)); // M = 0xFF si el bit es 1
         for i in 0..n as u8 {
+            if i > 0 && (i as usize) + 1 < n {
+                // byte intermedio: el acarreo de entrada se suma aparte para no perder el de salida (como en `add_mid`)
+                let s0 = self.scratch();
+                self.asm.i(Movlw(0));
+                self.asm.i(Btfsc(STATUS, BIT_C));
+                self.asm.i(Movlw(1));
+                self.st(s0);
+                self.asm.i(Movf(a + i, W));
+                self.asm.i(Andwf(m, W));
+                self.asm.i(Addwf(r + i, F));
+                self.asm.i(Movlw(0));
+                self.asm.i(Btfsc(STATUS, BIT_C));
+                self.asm.i(Movlw(2));
+                self.asm.i(Addwf(s0, F));
+                self.asm.i(Movf(s0, W));
+                self.asm.i(Andlw(1));
+                self.asm.i(Addwf(r + i, F));
+                self.asm.i(Btfsc(s0, 1));
+                self.asm.i(Bsf(STATUS, BIT_C));
+                continue;
+            }
             self.asm.i(Movf(a + i, W));
             self.asm.i(Andwf(m, W));
             if i > 0 {
@@ -2541,15 +2649,8 @@ impl<'a> Gen<'a> {
         self.asm.i(Movf(m, F));
         self.asm.i(Btfsc(STATUS, BIT_Z));
         self.asm.goto(skip); // R < B: no se resta
-        for i in 0..n {
-            self.ld(bb[i]);
-            if i > 0 {
-                self.asm.i(Btfss(STATUS, BIT_C));
-                self.asm.i(Addlw(1));
-            }
-            self.sub_from(rb[i]);
-            self.st(r + i as u8); // R -= B
-        }
+        let rregs: Vec<u8> = (0..n as u8).map(|i| r + i).collect();
+        self.addsub_bytes(false, &rregs, &rb, &bb); // R -= B
         self.asm.i(Bsf(a, 0)); // bit del cociente
         self.asm.place(skip);
         self.asm.i(Decfsz(cnt, F));
@@ -2562,9 +2663,10 @@ impl<'a> Gen<'a> {
             self.asm.i(Comf(x + i, F));
         }
         self.asm.i(Incf(x, F));
-        if n == 2 {
+        // el acarreo del +1 sube mientras el byte anterior dio 0 (Z)
+        for i in 1..n as u8 {
             self.asm.i(Btfsc(STATUS, BIT_Z));
-            self.asm.i(Incf(x + 1, F));
+            self.asm.i(Incf(x + i, F));
         }
     }
 
