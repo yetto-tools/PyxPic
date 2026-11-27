@@ -77,6 +77,55 @@ function activate(context) {
   }
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(refreshStatus));
 
+  /** Un diagnóstico de la CLI como el de VS Code: el error, su causa y su solución en el mensaje, y qué analizador lo encontró en el origen. */
+  function toDiagnostic(item) {
+    const hasEnd = Number.isInteger(item.endLine) && (item.endLine > item.line || item.endColumn > item.column);
+    const range = new vscode.Range(item.line, item.column, hasEnd ? item.endLine : item.line, hasEnd ? item.endColumn : item.column + 1);
+    const severity = item.severity === "error" ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Warning;
+    const diagnostic = new vscode.Diagnostic(range, language.describeDiagnostic(item), severity);
+    diagnostic.code = item.code;
+    diagnostic.source = language.diagnosticSource(item);
+    return diagnostic;
+  }
+
+  /** Ejecuta la CLI con `text` por la entrada estándar (el texto del editor, guardado o no); no lanza. */
+  function cliInput(tools, args, cwd, text) {
+    return new Promise((resolve) => {
+      const child = spawn(tools.executable, args, { cwd });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk) => { stdout += chunk; });
+      child.stderr.on("data", (chunk) => { stderr += chunk; });
+      child.on("error", (error) => resolve({ error, stdout, stderr }));
+      child.on("close", (code) => resolve({ error: code ? new Error(`salida ${code}`) : undefined, stdout, stderr }));
+      child.stdin.on("error", () => {});
+      child.stdin.end(text);
+    });
+  }
+
+  // El análisis mientras se escribe: el analizador sintáctico y el semántico de la CLI revisan el texto del editor tras una pausa corta, sin guardar.
+  const liveTimers = new Map();
+  async function liveCheck(document) {
+    const config = vscode.workspace.getConfiguration("pyxpic", document.uri);
+    if (!config.get("liveCheck", true) || document.uri.scheme !== "file" || !["pyxpic", "pyxpic-basic"].includes(document.languageId)) return;
+    const version = document.version;
+    const folder = vscode.workspace.getWorkspaceFolder(document.uri);
+    const cwd = folder ? folder.uri.fsPath : path.dirname(document.uri.fsPath);
+    const tools = language.projectTools(document.uri.fsPath, cwd, config.get("executable", "pyxpic"), config.get("devicesDir", "").trim());
+    const args = ["check", "-", "--lang", document.languageId === "pyxpic-basic" ? "bas" : "py", "--format", "json", ...(tools.devices ? ["--devices-dir", tools.devices] : [])];
+    const result = await cliInput(tools, args, cwd, document.getText());
+    // un resultado de una versión vieja del texto no se muestra
+    if (document.isClosed || document.version !== version) return;
+    const items = language.diagnosticsFromJson(result.stdout);
+    if (items) diagnostics.set(document.uri, items.map(toDiagnostic));
+  }
+  function scheduleLive(document) {
+    const key = document.uri.toString();
+    clearTimeout(liveTimers.get(key));
+    liveTimers.set(key, setTimeout(() => { liveTimers.delete(key); void liveCheck(document); }, 500));
+  }
+  context.subscriptions.push({ dispose: () => liveTimers.forEach((timer) => clearTimeout(timer)) });
+
   /** Ejecuta la CLI y devuelve su salida; no lanza: el código de salida distinto de 0 es parte del resultado. */
   function cli(tools, args, cwd) {
     return new Promise((resolve) => {
@@ -92,8 +141,10 @@ function activate(context) {
   context.subscriptions.push(
     vscode.workspace.onDidOpenTextDocument(detect),
     vscode.workspace.onDidChangeTextDocument((event) => {
-      diagnostics.delete(event.document.uri);
+      // sin el analisis en vivo, lo que se muestra deja de corresponder al texto en cuanto cambia
+      if (!vscode.workspace.getConfiguration("pyxpic", event.document.uri).get("liveCheck", true)) diagnostics.delete(event.document.uri);
       detect(event.document);
+      if (event.contentChanges.length) scheduleLive(event.document);
       if (event.contentChanges.length) resourcesView.markStale(event.document.uri.toString());
     }),
     vscode.workspace.onDidCloseTextDocument((document) => { diagnostics.delete(document.uri); checks.delete(document.uri.toString()); }),
@@ -331,15 +382,7 @@ function activate(context) {
       if (!error) void resourcesView.measure();
       if (!quiet) output.show(true);
       if (checks.get(key) === request && document.version === version && !document.isClosed) {
-        const entries = language.diagnostics(`${stdout}\n${stderr}`, file).map((item) => {
-          const range = new vscode.Range(item.line, item.column, item.line, item.column + 1);
-          const severity = item.severity === "error" ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Warning;
-          const diagnostic = new vscode.Diagnostic(range, item.message, severity);
-          diagnostic.code = item.code;
-          diagnostic.source = "PyxPic";
-          return diagnostic;
-        });
-        diagnostics.set(document.uri, entries);
+        diagnostics.set(document.uri, language.diagnostics(`${stdout}\n${stderr}`, file).map(toDiagnostic));
       }
       if (error) {
         output.appendLine(`\nNo se completó: ${error.message}`);

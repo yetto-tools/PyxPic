@@ -11,6 +11,9 @@
       "code": "PYP2040",
       "severity": "error",
       "message": "el valor 300 no cabe en uint8 (rango 0..255)",
+      "phase": "semantic",
+      "cause": null,
+      "fix": null,
       "range": {
         "start": {
           "line": 10,
@@ -26,6 +29,9 @@
       "code": "PYP1100",
       "severity": "error",
       "message": "se esperaba una expresion, se encontro Assign",
+      "phase": "syntax",
+      "cause": null,
+      "fix": null,
       "range": {
         "start": {
           "line": 11,

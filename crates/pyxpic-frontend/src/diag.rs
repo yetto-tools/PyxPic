@@ -21,25 +21,58 @@ pub enum Severity {
     Warning,
 }
 
+/// La etapa que encontro el diagnostico: el analizador **sintactico** (lexer y parser: la forma del programa) o el **semantico** (tipos, nombres,
+/// recursos y limites del dispositivo: lo que el programa significa).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Phase {
+    Syntax,
+    #[default]
+    Semantic,
+}
+
+impl Phase {
+    pub fn name(self) -> &'static str {
+        match self {
+            Phase::Syntax => "syntax",
+            Phase::Semantic => "semantic",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Diagnostic {
     pub severity: Severity,
     pub code: &'static str,
     pub message: String,
     pub span: Span,
+    pub phase: Phase,
+    /// Por que pasa, en lenguaje llano (opcional).
+    pub cause: Option<String>,
+    /// Que hacer para arreglarlo (opcional).
+    pub fix: Option<String>,
 }
 
 #[derive(Default, Debug)]
 pub struct Diagnostics {
     pub items: Vec<Diagnostic>,
+    /// La etapa en curso: los diagnosticos nuevos la llevan.
+    pub phase: Phase,
 }
 
 impl Diagnostics {
     pub fn error(&mut self, code: &'static str, span: Span, message: impl Into<String>) {
-        self.items.push(Diagnostic { severity: Severity::Error, code, message: message.into(), span });
+        self.items.push(Diagnostic { severity: Severity::Error, code, message: message.into(), span, phase: self.phase, cause: None, fix: None });
     }
     pub fn warning(&mut self, code: &'static str, span: Span, message: impl Into<String>) {
-        self.items.push(Diagnostic { severity: Severity::Warning, code, message: message.into(), span });
+        self.items.push(Diagnostic { severity: Severity::Warning, code, message: message.into(), span, phase: self.phase, cause: None, fix: None });
+    }
+    /// Un error con su explicacion y su posible solucion: `mensaje` dice que fallo, `cause` por que y `fix` que hacer.
+    pub fn error_with(&mut self, code: &'static str, span: Span, message: impl Into<String>, cause: impl Into<String>, fix: impl Into<String>) {
+        self.items.push(Diagnostic { severity: Severity::Error, code, message: message.into(), span, phase: self.phase, cause: Some(cause.into()), fix: Some(fix.into()) });
+    }
+    /// Un aviso con su explicacion y lo que se puede hacer.
+    pub fn warning_with(&mut self, code: &'static str, span: Span, message: impl Into<String>, cause: impl Into<String>, fix: impl Into<String>) {
+        self.items.push(Diagnostic { severity: Severity::Warning, code, message: message.into(), span, phase: self.phase, cause: Some(cause.into()), fix: Some(fix.into()) });
     }
     pub fn has_errors(&self) -> bool {
         self.items.iter().any(|d| d.severity == Severity::Error)
@@ -59,6 +92,12 @@ impl Diagnostics {
                 Severity::Warning => "warning",
             };
             out.push_str(&format!("{file}:{line}:{col}: {sev}[{}]: {}\n", d.code, d.message));
+            if let Some(c) = &d.cause {
+                out.push_str(&format!("  causa: {c}\n"));
+            }
+            if let Some(f) = &d.fix {
+                out.push_str(&format!("  solucion: {f}\n"));
+            }
         }
         out
     }

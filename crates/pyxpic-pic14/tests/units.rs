@@ -79,8 +79,10 @@ fn tmr2_every_solves_prescaler_pr2_and_postscaler_exactly() {
     same("TMR2.every(1ms)", &format!("TMR2.start(prescaler={}, period={}, postscaler={})", st.prescaler, st.period, st.postscaler));
     // un tiempo que no es un numero entero de ciclos (un ciclo son 1000 ns a 4 MHz)
     rejected("TMR2.every(1500ns)", "PYP2243", "numero entero de ciclos");
-    // un periodo que Timer2 no alcanza: 16 x 256 x 16 = 65 536 ciclos como maximo
-    rejected("TMR2.every(100ms)", "PYP2243", "mas cercanos");
+    // un periodo mas largo que Timer2 (65 536 ciclos como maximo) ya no es un error: un tick exacto y un contador de software
+    assert!(words(&program("TMR2.every(100ms)")).is_ok());
+    // lo que no se puede formar ni asi (100 003 ciclos, un primo) es PYP2126 con los periodos exactos mas cercanos
+    rejected("TMR2.every(100003us)", "PYP2126", "Los periodos exactos mas cercanos");
     rejected("TMR2.every(20)", "PYP2240", "tiempo con unidad");
     rejected("TMR2.every(5V)", "PYP2240", "tiempo con unidad");
 }

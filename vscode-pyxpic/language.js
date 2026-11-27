@@ -147,10 +147,51 @@ function declaredDevice(text) {
 
 function diagnostics(text, file) {
   const prefix = `${file}:`;
-  return text.split(/\r?\n/).filter((line) => line.startsWith(prefix)).flatMap((line) => {
-    const match = /^(\d+):(\d+): (error|warning)\[([^\]]+)\]: (.+)$/.exec(line.slice(prefix.length));
-    return match ? [{ line: Number(match[1]) - 1, column: Number(match[2]) - 1, severity: match[3], code: match[4], message: match[5] }] : [];
-  });
+  const items = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (line.startsWith(prefix)) {
+      const match = /^(\d+):(\d+): (error|warning)\[([^\]]+)\]: (.+)$/.exec(line.slice(prefix.length));
+      if (match) items.push({ line: Number(match[1]) - 1, column: Number(match[2]) - 1, severity: match[3], code: match[4], message: match[5] });
+      continue;
+    }
+    // las lineas "  causa: ..." y "  solucion: ..." explican el diagnostico anterior
+    const detail = /^ {2}(causa|solucion): (.+)$/.exec(line);
+    if (detail && items.length) items[items.length - 1][detail[1] === "causa" ? "cause" : "fix"] = detail[2];
+  }
+  return items;
 }
 
-module.exports = { info, basicInfo, isPyxPic, diagnostics, completions, basicCompletions, projectTools, declaredDevice };
+/** Los diagnosticos de `pyxpic check --format json` (version 1): con fase (sintaxis o semantica), causa y solucion y el rango completo. */
+function diagnosticsFromJson(text) {
+  let report;
+  try {
+    report = JSON.parse(String(text));
+  } catch {
+    return undefined;
+  }
+  if (!report || report.version !== 1 || !Array.isArray(report.diagnostics)) return undefined;
+  return report.diagnostics.map((d) => ({
+    line: d.range.start.line - 1,
+    column: d.range.start.column - 1,
+    endLine: d.range.end.line - 1,
+    endColumn: d.range.end.column - 1,
+    severity: d.severity,
+    code: d.code,
+    message: d.message,
+    cause: d.cause || undefined,
+    fix: d.fix || undefined,
+    phase: d.phase,
+  }));
+}
+
+/** El texto de un diagnostico para el panel Problemas: el error, por que pasa y que hacer. */
+function describeDiagnostic(item) {
+  return [item.message, item.cause ? `Causa: ${item.cause}` : "", item.fix ? `Solución: ${item.fix}` : ""].filter(Boolean).join("\n");
+}
+
+/** La etapa que lo encontro, para el origen en Problemas. */
+function diagnosticSource(item) {
+  return item.phase === "syntax" ? "PyxPic · sintaxis" : item.phase === "semantic" ? "PyxPic · semántica" : "PyxPic";
+}
+
+module.exports = { info, basicInfo, isPyxPic, diagnostics, diagnosticsFromJson, describeDiagnostic, diagnosticSource, completions, basicCompletions, projectTools, declaredDevice };

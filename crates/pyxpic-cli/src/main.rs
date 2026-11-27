@@ -30,6 +30,7 @@ const USAGE: &str = "uso:
 opciones:
   --project <pyxpic.toml>  archivo de proyecto (por defecto se busca el mas cercano al programa; sin archivo, usa su 'main')
   --target <perfil>       perfil de destino del proyecto ([target.perfil]); por defecto default_target o el unico
+  --lang py|bas           el lenguaje cuando el programa llega por la entrada estandar (check -)
   --format text|json      como se imprimen los diagnosticos: texto (por defecto) o JSON versionado, solo con check (docs/diagnosticos-json.md)
   --no-opt                no optimiza la IR (para depurar o comparar tamanos; ver docs/ir-optimizaciones.md)
   --device <directorio>   usa este Device Pack (por defecto se busca el que declara el programa)
@@ -453,11 +454,13 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     let mut settings: Vec<(String, String)> = Vec::new();
     let mut project_arg: Option<String> = None;
     let mut target_arg: Option<String> = None;
+    let mut lang_arg: Option<String> = None;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "-o" => out_path = it.next().cloned(),
             "--project" => project_arg = it.next().cloned(),
+            "--lang" => lang_arg = it.next().cloned(),
             "--target" => target_arg = it.next().cloned(),
             "--listing" => listing = true,
             "--details" => details = true,
@@ -533,17 +536,35 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
             out_path = t.output.as_ref().map(|o| o.to_string_lossy().into_owned());
         }
     }
-    let src = match std::fs::read_to_string(&file) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("no se pudo leer '{file}': {e}");
+    // `-` lee el programa de la entrada estandar (la extension de VS Code revisa lo que se escribe, sin guardar)
+    let src = if file == "-" {
+        let mut text = String::new();
+        if std::io::Read::read_to_string(&mut std::io::stdin(), &mut text).is_err() {
+            eprintln!("no se pudo leer la entrada estandar");
             return ExitCode::from(2);
+        }
+        text
+    } else {
+        match std::fs::read_to_string(&file) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("no se pudo leer '{file}': {e}");
+                return ExitCode::from(2);
+            }
         }
     };
 
     // El dispositivo lo declara el propio programa (`from pyxpic.device import PIC16F887`);
     // `--device` solo fuerza un pack concreto y el analisis comprueba que coincida con la declaracion.
-    let lang = pyxpic_frontend::Language::from_path(&file);
+    let lang = match lang_arg.as_deref() {
+        Some("bas" | "basic") => pyxpic_frontend::Language::Basic,
+        Some("py" | "python") => pyxpic_frontend::Language::Python,
+        Some(other) => {
+            eprintln!("--lang es 'py' o 'bas', no '{other}'");
+            return ExitCode::from(2);
+        }
+        None => pyxpic_frontend::Language::from_path(&file),
+    };
     let declared = pyxpic_frontend::declared_device_in(lang, &src);
     // el fuente manda: si declara un dispositivo y el perfil pide otro, es un error; si no declara ninguno, vale el del perfil
     let profile_device = profile.as_ref().and_then(|(_, t)| t.device.clone());

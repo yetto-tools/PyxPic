@@ -534,9 +534,10 @@ fn a_one_character_string_is_its_ascii_code_in_an_expression() {
 }
 
 #[test]
-fn the_uart_command_example_answers_each_key_and_drives_the_pin() {
-    let src = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/basic/uart/uart_led_command.bas")).unwrap();
-    let (_, c) = build(&src);
+fn a_uart_command_program_answers_each_key_and_drives_the_pin() {
+    // el programa va aqui (no se lee de examples/): el ejemplo se edita y esta prueba debe seguir diciendo lo mismo
+    let src = "' Comandos por la UART: a enciende RB0 y b o c lo apagan; cada tecla responde con el valor de RB0.\nDEVICE PIC16F887\nCLOCK INTERNAL 4 MHZ\nBAUD 9600\n\nRB0 = 0\nmain:\n  SERTXD(\"Hola PyxPic \", #RB0, CR, LF)\n  GOSUB serial\n  GOTO main\n\nserial:\n  SERRXD(b0)\n  IF b0 = \"a\" THEN\n    SERTXD(\"Boton A presionado. Valor: \", #RB0, CR, LF)\n    RB0 = 1\n  ELSEIF b0 = \"b\" THEN\n    SERTXD(\"Boton B presionado. Valor: \", #RB0, CR, LF)\n    RB0 = 0\n  ELSEIF b0 = \"c\" THEN\n    SERTXD(\"Boton C presionado. Valor: \", #RB0, CR, LF)\n    RB0 = 0\n  ENDIF\n  RETURN\n";
+    let (_, c) = build(src);
     let mut s = Sim::new(&c.image);
     s.run_until(2_000_000, |_| false);
     let text = |s: &Sim, from: usize| String::from_utf8_lossy(&s.uart_tx.iter().skip(from).map(|t| t.0).collect::<Vec<_>>()).to_string();

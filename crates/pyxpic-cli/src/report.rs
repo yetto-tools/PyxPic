@@ -28,6 +28,9 @@ pub fn diagnostics_json(file: &str, src: &str, diags: &Diagnostics) -> Value {
             "code": d.code,
             "severity": match d.severity { Severity::Error => "error", Severity::Warning => "warning" },
             "message": d.message,
+            "phase": d.phase.name(),
+            "cause": d.cause,
+            "fix": d.fix,
             "range": { "start": position(src, d.span.start), "end": position(src, d.span.end) },
         })).collect::<Vec<_>>(),
     })

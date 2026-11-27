@@ -24,7 +24,7 @@ El lexer de BASIC usa el mismo escáner que Python (`units::scan`): `8MHZ`, `11.
 - **Magnitud equivocada:** `UART.start(baud=9600Hz)`, `pause(500Hz)`, `I2C.start(frequency=3V)` son el error `PYP2240` («espera baudios / tiempo / frecuencia»). `delay_cycles(5ms)` también: recibe ciclos.
 - **Valor no entero en la unidad del parámetro:** `pause(1500us)` o `pause(0.0005s)` son `PYP2241` (`pause` recibe milisegundos enteros): usa `delay_us(1500us)`. En cambio `pause(0.5s)` vale: son exactamente 500 ms. No se redondea nunca en silencio.
 - **Porcentaje del ciclo de trabajo:** `duty=50pct` es una **parte del periodo**, no de 1023: se resuelve con PR2, que depende del reloj y de `frequency` (`cuentas = 4 × (PR2 + 1) × pct`, redondeado a la cuenta más cercana). Va de `0pct` a `100pct` (`PYP2241` fuera de ahí). `PWM.duty(…)` en ejecución sigue recibiendo cuentas.
-- **`TMR2.every(20ms)`** convierte el tiempo en ciclos de instrucción con el reloj declarado y resuelve prescaler × (PR2 + 1) × postscaler con el resolvedor de siempre (el menor prescaler y postscaler que lo forman exactamente). Si el tiempo no cae en un número entero de ciclos, o Timer2 no lo alcanza (máximo 65 536 ciclos), es `PYP2243` y el mensaje da los periodos más cercanos. Solo Timer2 tiene periodo automático: `TMR0.every` y `TMR1.every` no existen. Necesita el reloj declarado.
+- **`TMR2.every(20ms)`** convierte el tiempo en ciclos de instrucción con el reloj declarado y resuelve prescaler × (PR2 + 1) × postscaler con el resolvedor de siempre (el menor prescaler y postscaler que lo forman exactamente). Si el tiempo no cae en un número entero de ciclos es `PYP2243`. Un tiempo más largo que Timer2 (65 536 ciclos como máximo) se parte en un tick exacto y un contador de software (aviso `PYP3026`, ver `docs/sdk-timer.md`); si ni así se forma es `PYP2126`, con la causa (el desbordamiento del contador) y los periodos exactos más cercanos. Solo Timer2 tiene periodo automático: `TMR0.every` y `TMR1.every` no existen. Necesita el reloj declarado.
 - **`ADC.start(reference=5V)`** no hace que el PIC genere nada: es la tensión de alimentación (VDD) y solo decide `low_voltage` (menos de 3,0 V). Se valida contra la alimentación del dispositivo (`vdd_min_uv`/`vdd_max_uv` en `device.json`; PIC16F887: 2,0 V a 5,5 V, DS40001291H p.1; `PYP2242` fuera de ahí) y contradice a `low_voltage=` si los dos están y no coinciden (`PYP2172`).
 - **`delay(500ms)` no existe:** se mantiene `pause` (una sola forma por operación, `docs/principios-de-diseno.md`); `pause(500ms)` ya lleva la unidad.
 
@@ -35,6 +35,7 @@ El lexer de BASIC usa el mismo escáner que Python (`units::scan`): `8MHZ`, `11.
 | `PYP2240` | La magnitud no corresponde al parámetro (o falta la unidad en `reference`, `TMR2.every`) |
 | `PYP2241` | El valor no es entero en la unidad del parámetro, o el porcentaje está fuera de 0–100 |
 | `PYP2242` | `reference` fuera de la alimentación del dispositivo |
-| `PYP2243` | `TMR2.every`: el tiempo no es un número entero de ciclos, Timer2 no lo alcanza, o falta el reloj |
+| `PYP2243` | `TMR2.every`: el tiempo no es un número entero de ciclos, o falta el reloj |
+| `PYP2126` | El periodo de Timer2 no se puede formar (ni como tick exacto por un contador): con la causa y los periodos exactos más cercanos |
 
 **Verificación:** `crates/pyxpic-pic14/tests/units.rs` (cada forma con unidad genera las mismas palabras de programa que su equivalente entero; todos los rechazos con su código). **No probado en hardware.**

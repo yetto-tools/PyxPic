@@ -184,6 +184,8 @@ pub struct Program {
     pub uart_fmt: BTreeMap<u32, Vec<FmtPart>>,
     /// Operaciones de punto fijo que la IR expande, por id de expresion.
     pub fixed_ops: BTreeMap<u32, FixedOp>,
+    /// Vueltas de software de un periodo de Timer2 mas largo que el hardware (`TMR2.every_ms(500)` a 8 MHz).
+    pub timer_ticks: Option<u32>,
 }
 
 pub struct Checked {
@@ -221,6 +223,7 @@ pub struct Checked {
     pub uart_calls: BTreeMap<u32, UartCall>,
     pub uart_fmt: BTreeMap<u32, Vec<FmtPart>>,
     pub fixed_ops: BTreeMap<u32, FixedOp>,
+    pub timer_ticks: Option<u32>,
 }
 
 pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Checked {
@@ -265,6 +268,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         timer_started: BTreeSet::new(),
         timer_needs: BTreeMap::new(),
         timer_every: Vec::new(),
+        timer_ticks: None,
         timer_pins: Vec::new(),
         reg_names: HashMap::new(),
         reg_calls: BTreeMap::new(),
@@ -367,6 +371,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         uart_calls: c.uart_calls,
         uart_fmt: c.uart_fmt,
         fixed_ops: c.fixed_ops,
+        timer_ticks: c.timer_ticks,
     }
 }
 
@@ -390,6 +395,14 @@ fn fits_bits(max_abs: i128, signed: bool, w: u8) -> bool {
 /// El mayor valor absoluto de un tipo.
 fn max_abs(t: Type) -> i128 {
     t.max().max(-t.min())
+}
+
+/// Un periodo de `cycles` ciclos de instruccion como tiempo legible (`32.768 ms`, `500 us`), segun el reloj y los relojes por ciclo.
+fn fmt_period(cycles: u64, hz: u32, cpc: u32) -> String {
+    let ns = cycles as f64 * cpc as f64 * 1e9 / hz as f64;
+    let (v, unit) = if ns >= 1e9 { (ns / 1e9, "s") } else if ns >= 1e6 { (ns / 1e6, "ms") } else if ns >= 1e3 { (ns / 1e3, "us") } else { (ns, "ns") };
+    let text = format!("{v:.3}");
+    format!("{} {unit}", text.trim_end_matches('0').trim_end_matches('.'))
 }
 
 /// `num/den` como decimal legible (solo para los mensajes).
@@ -477,6 +490,8 @@ struct Checker<'a> {
     timer_needs: BTreeMap<TimerId, Span>,
     /// `every_us`/`every_ms` pendientes de resolver cuando se conoce el reloj.
     timer_every: Vec<TimerEvery>,
+    /// Timer2 con un periodo largo: `every_ms` lo parte en un tick exacto del hardware y este numero de vueltas de software.
+    timer_ticks: Option<u32>,
     /// Pines que un temporizador reclama (`T0CKI` en RA4...).
     timer_pins: Vec<(&'static str, &'static str, Span)>,
     /// Registros importados de `pyxpic.regs`.
@@ -1402,16 +1417,10 @@ impl<'a> Checker<'a> {
                     return void(self);
                 }
                 let cycles = (num / den) as u64;
-                match timer::solve_t2(cycles) {
-                    Some(st) => {
-                        self.timer_calls.insert(e.id, TimerCall { timer: tid, op: TimerOp::Start(st) });
-                        note(self, true);
-                    }
-                    None => {
-                        let (below, above) = timer::nearest_t2(cycles);
-                        let near: Vec<String> = [below, above].iter().flatten().map(|c| format!("{c} ciclos")).collect();
-                        self.d.error("PYP2243", a.span, format!("TMR2.every: {cycles} ciclos no se pueden formar con prescaler (1, 4, 16) x PR2+1 (1 a 256) x postscaler (1 a 16); los mas cercanos: {}", near.join(" y ")));
-                    }
+                let cpc = per as u32;
+                if let Some(st) = self.t2_period(cycles, hz, cpc, a.span, "TMR2.every") {
+                    self.timer_calls.insert(e.id, TimerCall { timer: tid, op: TimerOp::Start(st) });
+                    note(self, true);
                 }
                 void(self)
             }
@@ -1602,6 +1611,64 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// El periodo de Timer2 para `cycles` ciclos de instruccion. Si cabe en el hardware (prescaler x PR2+1 x postscaler) es exacto; si es mas largo,
+    /// un tick exacto y un contador de software (`timer_ticks`); si no se puede formar, un error que explica el desbordamiento del contador.
+    fn t2_period(&mut self, cycles: u64, hz: u32, cpc: u32, span: Span, label: &str) -> Option<timer::TimerStart> {
+        let time = |c: u64| fmt_period(c, hz, cpc);
+        let max = timer::T2_MAX_CYCLES;
+        if let Some(st) = timer::solve_t2(cycles) {
+            return Some(st);
+        }
+        if cycles > max {
+            if let Some((st, ticks)) = timer::split_t2(cycles) {
+                if self.timer_ticks.is_some_and(|t| t != ticks) {
+                    self.d.error("PYP2127", span, "Timer2 tiene un solo periodo por programa: otro every_* ya pidio uno distinto");
+                    return None;
+                }
+                self.timer_ticks = Some(ticks);
+                self.d.warning_with(
+                    "PYP3026",
+                    span,
+                    format!("{label} ({}) usa un contador de software de {ticks} vueltas, porque no cabe en Timer2", time(cycles)),
+                    format!(
+                        "Timer2 es un contador de 8 bits: cuenta hasta PR2, se desborda (vuelve a 0 y levanta su bandera) y empieza de nuevo. Con el prescaler y el postscaler mas grandes tarda como maximo {max} ciclos de instruccion ({}) en desbordarse, y {} son {cycles} ciclos a {hz} Hz. El compilador lo resuelve solo: Timer2 da un tick exacto de {} ({} ciclos) y TMR2.expired cuenta {ticks} ticks por software, con unos 5 bytes de RAM (un contador de 2, una bandera de 1 y dos temporales)",
+                        time(max),
+                        time(cycles),
+                        time(st.t2_cycles()),
+                        st.t2_cycles()
+                    ),
+                    format!(
+                        "No hace falta corregir nada: el periodo sale exacto. Si prefieres no gastar ese contador, pide un periodo de {} o menos; recuerda que con un periodo asi TMR2.interrupt_on no sirve (la interrupcion salta en cada tick) y se consulta TMR2.expired",
+                        time(max)
+                    ),
+                );
+                return Some(st);
+            }
+        }
+        // los periodos exactos mas cercanos (los que el hardware da o que se parten en un tick exacto)
+        let reachable = |c: u64| c >= 1 && (timer::solve_t2(c).is_some() || (c > max && timer::split_t2(c).is_some()));
+        let below = (1..=600u64).filter_map(|d| cycles.checked_sub(d)).find(|c| reachable(*c));
+        let above = (1..=600u64).map(|d| cycles + d).find(|c| reachable(*c));
+        let near = match (below, above) {
+            (Some(l), Some(h)) => format!("Los periodos exactos mas cercanos son {} y {}", time(l), time(h)),
+            (Some(l), None) => format!("El periodo exacto mas cercano por debajo es {}", time(l)),
+            (None, Some(h)) => format!("El periodo exacto mas cercano por encima es {}", time(h)),
+            (None, None) => "No hay un periodo exacto cerca".to_string(),
+        };
+        self.d.error_with(
+            "PYP2126",
+            span,
+            format!("{label}: Timer2 no puede dar un periodo exacto de {}", time(cycles)),
+            format!(
+                "Timer2 es un contador de 8 bits: cuenta hasta PR2, se desborda (vuelve a 0 y levanta su bandera) y empieza de nuevo. Con el prescaler (1, 4 o 16), PR2+1 (1 a 256) y el postscaler (1 a 16) tarda como maximo {max} ciclos de instruccion ({}) en desbordarse, y esos tres valores tienen que multiplicar exactamente {cycles} ciclos ({} a {hz} Hz). Ese numero no se puede formar asi ni repitiendo un tick exacto hasta 65535 veces",
+                time(max),
+                time(cycles)
+            ),
+            format!("{near}. O usa TMR2.start(prescaler=..., period=...) con otros valores, o mide el tiempo con un contador de software propio sobre un tick exacto"),
+        );
+        None
+    }
+
     /// Reglas globales de los temporizadores: iniciarlos, pines que reclaman y periodos `every_*`.
     fn check_timer_usage(&mut self) {
         for (t, sp) in std::mem::take(&mut self.timer_needs) {
@@ -1616,6 +1683,7 @@ impl<'a> Checker<'a> {
         }
         let pend = std::mem::take(&mut self.timer_every);
         let Some(first) = pend.first() else { return };
+        let pend_span = Some(first.span);
         let Some(hz) = self.effective_clock(first.span, first.name) else { return };
         let Some(cpc) = self.target.clocks_per_cycle else {
             self.d.error("PYP2101", first.span, format!("{} necesita un dispositivo declarado: los ciclos de instruccion dependen del dispositivo", first.name));
@@ -1638,24 +1706,16 @@ impl<'a> Checker<'a> {
                 continue;
             }
             let cycles = (num / den) as u64;
-            match timer::solve_t2(cycles) {
-                Some(st) => {
-                    self.timer_calls.insert(p.expr, TimerCall { timer: TimerId::T2, op: TimerOp::Start(st) });
-                }
-                None => {
-                    let (lo, hi) = timer::nearest_t2(cycles);
-                    let near = match (lo, hi) {
-                        (Some(l), Some(h)) => format!("los periodos exactos mas cercanos son {l} y {h} ciclos"),
-                        (Some(l), None) => format!("el periodo exacto mas largo es {l} ciclos"),
-                        (None, Some(h)) => format!("el periodo exacto mas corto es {h} ciclos"),
-                        (None, None) => String::new(),
-                    };
-                    self.d.error(
-                        "PYP2126",
-                        p.span,
-                        format!("{}({}) son {cycles} ciclos y Timer2 no puede dar ese periodo exacto (prescaler 1/4/16 x PR2+1 de 1 a 256 x postscaler 1 a 16 = {} ciclos como maximo); {near}; usa TMR2.start(...) con otros valores", p.name, p.amount, timer::T2_MAX_CYCLES),
-                    );
-                }
+            if let Some(st) = self.t2_period(cycles, hz, cpc, p.span, &format!("{}({})", p.name, p.amount)) {
+                self.timer_calls.insert(p.expr, TimerCall { timer: TimerId::T2, op: TimerOp::Start(st) });
+            }
+        }
+        // con un periodo de software la interrupcion de Timer2 salta en cada tick del hardware, no en el periodo pedido
+        if self.timer_ticks.is_some() {
+            if let Some(first) = self.timer_calls.iter().find(|(_, c)| c.timer == TimerId::T2 && c.op == TimerOp::InterruptOn) {
+                let _ = first;
+                let at = pend_span.unwrap_or(Span::new(0, 0));
+                self.d.error("PYP2127", at, "TMR2.interrupt_on no sirve con un periodo largo (contador de software): la interrupcion de Timer2 salta en cada tick del hardware; usa un periodo que quepa en Timer2 o consulta TMR2.expired");
             }
         }
     }

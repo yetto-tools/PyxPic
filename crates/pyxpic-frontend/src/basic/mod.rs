@@ -14,7 +14,9 @@ use crate::diag::Diagnostics;
 /// Lee un programa BASIC y lo traduce al AST comun; los errores de sintaxis y de traduccion van en `d`.
 /// `target` trae los pines del dispositivo (`pins.json`): solo existen los que el PIC tiene, con su tipo (digital, analogico, solo entrada).
 pub fn to_module(source: &str, d: &mut Diagnostics, target: &crate::target::TargetProfile) -> Module {
+    d.phase = crate::diag::Phase::Syntax;
     let stmts = parse::parse(source, d);
+    d.phase = crate::diag::Phase::Semantic;
     lower::lower(&stmts, d, target)
 }
 

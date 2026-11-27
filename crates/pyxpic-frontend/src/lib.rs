@@ -134,15 +134,18 @@ pub fn analyze_in(lang: Language, source: &str, target: &TargetProfile) -> Analy
         Language::Python => analyze(source, target),
         Language::Basic => {
             let mut d = Diagnostics::default();
+            // BASIC: leer el programa es sintaxis; traducirlo (nombres, variables, comandos) y comprobarlo ya es semantica
             let module = basic::to_module(source, &mut d, target);
+            d.phase = diag::Phase::Semantic;
             analyze_parsed(source, module, d, target)
         }
     }
 }
 
 pub fn analyze(source: &str, target: &TargetProfile) -> Analysis {
-    let mut d = Diagnostics::default();
+    let mut d = Diagnostics { phase: diag::Phase::Syntax, ..Default::default() };
     let module = parser::parse(source, &mut d);
+    d.phase = diag::Phase::Semantic;
     analyze_parsed(source, module, d, target)
 }
 
@@ -194,6 +197,7 @@ fn analyze_parsed(source: &str, mut module: ast::Module, mut d: Diagnostics, tar
         uart_calls: c.uart_calls,
         uart_fmt: c.uart_fmt,
         fixed_ops: c.fixed_ops,
+        timer_ticks: c.timer_ticks,
         text_calls: c.text_calls,
     });
     Analysis { program, diagnostics: d }

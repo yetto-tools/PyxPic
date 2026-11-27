@@ -159,6 +159,13 @@ pub fn solve_t2(cycles: u64) -> Option<TimerStart> {
     None
 }
 
+/// Cuando el periodo no cabe en el hardware de Timer2 (`T2_MAX_CYCLES`): un tick exacto del hardware y cuantos hacen falta, `cycles = tick * ticks`.
+/// Elige el tick mas largo (menos vueltas de software) que Timer2 da exacto. El contador de software es de 16 bits.
+pub fn split_t2(cycles: u64) -> Option<(TimerStart, u32)> {
+    let first = cycles.div_ceil(T2_MAX_CYCLES).max(2);
+    (first..=65_535u64).filter(|t| cycles.is_multiple_of(*t)).find_map(|t| solve_t2(cycles / t).map(|st| (st, t as u32)))
+}
+
 /// Periodos alcanzables mas cercanos por debajo y por encima de `cycles`.
 pub fn nearest_t2(cycles: u64) -> (Option<u64>, Option<u64>) {
     let (mut below, mut above): (Option<u64>, Option<u64>) = (None, None);

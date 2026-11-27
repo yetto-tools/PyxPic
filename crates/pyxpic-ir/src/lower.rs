@@ -42,6 +42,13 @@ pub fn lower_unoptimized(prog: &Program) -> Module {
             m.globals.push(Global { name: v.name.name.clone(), ty: sym.ty, init, is_const: sym.is_final });
         }
     }
+    // un periodo de Timer2 mas largo que el hardware: la cuenta de vueltas y la bandera de software (docs/sdk-timer.md)
+    if prog.timer_ticks.is_some() {
+        gidx.insert("__t2_ticks".to_string(), m.globals.len());
+        m.globals.push(Global { name: "__t2_ticks".into(), ty: Type::Int { bits: 16, signed: false }, init: 0, is_const: false });
+        gidx.insert("__t2_hit".to_string(), m.globals.len());
+        m.globals.push(Global { name: "__t2_hit".into(), ty: Type::Int { bits: 8, signed: false }, init: 0, is_const: false });
+    }
     let mut pin_idx: HashMap<String, usize> = HashMap::new();
     for p in &prog.pins {
         pin_idx.insert(p.pin.clone(), m.pins.len());
@@ -261,6 +268,40 @@ impl<'a> FnLower<'a> {
         }
     }
 
+    /// `TMR2.expired` y `TMR2.clear` cuando el periodo pedido es mas largo que el hardware: el tick exacto de Timer2 se cuenta por software.
+    /// `expired` consume la bandera del hardware, cuenta una vuelta y, a la ultima, arma una bandera de software que se queda hasta `clear`
+    /// (igual que la bandera del hardware); `clear` reinicia el periodo: bandera del hardware, cuenta y bandera de software.
+    fn long_period_timer(&mut self, call: pyxpic_frontend::timer::TimerCall, ticks: u32, dst: Option<Place>) {
+        let u8t = Type::Int { bits: 8, signed: false };
+        let u16t = Type::Int { bits: 16, signed: false };
+        let cnt = Place::Global(self.gidx["__t2_ticks"] as u32);
+        let hit = Place::Global(self.gidx["__t2_hit"] as u32);
+        let k = |value: i128, ty: Type| Operand::Const { value, ty };
+        if call.op == TimerOp::Clear {
+            self.emit(Inst::Timer { call, dst: None, arg: None });
+            self.emit(Inst::Copy { dst: cnt, src: k(0, u16t) });
+            self.emit(Inst::Copy { dst: hit, src: k(0, u8t) });
+            return;
+        }
+        let Some(dst) = dst else { return };
+        let flag = self.new_temp(Type::Bool);
+        self.emit(Inst::Timer { call, dst: Some(flag), arg: None });
+        let (tick, last, done) = (self.new_block(), self.new_block(), self.new_block());
+        self.terminate(Terminator::Branch { cond: Operand::Place(flag), then_bb: tick, else_bb: done });
+        self.cur = tick;
+        self.emit(Inst::Timer { call: pyxpic_frontend::timer::TimerCall { timer: call.timer, op: TimerOp::Clear }, dst: None, arg: None });
+        self.emit(Inst::Binary { dst: cnt, op: BinOp::Add, lhs: Operand::Place(cnt), rhs: k(1, u16t) });
+        let reached = self.new_temp(Type::Bool);
+        self.emit(Inst::Compare { dst: reached, op: CmpOp::Ge, lhs: Operand::Place(cnt), rhs: k(ticks as i128, u16t) });
+        self.terminate(Terminator::Branch { cond: Operand::Place(reached), then_bb: last, else_bb: done });
+        self.cur = last;
+        self.emit(Inst::Copy { dst: cnt, src: k(0, u16t) });
+        self.emit(Inst::Copy { dst: hit, src: k(1, u8t) });
+        self.terminate(Terminator::Jump(done));
+        self.cur = done;
+        self.emit(Inst::Compare { dst, op: CmpOp::Ne, lhs: Operand::Place(hit), rhs: k(0, u8t) });
+    }
+
     fn compute(&mut self, e: &Expr, dst: Option<Place>) {
         if let Some(op) = self.prog.fixed_ops.get(&e.id).copied() {
             if let Some(dst) = dst {
@@ -446,6 +487,10 @@ impl<'a> FnLower<'a> {
             }
             ExprKind::MethodCall { args, .. } if self.prog.timer_calls.contains_key(&e.id) => {
                 let call = self.prog.timer_calls[&e.id];
+                if let (Some(ticks), pyxpic_frontend::timer::TimerId::T2, TimerOp::Expired | TimerOp::Clear) = (self.prog.timer_ticks, call.timer, call.op) {
+                    self.long_period_timer(call, ticks, dst);
+                    return;
+                }
                 let arg = if call.op == TimerOp::Set { Some(self.value(&args[0])) } else { None };
                 // leer sin usar el resultado no tiene efecto: no se emite
                 let reads = matches!(call.op, TimerOp::Value | TimerOp::Expired);

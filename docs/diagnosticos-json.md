@@ -40,9 +40,18 @@ Solo vale con `check` (`build` e `ir` imprimen texto y rechazan `--format json` 
 | `code` | texto | `PYP1xxx` sintaxis, `PYP2xxx` tipos y semántica, `PYP3xxx` avisos |
 | `severity` | `"error"` \| `"warning"` | |
 | `message` | texto | El mensaje, en español, sin la posición |
+| `phase` | `"syntax"` \| `"semantic"` | Qué analizador lo encontró: el **sintáctico** (lexer y parser: la forma del programa) o el **semántico** (tipos, nombres, recursos y límites del dispositivo: lo que significa). En BASIC, leer el programa es sintaxis y traducirlo y comprobarlo es semántica |
+| `cause` | texto \| `null` | Por qué pasa, en lenguaje llano (en la salida de texto es la línea `  causa: ...`). Solo lo traen los diagnósticos que lo explican (por ahora los de Timer2: `PYP2126`, `PYP3026`) |
+| `fix` | texto \| `null` | Qué hacer para arreglarlo (en la salida de texto, `  solucion: ...`) |
 | `range.start` / `range.end` | `{line, column}` | **De 1 en adelante**; la columna cuenta **caracteres** (no bytes), igual que el texto. `end` es **exclusivo** (la posición justo después del último carácter) y puede estar en otra línea; si el diagnóstico es un punto, `end` es igual a `start` |
 
-El orden de los campos de arriba es el de la salida y no hay que depender de él.
+El orden de los campos de arriba es el de la salida y no hay que depender de él. `phase`, `cause` y `fix` se agregaron sin subir `version` (agregar un campo no la sube).
+
+## Programa por la entrada estándar: `check -`
+
+`pyxpic check - --lang py|bas --format json [--devices-dir dir]` lee el programa de la **entrada estándar** (`file` sale como `-`). La extensión de VS Code lo usa para
+analizar **mientras se escribe**, con el texto del editor, guardado o no (`pyxpic.liveCheck`, activo por defecto): muestra el error, su causa y su solución en
+Problemas, y el origen dice qué analizador lo encontró (`PyxPic · sintaxis` o `PyxPic · semántica`).
 
 ## Con errores de sintaxis
 

@@ -11,6 +11,9 @@
       "code": "PYP3022",
       "severity": "warning",
       "message": "el parametro 'b' de 'f' nunca se usa: quitalo o llamalo _b",
+      "phase": "semantic",
+      "cause": null,
+      "fix": null,
       "range": {
         "start": {
           "line": 4,
@@ -26,6 +29,9 @@
       "code": "PYP3020",
       "severity": "warning",
       "message": "codigo inalcanzable: sigue a un return",
+      "phase": "semantic",
+      "cause": null,
+      "fix": null,
       "range": {
         "start": {
           "line": 6,
@@ -41,6 +47,9 @@
       "code": "PYP3021",
       "severity": "warning",
       "message": "la variable local 'x' se declara pero nunca se lee: quitala o usala (un nombre que empieza por _ no avisa)",
+      "phase": "semantic",
+      "cause": null,
+      "fix": null,
       "range": {
         "start": {
           "line": 10,

@@ -1,8 +1,8 @@
 {
   "name": "pyxpic-ide",
   "displayName": "PyxPic IDE",
-  "description": "v0.1.31 · Comprueba y compila programas PyxPic desde VS Code.",
-  "version": "0.1.31",
+  "description": "v0.1.32 · Comprueba y compila programas PyxPic desde VS Code.",
+  "version": "0.1.32",
   "publisher": "pyxpic",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -11,7 +11,7 @@
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Programming Languages"],
   "main": "./extension.js",
-  "scripts": { "test": "node --test test/commands.test.js test/projectmode.test.js test/pinout.test.js test/resources.test.js test/variables.test.js test/snippets.test.js test/serial.test.js test/spelling.test.js" },
+  "scripts": { "test": "node --test test/commands.test.js test/projectmode.test.js test/pinout.test.js test/resources.test.js test/variables.test.js test/snippets.test.js test/diagnostics.test.js test/serial.test.js test/spelling.test.js" },
   "activationEvents": ["onView:pyxpic.actions", "onView:pyxpic.resources", "onView:pyxpic.pinout", "onView:pyxpic.variables", "onView:pyxpic.serial", "onLanguage:python", "onLanguage:pyxpic", "onLanguage:pyxpic-basic", "workspaceContains:pyxpic.toml"],
   "capabilities": { "untrustedWorkspaces": { "supported": false } },
   "contributes": {
@@ -76,7 +76,8 @@
         "pyxpic.executable": { "type": "string", "default": "pyxpic", "description": "Ruta al ejecutable de PyxPic." },
         "pyxpic.devicesDir": { "type": "string", "default": "", "description": "Directorio de Device Packs; vacío usa la búsqueda de PyxPic." },
         "pyxpic.picAsPath": { "type": "string", "default": "", "description": "Ruta opcional a PIC-AS. Informativa: la extensión todavía no ejecuta PIC-AS." },
-        "pyxpic.checkOnSave": { "type": "boolean", "default": true, "description": "Comprueba archivos PyxPic guardados y actualiza Problemas." }
+        "pyxpic.checkOnSave": { "type": "boolean", "default": true, "description": "Comprueba archivos PyxPic guardados y actualiza Problemas." },
+        "pyxpic.liveCheck": { "type": "boolean", "default": true, "description": "Analiza el texto mientras se escribe (sintaxis y semántica, con la causa y la solución de cada error) sin guardar el archivo." }
       }
     }
   }
