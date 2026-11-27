@@ -60,6 +60,8 @@ CLOCK INTERNAL 8MHZ         ' la fuente y su frecuencia como literal con unidad 
 BAUD 9600                   ' velocidad de la UART (8N1): la de SERTXD, SERRXD y UART.write; sin esta línea son 9600
 ```
 
+**Lista de variables.** `pyxpic vars programa.bas` (o `--format json`) muestra, como el IDE de PICAXE, las variables del programa: las declaradas con `DIM` y los alias de `SYMBOL` (con su tipo, la línea donde se declaran y su valor) y las predefinidas `b0`..`b27` y `w0`..`w13`, cada una marcada **usada** o **sin usar**. Solo lee el programa (no lo compila), así que sirve aunque tenga errores. En VS Code, al abrir un `.bas` aparece la vista **Variables** de PyxPic, que sigue lo que escribes sin guardar y lleva a la línea de cada declaración.
+
 **No hay importaciones.** Los periféricos del SDK (`ADC`, `UART`, `EEPROM`, `PWM1`, `CMP1`, `CVREF`, `TMR2`...) y sus constantes (`AN0`, `FOSC_8`, `C12IN0`, `REF_PIN`...) se importan solos cuando el programa los usa, y no distinguen mayúsculas (`adc`, `an0`). Los pines y las pausas también. Solo los módulos que no son periféricos (`pyxpic.regs`) se importan con `FROM pyxpic.regs IMPORT STATUS`; hacerlo con un periférico sigue funcionando.
 
 ## Variables

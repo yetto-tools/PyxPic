@@ -4,6 +4,9 @@
 mod lexer;
 mod lower;
 mod parse;
+mod vars;
+
+pub use vars::{variables, VarInfo};
 
 use crate::ast::Module;
 use crate::diag::Diagnostics;

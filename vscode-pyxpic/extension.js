@@ -11,6 +11,7 @@ const sidebar = require("./sidebar");
 const welcome = require("./welcome");
 const pinout = require("./pinout");
 const resources = require("./resources");
+const variables = require("./variables");
 const serial = require("./serial");
 const extensionVersion = require("./package.json").version;
 const { registerSpelling } = require("./spelling");
@@ -163,6 +164,50 @@ function activate(context) {
     return { devicesDir: data.tools.devices };
   }
   const pinoutView = pinout.register(vscode, context, currentHardware);
+  // la lista de variables de un .bas (como la del IDE de PICAXE): la CLI (`pyxpic vars`) lee el texto del editor, guardado o no
+  const basicDocument = () => {
+    const document = vscode.window.activeTextEditor?.document;
+    return document && document.languageId === "pyxpic-basic" ? document : undefined;
+  };
+  const variablesView = variables.register(
+    vscode,
+    context,
+    () => {
+      const document = basicDocument();
+      return document ? { file: path.basename(document.uri.fsPath || document.fileName), text: document.getText() } : undefined;
+    },
+    (text) => {
+      const document = basicDocument();
+      const config = vscode.workspace.getConfiguration("pyxpic", document?.uri);
+      const folder = document && vscode.workspace.getWorkspaceFolder(document.uri);
+      const cwd = folder ? folder.uri.fsPath : document ? path.dirname(document.uri.fsPath) : process.cwd();
+      const tools = language.projectTools(document?.uri.fsPath || cwd, cwd, config.get("executable", "pyxpic"), config.get("devicesDir", "").trim());
+      return new Promise((resolve) => {
+        const child = spawn(tools.executable, ["vars", "-", "--format", "json"], { cwd });
+        let stdout = "";
+        let stderr = "";
+        child.stdout.on("data", (chunk) => { stdout += chunk; });
+        child.stderr.on("data", (chunk) => { stderr += chunk; });
+        child.on("error", (error) => resolve({ error, stdout, stderr }));
+        child.on("close", (code) => resolve({ error: code ? new Error(`salida ${code}`) : undefined, stdout, stderr }));
+        child.stdin.on("error", () => {});
+        child.stdin.end(text);
+      });
+    },
+  );
+  const showVariables = () => { void vscode.commands.executeCommand("setContext", "pyxpic.basicActive", Boolean(basicDocument())); variablesView.refresh(); };
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor(showVariables),
+    vscode.workspace.onDidChangeTextDocument((event) => { if (event.document === basicDocument() && event.contentChanges.length) variablesView.schedule(); }),
+    vscode.commands.registerCommand("pyxpic.revealLine", async (line) => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || !Number.isInteger(line)) return;
+      const position = new vscode.Position(Math.max(0, line - 1), 0);
+      editor.selection = new vscode.Selection(position, position);
+      editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+    }),
+  );
+  showVariables();
   const resourcesView = resources.register(
     vscode,
     context,

@@ -17,6 +17,7 @@ const USAGE: &str = "uso:
   pyxpic ir [archivo.py] [opciones]
   pyxpic build [archivo.py] [-o salida.hex] [--listing] [--timing] [opciones]
   pyxpic memory [archivo] [--details] [--format text|json] [opciones]   memoria usada por el programa (programa, RAM, pila), sin grabar nada
+  pyxpic vars <archivo.bas | -> [--format text|json]     variables de un programa BASIC: predefinidas, DIM y SYMBOL, con tipo, linea y uso (- lee la entrada estandar)
   pyxpic monitor --list | --port COM3 [--baud 9600] | --sim programa     terminal serial (ver pyxpic monitor --help)
   pyxpic clean [archivo.py] [-o salida.hex] [--project pyxpic.toml] [--target perfil] [--dry-run]   borra el .hex que build escribe (solo ese archivo)
   pyxpic asm <archivo.s> [-mcpu=16F887] [-Wl,-pNOMBRE=dir,...] [-o salida.hex] [--listing]
@@ -140,6 +141,67 @@ fn print_timing(timing: &[pyxpic_pic14::DelayReport]) {
     }
 }
 
+/// `pyxpic vars <archivo.bas | -> [--format text|json]`: las variables de un programa PyxPic BASIC (predefinidas, `DIM` y `SYMBOL`) con su tipo, la
+/// linea donde se declaran y si el programa las usa. `-` lee el programa de la entrada estandar (la extension de VS Code lo usa con el texto sin guardar).
+fn vars_cmd(args: &[String]) -> ExitCode {
+    let (mut file, mut json) = (None::<&String>, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--format" => match it.next().map(String::as_str) {
+                Some("json") => json = true,
+                Some("text") => json = false,
+                _ => {
+                    eprintln!("--format admite text o json");
+                    return ExitCode::from(2);
+                }
+            },
+            _ if file.is_none() => file = Some(a),
+            _ => return usage(),
+        }
+    }
+    let Some(file) = file else { return usage() };
+    let source = if file == "-" {
+        let mut text = String::new();
+        if std::io::Read::read_to_string(&mut std::io::stdin(), &mut text).is_err() {
+            eprintln!("no se pudo leer la entrada estandar");
+            return ExitCode::from(1);
+        }
+        text
+    } else if pyxpic_frontend::Language::from_path(file) != pyxpic_frontend::Language::Basic {
+        eprintln!("{file}: vars analiza programas PyxPic BASIC (.bas)");
+        return ExitCode::from(2);
+    } else {
+        match std::fs::read_to_string(file) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("{file}: {e}");
+                return ExitCode::from(1);
+            }
+        }
+    };
+    let vars = pyxpic_frontend::basic::variables(&source);
+    if json {
+        let items: Vec<serde_json::Value> = vars
+            .iter()
+            .map(|v| serde_json::json!({ "name": v.name, "kind": v.kind, "type": v.ty, "length": v.len, "line": v.line, "used": v.used, "detail": v.detail }))
+            .collect();
+        let report = serde_json::json!({ "version": 1, "language": "basic", "device": pyxpic_frontend::basic::declared_device(&source), "variables": items });
+        println!("{}", serde_json::to_string_pretty(&report).expect("el informe es JSON valido"));
+    } else {
+        println!("{:<12} {:<11} {:<8} {:>5}  {:<6} {}", "NOMBRE", "ORIGEN", "TIPO", "LINEA", "USADA", "DETALLE");
+        for v in &vars {
+            let name = match v.len {
+                Some(n) => format!("{}({n})", v.name),
+                None => v.name.clone(),
+            };
+            let line = v.line.map(|l| l.to_string()).unwrap_or_else(|| "-".into());
+            println!("{:<12} {:<11} {:<8} {:>5}  {:<6} {}", name, v.kind, v.ty, line, if v.used { "si" } else { "no" }, v.detail);
+        }
+    }
+    ExitCode::SUCCESS
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
@@ -149,6 +211,7 @@ fn main() -> ExitCode {
         Some("clean") => clean::clean(&args[1..]),
         Some("monitor") => monitor::monitor(&args[1..]),
         Some("disasm") => disasm(&args[1..]),
+        Some("vars") => vars_cmd(&args[1..]),
         Some("asm") => asm_cmd(&args[1..]),
         Some(c @ ("check" | "ir" | "build" | "memory")) => compile(c, &args[1..]),
         _ => usage(),

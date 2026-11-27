@@ -68,7 +68,7 @@ test("los comandos comprueban y compilan con la CLI real y muestran sus errores"
       getConfiguration: () => ({ get: (key) => key === "executable" ? binary : path.join(root, "devices"), update: async (...args) => { updates.push(args); } }),
       getWorkspaceFolder: () => ({ uri: { fsPath: root } }),
     },
-    commands: { registerCommand: (name, fn) => { commands.set(name, fn); return { dispose() {} }; } },
+    commands: { registerCommand: (name, fn) => { commands.set(name, fn); return { dispose() {} }; }, executeCommand: async () => {} },
   };
   const original = Module._load;
   Module._load = function(request, parent, main) { return request === "vscode" ? vscode : original.call(this, request, parent, main); };
