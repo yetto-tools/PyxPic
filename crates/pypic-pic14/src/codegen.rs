@@ -2046,6 +2046,35 @@ impl<'a> Gen<'a> {
                     self.asm.i(Incf(d, F));
                 }
             }
+            I2cOp::Read => {
+                let ack = arg.expect("Read lleva el ACK");
+                // 13.4.9: RCEN recibe un byte y el hardware lo baja al terminar
+                self.bit_op("RCEN", true)?;
+                self.i2c_wait_clear("RCEN")?;
+                let sspbuf = self.reg_bank0("SSPBUF")?;
+                self.asm.i(Movf(sspbuf, W)); // se lee siempre: baja BF
+                if let Some(dst) = dst {
+                    let d = self.regs(dst)?[0];
+                    self.asm.i(Movwf(d));
+                }
+                // 13.4.10: ACKDT = 0 es ACK, 1 es NACK
+                match *ack {
+                    Operand::Const { value, .. } => self.bit_op("ACKDT", value == 0)?,
+                    Operand::Place(_) => {
+                        let b = self.bytes(ack)?[0];
+                        self.bit_op("ACKDT", true)?;
+                        self.ld(b);
+                        self.asm.i(Iorlw(0));
+                        let nack = self.asm.label("i2c.nack");
+                        self.asm.i(Btfsc(STATUS, BIT_Z));
+                        self.asm.goto(nack);
+                        self.bit_op("ACKDT", false)?;
+                        self.asm.place(nack);
+                    }
+                }
+                self.bit_op("ACKEN", true)?;
+                self.i2c_wait_clear("ACKEN")?;
+            }
         }
         Ok(())
     }

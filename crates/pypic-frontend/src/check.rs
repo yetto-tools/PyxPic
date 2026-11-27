@@ -2383,6 +2383,23 @@ impl<'a> Checker<'a> {
             self.i2c_pending.push(I2cPending { id: e.id, span: e.span, freq, func: self.cur });
             return self.set(e, Type::Void, None);
         }
+        if method == "read" {
+            let ack = match kwargs {
+                [k] if k.name == "ack" && args.is_empty() => Some(&k.value),
+                _ => None,
+            };
+            let Some(ack) = ack else {
+                for a in args.iter().chain(kwargs.iter().map(|k| &k.value)) {
+                    self.expr(a);
+                }
+                self.d.error("PYP2226", e.span, "I2C.read se escribe I2C.read(ack=True) para pedir otro byte o I2C.read(ack=False) en el ultimo");
+                return self.set(e, Type::Error, None);
+            };
+            self.expect(ack, Type::Bool, Some("ack es un bool: True pide otro byte, False marca el ultimo"));
+            self.i2c_needs.get_or_insert(e.span);
+            self.i2c_calls.insert(e.id, I2cCall { op: I2cOp::Read });
+            return self.set(e, U8, None);
+        }
         if let Some(k) = kwargs.first() {
             self.d.error("PYP2226", k.name_span, format!("I2C.{method} no acepta argumentos con nombre"));
         }
@@ -2392,7 +2409,7 @@ impl<'a> Checker<'a> {
             "end" => (I2cOp::End, 0, Type::Void),
             "write" => (I2cOp::Write, 1, Type::Bool),
             other => {
-                self.d.error("PYP2227", e.span, format!("I2C no tiene el metodo '{other}' (disponibles: start, begin, restart, end, write)"));
+                self.d.error("PYP2227", e.span, format!("I2C no tiene el metodo '{other}' (disponibles: start, begin, restart, end, write, read)"));
                 for a in args {
                     self.expr(a);
                 }

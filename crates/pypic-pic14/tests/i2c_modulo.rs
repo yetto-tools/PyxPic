@@ -59,10 +59,7 @@ fn a_transaction_is_start_address_data_stop_and_the_ack_reaches_the_program() {
     );
     let (c, s) = run(&src, &[0x27]);
     assert!(s.i2c.violations.is_empty(), "{:?}", s.i2c.violations);
-    assert_eq!(
-        s.i2c.events,
-        vec![I2cEvent::Start, I2cEvent::Address { addr: 0x27, read: false, ack: true }, I2cEvent::Data { byte: 0xA5, ack: true }, I2cEvent::Stop]
-    );
+    assert_eq!(s.i2c.events, vec![I2cEvent::Start, I2cEvent::Address { addr: 0x27, read: false, ack: true }, I2cEvent::Data { byte: 0xA5, ack: true }, I2cEvent::Stop]);
     assert_eq!((global(&c, &s, "acuse"), global(&c, &s, "acuse2")), (1, 1));
 }
 
@@ -76,7 +73,10 @@ fn an_absent_address_gets_no_ack() {
 
 #[test]
 fn restart_repeats_the_start_condition() {
-    let src = format!("{}\n\ndef main() -> None:\n    I2C.start(freq=100000)\n    I2C.begin()\n    I2C.write(0x4E)\n    I2C.restart()\n    I2C.write(0x4E)\n    I2C.end()\n    while True:\n        pass\n", head());
+    let src = format!(
+        "{}\n\ndef main() -> None:\n    I2C.start(freq=100000)\n    I2C.begin()\n    I2C.write(0x4E)\n    I2C.restart()\n    I2C.write(0x4E)\n    I2C.end()\n    while True:\n        pass\n",
+        head()
+    );
     let (_, s) = run(&src, &[0x27]);
     assert!(s.i2c.violations.is_empty(), "{:?}", s.i2c.violations);
     assert_eq!(s.i2c.events.iter().filter(|e| **e == I2cEvent::RepeatedStart).count(), 1);
@@ -85,7 +85,10 @@ fn restart_repeats_the_start_condition() {
 
 #[test]
 fn a_write_without_using_the_result_still_sends_the_byte() {
-    let src = format!("{}\n\ndef main() -> None:\n    I2C.start(freq=100000)\n    I2C.begin()\n    I2C.write(0x4E)\n    I2C.write(0x11)\n    I2C.write(0x22)\n    I2C.end()\n    while True:\n        pass\n", head());
+    let src = format!(
+        "{}\n\ndef main() -> None:\n    I2C.start(freq=100000)\n    I2C.begin()\n    I2C.write(0x4E)\n    I2C.write(0x11)\n    I2C.write(0x22)\n    I2C.end()\n    while True:\n        pass\n",
+        head()
+    );
     let (_, s) = run(&src, &[0x27]);
     assert_eq!(s.i2c.received_by(0x27), vec![0x11, 0x22]);
 }
@@ -134,7 +137,7 @@ fn bad_calls_are_reported() {
         ("I2C.start()", "PYP2226"),
         ("I2C.start(100000)", "PYP2226"),
         ("I2C.start(velocidad=100000)", "PYP2226"),
-        ("I2C.start(freq=100000)\n    I2C.read()", "PYP2227"),
+        ("I2C.start(freq=100000)\n    I2C.recv()", "PYP2227"),
         ("I2C.start(freq=100000)\n    I2C.write()", "PYP2055"),
         ("I2C.start(freq=100000)\n    I2C.begin(1)", "PYP2055"),
         ("I2C.start(freq=100000)\n    x: uint16 = 300\n    I2C.write(x)", ""),
@@ -173,4 +176,71 @@ fn the_scanner_example_reports_the_addresses_that_answer() {
     // probo de la 0x01 a la 0x7F: 127 transacciones por vuelta, cada una START, direccion y STOP
     let starts = s.i2c.events.iter().filter(|e| **e == I2cEvent::Start).count();
     assert!(starts >= 127, "{starts}");
+}
+
+// ---- lectura -----------------------------------------------------------------------------------------------------------------
+
+#[test]
+fn read_returns_the_bytes_and_answers_ack_until_the_last() {
+    let src = format!(
+        "{}a: uint8 = 0\nb: uint8 = 0\n\n\ndef main() -> None:\n    global a, b\n    I2C.start(freq=100000)\n    I2C.begin()\n    I2C.write(0xA1)\n    a = I2C.read(ack=True)\n    b = I2C.read(ack=False)\n    I2C.end()\n    while True:\n        pass\n",
+        head()
+    );
+    let c = build(&src);
+    let mut s = Sim::new(&c.image);
+    s.i2c.slaves.push(0x50);
+    s.i2c.read_data.extend([0x12, 0x34]);
+    s.run_until(200_000, |_| false);
+    assert!(s.i2c.violations.is_empty(), "{:?}", s.i2c.violations);
+    assert_eq!((global(&c, &s, "a"), global(&c, &s, "b")), (0x12, 0x34));
+    assert_eq!(
+        s.i2c.events,
+        vec![I2cEvent::Start, I2cEvent::Address { addr: 0x50, read: true, ack: true }, I2cEvent::Received { byte: 0x12, ack: true }, I2cEvent::Received { byte: 0x34, ack: false }, I2cEvent::Stop]
+    );
+}
+
+#[test]
+fn the_ack_of_a_read_can_be_computed_at_run_time() {
+    // tres bytes en un bucle: ACK en los dos primeros y NACK en el ultimo; el resultado de un byte se descarta
+    let src = format!(
+        "{}suma: uint8 = 0\n\n\ndef main() -> None:\n    global suma\n    I2C.start(freq=100000)\n    I2C.begin()\n    I2C.write(0xA1)\n    for i in range(3):\n        suma = suma + I2C.read(ack=i < 2)\n    I2C.restart()\n    I2C.write(0xA1)\n    I2C.read(ack=False)\n    I2C.end()\n    while True:\n        pass\n",
+        head()
+    );
+    let c = build(&src);
+    let mut s = Sim::new(&c.image);
+    s.i2c.slaves.push(0x50);
+    s.i2c.read_data.extend([1, 2, 4, 8]);
+    s.run_until(200_000, |_| false);
+    assert!(s.i2c.violations.is_empty(), "{:?}", s.i2c.violations);
+    assert_eq!(global(&c, &s, "suma"), 7);
+    let acks: Vec<bool> = s.i2c.events.iter().filter_map(|e| if let I2cEvent::Received { ack, .. } = e { Some(*ack) } else { None }).collect();
+    assert_eq!(acks, vec![true, true, false, false]);
+}
+
+#[test]
+fn ending_a_read_without_nack_is_flagged_by_the_simulator() {
+    let src = format!("{}\n\ndef main() -> None:\n    I2C.start(freq=100000)\n    I2C.begin()\n    I2C.write(0xA1)\n    I2C.read(ack=True)\n    I2C.end()\n    while True:\n        pass\n", head());
+    let (_, s) = run(&src, &[0x50]);
+    assert!(s.i2c.violations.iter().any(|v| v.contains("NACK")), "{:?}", s.i2c.violations);
+}
+
+#[test]
+fn read_needs_its_ack_argument() {
+    for body in ["I2C.read()", "I2C.read(True)", "I2C.read(nack=True)", "I2C.read(ack=1)"] {
+        let (ok, msg) = diagnostics(&format!("{}\n\ndef main() -> None:\n    I2C.start(freq=100000)\n    {body}\n", head()));
+        assert!(!ok && (msg.contains("PYP2226") || msg.contains("PYP2041")), "{body}: {msg}");
+    }
+}
+
+#[test]
+fn the_pcf8574_example_shows_the_inputs_on_portd() {
+    let src = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/python/i2c/leer_pcf8574.py")).unwrap().replace("\r\n", "\n");
+    let c = build(&src);
+    let mut s = Sim::new(&c.image);
+    s.i2c.slaves.push(0x20);
+    s.i2c.read_data.push_back(0xB6);
+    s.run_until(5_000, |_| false);
+    assert!(s.i2c.violations.is_empty(), "{:?}", s.i2c.violations);
+    assert_eq!(s.i2c.received_by(0x20), vec![0xFF]);
+    assert_eq!(s.read(0x08), 0xB6);
 }

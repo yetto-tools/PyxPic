@@ -271,11 +271,14 @@ impl<'m> Machine<'m> {
                 EepromOp::Busy | EepromOp::Failed => self.write(f, fr, dst.unwrap(), 0),
             },
             Inst::I2c { call, dst, .. } => {
-                // sin bus modelado: el interprete responde ACK a todo (el simulador del nucleo si modela esclavos)
-                if call.op == I2cOp::Write {
-                    if let Some(d) = dst {
-                        self.write(f, fr, *d, 1);
-                    }
+                // sin bus modelado: el interprete responde ACK a todo y lee 0xFF (el simulador del nucleo si modela esclavos)
+                let value = match call.op {
+                    I2cOp::Write => Some(1),
+                    I2cOp::Read => Some(0xFF),
+                    _ => None,
+                };
+                if let (Some(v), Some(d)) = (value, dst) {
+                    self.write(f, fr, *d, v);
                 }
             }
             Inst::Spi { dst, .. } => {

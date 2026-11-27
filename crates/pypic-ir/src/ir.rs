@@ -153,7 +153,7 @@ pub enum Inst {
         val: Option<Operand>,
     },
     /// Operacion del I2C maestro (`I2C.begin()`, `I2C.write(b)`...). `arg` es el byte de `Write` (u8); `dst` recibe su ACK (bool, `true` si el
-    /// esclavo respondio). Todas esperan a que el MSSP termine, asi que el bus queda en reposo al volver.
+    /// esclavo respondio). En `Read`, `arg` es el ACK que se responde (bool) y `dst` el byte recibido (u8). Todas esperan a que el MSSP termine, asi que el bus queda en reposo al volver.
     I2c {
         call: I2cCall,
         dst: Option<Place>,

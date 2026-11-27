@@ -93,7 +93,7 @@ const members = {
   PWM1: ["start", "duty", "stop"],
   PWM2: ["start", "duty", "stop"],
   SPI: ["start", "transfer"],
-  I2C: ["start", "begin", "restart", "end", "write"],
+  I2C: ["start", "begin", "restart", "end", "write", "read"],
   UART: ["start", "write", "read", "send", "recv", "tx_ready", "rx_ready", "sending", "overrun", "framing_error", "clear_overrun", "write_text", "write9", "send9", "read9", "recv9"],
 };
 

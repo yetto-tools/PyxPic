@@ -133,6 +133,7 @@ fn verify_fn(m: &Module, f: &Function, errs: &mut Vec<String>) {
                     let u8_ty = Type::Int { bits: 8, signed: false };
                     let bad = match call.op {
                         I2cOp::Write => !(arg.as_ref().is_some_and(|a| ty(a) == u8_ty) && dst.is_none_or(|d| valid(d) && m.place_ty(f, d) == Type::Bool)),
+                        I2cOp::Read => !(arg.as_ref().is_some_and(|a| ty(a) == Type::Bool) && dst.is_none_or(|d| valid(d) && m.place_ty(f, d) == u8_ty)),
                         _ => dst.is_some() || arg.is_some(),
                     };
                     if bad {

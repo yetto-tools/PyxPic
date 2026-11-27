@@ -5,6 +5,8 @@
 //!  * SCL (RC3) y SDA (RC4) se dejan como entradas (TRISC<3:4> = 1): el modulo maneja el pin, que es de drenador abierto;
 //!  * SEN, RSEN y PEN (SSPCON2<0:2>) inician START, START repetido y STOP y el hardware los baja al terminar;
 //!  * escribir SSPBUF transmite el byte; R/W (SSPSTAT<2>) vale 1 mientras sale el byte y su ACK; ACKSTAT (SSPCON2<6>) = 0 si hubo ACK;
+//!  * RCEN (SSPCON2<3>) recibe un byte en SSPBUF y baja solo; despues ACKDT (SSPCON2<5>, 0 = ACK) y ACKEN (SSPCON2<4>) responden
+//!    (13.4.9 y 13.4.10);
 //!  * SMP (SSPSTAT<7>): 1 = control de pendiente desactivado (100 kHz y 1 MHz), 0 = activado (400 kHz).
 
 /// El divisor minimo que PyPIC acepta (SSPADD >= 1): decision de PyPIC, el datasheet da 0 solo con relojes mucho mas rapidos.
@@ -53,6 +55,8 @@ pub enum I2cOp {
     End,
     /// `I2C.write(b)`: envia el byte, espera y devuelve `true` si el esclavo respondio ACK.
     Write,
+    /// `I2C.read(ack=x)`: recibe un byte (RCEN), responde ACK si `x` o NACK si no (ACKDT, ACKEN) y lo devuelve.
+    Read,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
