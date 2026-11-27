@@ -6,7 +6,8 @@
 from pyxpic.device import PIC16F887
 from pyxpic.periph.eeprom import EEPROM
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 v: uint8 = EEPROM.read(0)        # un byte; una EEPROM virgen vale 0xFF
 EEPROM.write(0, v + 1)           # borra y escribe el byte; vuelve cuando terminó (hasta 6 ms)

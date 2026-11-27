@@ -6,7 +6,8 @@
 from pyxpic.device import PIC16F887
 from pyxpic.periph.adc import ADC, AN0, AN5
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 ADC.start()                      # ADCON1/ADCON0: resultado a la derecha, referencia VDD/VSS, reloj de conversión elegido, ADC encendido
 v: uint16 = ADC.read(AN0)           # 0..1023

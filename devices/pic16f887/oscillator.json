@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "sources": [
+    "DS40001291H cap. 4 (p.63-77): osciladores; registro 4-1 OSCCON (p.64): IRCF<2:0>, HFINTOSC y LFINTOSC",
+    "DS40001291H tabla 17-1 (p.249): frecuencias por modo (LP, XT, HS, EC)"
+  ],
+  "internal": {
+    "fosc": "INTRC_NOCLKOUT",
+    "reset_hz": 4000000,
+    "reset_ircf": 6,
+    "frequencies": [
+      { "hz": 31000, "ircf": 0 },
+      { "hz": 125000, "ircf": 1 },
+      { "hz": 250000, "ircf": 2 },
+      { "hz": 500000, "ircf": 3 },
+      { "hz": 1000000, "ircf": 4 },
+      { "hz": 2000000, "ircf": 5 },
+      { "hz": 4000000, "ircf": 6 },
+      { "hz": 8000000, "ircf": 7 }
+    ]
+  },
+  "modes": [
+    { "mode": "LP", "fosc": "LP", "sources": ["Crystal", "Resonator"], "min_hz": 30000, "max_hz": 37000, "pins": [["RA7", "OSC1"], ["RA6", "OSC2"]] },
+    { "mode": "XT", "fosc": "XT", "sources": ["Crystal", "Resonator"], "min_hz": 100000, "max_hz": 4000000, "pins": [["RA7", "OSC1"], ["RA6", "OSC2"]] },
+    { "mode": "HS", "fosc": "HS", "sources": ["Crystal", "Resonator"], "min_hz": 1000000, "max_hz": 20000000, "pins": [["RA7", "OSC1"], ["RA6", "OSC2"]] },
+    { "mode": "EC", "fosc": "EC", "sources": ["External"], "min_hz": 1, "max_hz": 20000000, "pins": [["RA7", "CLKIN"]] },
+    { "mode": "RC", "fosc": "EXTRC_NOCLKOUT", "sources": ["RC"], "min_hz": 1, "max_hz": 20000000, "pins": [["RA7", "OSC1"]] }
+  ]
+}

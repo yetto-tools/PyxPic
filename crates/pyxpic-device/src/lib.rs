@@ -473,6 +473,52 @@ pub struct DevicePack {
     pub config: Config,
     pub registers: Registers,
     pub peripherals: Peripherals,
+    /// Osciladores del dispositivo (`oscillator.json`); opcional: sin el, el compilador usa la tabla del PIC16F887.
+    pub oscillator: Option<Oscillator>,
+}
+
+/// `oscillator.json`: lo que el dispositivo admite como reloj (DS40001291H cap. 4 y tabla 17-1 en el PIC16F887).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Oscillator {
+    pub schema_version: u32,
+    #[serde(default)]
+    pub sources: Vec<String>,
+    /// El oscilador interno; `None` si el dispositivo no tiene.
+    pub internal: Option<InternalOsc>,
+    /// Modos del oscilador externo: el primero que contiene la frecuencia es el automatico.
+    pub modes: Vec<OscMode>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InternalOsc {
+    /// Valor de `FOSC` en `config.json` con el oscilador interno.
+    pub fosc: String,
+    pub reset_hz: u32,
+    pub reset_ircf: u8,
+    pub frequencies: Vec<InternalFreq>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InternalFreq {
+    pub hz: u32,
+    pub ircf: u8,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OscMode {
+    pub mode: String,
+    /// Valor de `FOSC` en `config.json`.
+    pub fosc: String,
+    /// Fuentes que usan este modo: `Crystal`, `Resonator`, `External`, `RC`, `Secondary`.
+    pub sources: Vec<String>,
+    pub min_hz: u32,
+    pub max_hz: u32,
+    /// (pin, funcion) que el oscilador toma.
+    pub pins: Vec<(String, String)>,
 }
 
 #[derive(Debug)]
@@ -490,6 +536,28 @@ fn read<T: for<'de> Deserialize<'de>>(dir: &Path, file: &str) -> Result<T, LoadE
     serde_json::from_str(&text).map_err(|e| LoadError(format!("{}: {e}", path.display())))
 }
 
+impl Oscillator {
+    /// El perfil que consume el frontend.
+    pub fn profile(&self) -> pyxpic_frontend::OscillatorProfile {
+        use pyxpic_frontend::{ClockKind, OscillatorProfile, OscillatorMode};
+        let mut modes = Vec::new();
+        for m in &self.modes {
+            for s in &m.sources {
+                if let Some(kind) = ClockKind::parse(s) {
+                    modes.push(OscillatorMode { source: kind, mode: m.mode.clone(), fosc: m.fosc.clone(), min_hz: m.min_hz, max_hz: m.max_hz, pins: m.pins.clone() });
+                }
+            }
+        }
+        OscillatorProfile {
+            internal: self.internal.as_ref().map(|i| i.frequencies.iter().map(|f| (f.hz, f.ircf)).collect()).unwrap_or_default(),
+            internal_fosc: self.internal.as_ref().map(|i| i.fosc.clone()),
+            reset_hz: self.internal.as_ref().map(|i| i.reset_hz).unwrap_or(0),
+            reset_ircf: self.internal.as_ref().map(|i| i.reset_ircf).unwrap_or(0),
+            modes,
+        }
+    }
+}
+
 impl DevicePack {
     pub fn load(dir: &Path) -> Result<DevicePack, LoadError> {
         Ok(DevicePack {
@@ -499,6 +567,7 @@ impl DevicePack {
             config: read(dir, "config.json")?,
             registers: read(dir, "registers.json")?,
             peripherals: read(dir, "peripherals.json")?,
+            oscillator: if dir.join("oscillator.json").exists() { Some(read(dir, "oscillator.json")?) } else { None },
         })
     }
 
@@ -527,6 +596,7 @@ impl DevicePack {
             )
             .with_clocks_per_cycle(self.device.cpu.clocks_per_instruction)
             .with_default_clock(self.device.cpu.default_clock_hz)
+            .with_oscillator(self.oscillator.as_ref().map(|o| o.profile()))
             .with_device(self.device.name.clone(), self.device.cpu.max_clock_hz.min(u32::MAX as u64) as u32)
     }
 

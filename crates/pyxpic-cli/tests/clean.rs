@@ -23,7 +23,8 @@ fn text(o: &Output) -> String {
 }
 
 const PROGRAM: &str =
-    "from pyxpic.device import PIC16F887\nfrom pyxpic.periph.gpio import RD0\n\nCLOCK: Internal[4 * MHz]\n\n\ndef main() -> None:\n    RD0.output()\n    while True:\n        RD0.toggle()\n";
+    "from pyxpic.device import PIC16F887\nfrom pyxpic.periph.gpio import RD0\n\nCLOCK: Internal
+FREQUENCY: 4MHz\n\n\ndef main() -> None:\n    RD0.output()\n    while True:\n        RD0.toggle()\n";
 
 fn project(dir: &Path, targets: &str) {
     std::fs::write(dir.join("pyxpic.toml"), format!("[project]\nname = \"p\"\nmain = \"main.py\"\ndevices_dir = {:?}\n{targets}", root().join("devices").to_string_lossy().replace('\\', "/")))
@@ -74,7 +75,7 @@ fn a_project_cleans_every_profile_output_or_just_the_asked_one() {
     let dir = tmp("project");
     project(
         &dir,
-        "default_target = \"a\"\n\n[target.a]\ndevice = \"PIC16F887\"\noutput = \"build/a.hex\"\n\n[target.b]\ndevice = \"PIC16F887\"\nclock = \"Crystal[20 * MHz]\"\noutput = \"build/b.hex\"\n",
+        "default_target = \"a\"\n\n[target.a]\ndevice = \"PIC16F887\"\noutput = \"build/a.hex\"\n\n[target.b]\ndevice = \"PIC16F887\"\nclock = \"Crystal 20MHz\"\noutput = \"build/b.hex\"\n",
     );
     for t in ["a", "b"] {
         let r = pyxpic(&dir, &["build", "--target", t]);

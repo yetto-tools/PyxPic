@@ -139,7 +139,7 @@ test("identifica PyxPic y conserva ubicación y severidad de diagnósticos", () 
     { line: 2, column: 3, severity: "warning", code: "PYP3001", message: "aviso" },
   ]);
   assert.match(language.info.uint16, /16 bits/);
-  for (const name of ["CLOCK", "Internal", "Crystal", "ExternalClock", "MHz", "kHz", "Hz"]) {
+  for (const name of ["CLOCK", "FREQUENCY", "OSC_MODE", "Internal", "Crystal", "External", "SOURCE_FREQ", "MHz", "kHz", "Hz"]) {
     assert.ok(language.completions("").includes(name));
     assert.ok(language.info[name]);
   }
@@ -168,7 +168,7 @@ test("el resumen visible mantiene la versión del manifiesto", () => {
 
 test("la plantilla de proyecto para cristal compila con la CLI", () => {
   const project = require("../project");
-  const source = project.source("PIC16F887", "Crystal[20 * MHz]");
+  const source = project.source("PIC16F887", "Crystal 20MHz");
   const root = path.resolve(__dirname, "../..");
   const binary = path.join(root, "target", "debug", process.platform === "win32" ? "pyxpic.exe" : "pyxpic");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pyxpic-project-template-"));

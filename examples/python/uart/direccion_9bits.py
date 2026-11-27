@@ -19,7 +19,8 @@ from pyxpic.device import PIC16F887
 from pyxpic.periph.gpio import RD0
 from pyxpic.periph.uart import UART
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 DIRECCION: Const[uint16] = 0x05
 
 

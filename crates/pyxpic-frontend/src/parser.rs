@@ -44,7 +44,7 @@ struct Parser<'a> {
 fn describe(t: &Tok) -> String {
     match t {
         Tok::Ident(s) => format!("'{s}'"),
-        Tok::Int(_) => "un numero".into(),
+        Tok::Int(_) | Tok::Quantity(..) => "un numero".into(),
         Tok::Str(..) => "una cadena".into(),
         Tok::FStr(..) => "una f-string".into(),
         Tok::Newline => "fin de linea".into(),
@@ -115,6 +115,12 @@ impl<'a> Parser<'a> {
             }
         }
         self.unexpected(what)
+    }
+    /// Descarta los tokens hasta el fin de la linea (tras un error ya reportado en ella).
+    fn skip_to_line_end(&mut self) {
+        while !self.at(&Tok::Newline) && !self.at(&Tok::Eof) {
+            self.bump();
+        }
     }
     fn mk(&mut self, span: Span, kind: ExprKind) -> Expr {
         let id = self.next_id;
@@ -330,12 +336,18 @@ impl<'a> Parser<'a> {
                 let end = self.expect(Tok::RBracket, "']'")?;
                 Ok(TypeExpr { span: sp.to(end), kind: TypeExprKind::Rom(Box::new(inner)) })
             }
-            Tok::Ident(s) if matches!(s.as_str(), "Internal" | "Crystal" | "ExternalClock") && matches!(self.peek_at(1), Tok::LBracket) => {
+            Tok::Ident(s) if crate::clock::ClockKind::parse(&s).is_some() => {
                 self.bump();
+                if self.at(&Tok::LParen) || self.at(&Tok::LBracket) {
+                    self.d.error("PYP2190", sp, format!("la frecuencia del reloj se declara aparte: 'CLOCK: {s}' y, en otra linea, 'FREQUENCY: 8MHz'"));
+                    self.skip_to_line_end();
+                }
+                Ok(TypeExpr { span: sp, kind: TypeExprKind::Clock(s) })
+            }
+            Tok::Ident(s) if s == "ExternalClock" => {
                 self.bump();
-                let e = self.expr()?;
-                let end = self.expect(Tok::RBracket, "']'")?;
-                Ok(TypeExpr { span: sp.to(end), kind: TypeExprKind::Clock(s, Box::new(e)) })
+                self.d.error("PYP2190", sp, "ExternalClock ya no existe: usa 'CLOCK: External' (senal de reloj en CLKIN) o 'CLOCK: Crystal'");
+                Ok(TypeExpr { span: sp, kind: TypeExprKind::Name(s) })
             }
             Tok::Ident(s) if !UNSUPPORTED_KEYWORDS.contains(&s.as_str()) => {
                 self.bump();
@@ -357,7 +369,17 @@ impl<'a> Parser<'a> {
     fn var_decl(&mut self) -> R<VarDecl> {
         let name = self.ident("un nombre")?;
         self.expect(Tok::Colon, "':'")?;
-        let ann = self.type_expr(false)?;
+        // `FREQUENCY: 8MHz` lleva una expresion constante, no un tipo; `OSC_MODE: HS` un nombre de modo
+        let ann = if name.name == "FREQUENCY" {
+            let sp = self.span();
+            let e = self.expr()?;
+            TypeExpr { span: sp.to(self.prev_span()), kind: TypeExprKind::Frequency(Box::new(e)) }
+        } else if name.name == "OSC_MODE" {
+            let m = self.ident("el modo del oscilador (Auto, LP, XT, HS, EC...)")?;
+            TypeExpr { span: m.span, kind: TypeExprKind::OscMode(m.name) }
+        } else {
+            self.type_expr(false)?
+        };
         let value = if self.eat(&Tok::Assign) { Some(self.expr()?) } else { None };
         let span = name.span.to(self.prev_span());
         self.end_stmt()?;
@@ -841,6 +863,10 @@ impl<'a> Parser<'a> {
             Tok::Int(v) => {
                 self.bump();
                 self.mk(sp, ExprKind::Int(v))
+            }
+            Tok::Quantity(v, dim) => {
+                self.bump();
+                self.mk(sp, ExprKind::Quantity(v, dim))
             }
             Tok::LParen => {
                 self.bump();

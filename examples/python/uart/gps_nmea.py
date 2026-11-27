@@ -17,7 +17,8 @@ from pyxpic.device import PIC16F887
 from pyxpic.periph.gpio import RD0
 from pyxpic.periph.uart import UART
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 # "GPGGA": el tipo de trama que se cuenta aparte
 TIPO_GGA: Rom[uint8] = [71, 80, 71, 71, 65]

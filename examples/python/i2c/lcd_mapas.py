@@ -10,7 +10,8 @@ from pyxpic.device import PIC16F887
 from pyxpic.regs import SSPADD, SSPBUF, SSPCON, SSPCON2, SSPSTAT, TRISC
 from pyxpic.system.time import delay_us, pause
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 DIRECCION: uint8 = 0x4E        # 0x27 << 1
 

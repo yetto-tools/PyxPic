@@ -1,6 +1,6 @@
 # Ejemplos del puerto serie (EUSART del PIC16F887)
 
-Todos usan la API real `pyxpic.periph.uart` (`docs/sdk-uart.md`), en modo asíncrono 8N1 a 9600 baudios con `CLOCK: Internal[4 * MHz]` (el compilador elige `BRGH` = 1 y `SPBRG` = 25: 9615 baudios, +0,16 %).
+Todos usan la API real `pyxpic.periph.uart` (`docs/sdk-uart.md`), en modo asíncrono 8N1 a 9600 baudios con `CLOCK: Internal` y `FREQUENCY: 4MHz` (el compilador elige `BRGH` = 1 y `SPBRG` = 25: 9615 baudios, +0,16 %).
 
 ## Conexión mínima
 
@@ -11,7 +11,7 @@ Todos usan la API real `pyxpic.periph.uart` (`docs/sdk-uart.md`), en modo asínc
 | GND | GND |
 
 - La terminal debe abrirse a la **misma velocidad** que `UART.start(baud=...)`, en 8N1 y sin control de flujo.
-- `CLOCK` debe ser el reloj **real** del PIC: con `Internal[4 * MHz]` el compilador pone el oscilador interno a 4 MHz en la palabra de configuración; con un cristal usa `Crystal[...]` (y RA6 y RA7 dejan de ser E/S). Si no coincide con el circuito, los baudios salen mal.
+- `CLOCK` debe ser el reloj **real** del PIC: con `Internal 4MHz` el compilador pone el oscilador interno a 4 MHz en la palabra de configuración; con un cristal usa `Crystal 16MHz` (y RA6 y RA7 dejan de ser E/S). Si no coincide con el circuito, los baudios salen mal.
 - RS-232 (±12 V) y RS-485 **necesitan un transceptor** (MAX232, MAX485...): no conectes el PIC directamente a esos niveles.
 
 ## Compilar y probar

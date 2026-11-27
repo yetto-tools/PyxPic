@@ -79,7 +79,7 @@ pub enum BStmtKind {
     Device(String),
     /// `BAUD 9600`: la velocidad de la UART (la que usan SERTXD y SERRXD y la que inicia el programa); 8N1.
     Baud(BExpr),
-    /// `CLOCK INTERNAL 4 MHZ`: la fuente (`Internal`, `Crystal`, `ExternalClock`), la cantidad y la unidad.
+    /// `CLOCK INTERNAL 4 MHZ`: la fuente (`Internal` o `Crystal`), la cantidad y la unidad.
     Clock {
         kind: String,
         amount: BExpr,
@@ -579,13 +579,15 @@ impl<'a> Parser<'a> {
             }
             "CLOCK" => {
                 self.bump();
-                let (kind, ksp) = self.ident("la fuente del reloj: INTERNAL, CRYSTAL o EXTERNAL")?;
+                let (kind, ksp) = self.ident("la fuente del reloj: INTERNAL, CRYSTAL, EXTERNAL, RESONATOR o RC")?;
                 let kind = match kind.to_ascii_uppercase().as_str() {
                     "INTERNAL" => "Internal",
                     "CRYSTAL" => "Crystal",
-                    "EXTERNAL" => "ExternalClock",
+                    "EXTERNAL" => "External",
+                    "RESONATOR" => "Resonator",
+                    "RC" => "RC",
                     _ => {
-                        self.err("PYB0021", ksp, "la fuente del reloj es INTERNAL, CRYSTAL o EXTERNAL: CLOCK INTERNAL 4 MHZ");
+                        self.err("PYB0021", ksp, "la fuente del reloj es INTERNAL, CRYSTAL, EXTERNAL, RESONATOR o RC: CLOCK INTERNAL 4 MHZ");
                         return None;
                     }
                 };

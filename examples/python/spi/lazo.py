@@ -8,7 +8,8 @@ from pyxpic.periph.gpio import RD0
 from pyxpic.periph.spi import SPI
 from pyxpic.system.time import pause
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 
 def main() -> None:

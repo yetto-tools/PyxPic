@@ -1,0 +1,292 @@
+//! Literales con unidad (`8MHz`, `11.0592MHz`, `500ms`, `3.3V`, `8e6Hz`, `50pct`): un sistema generico de sufijos.
+//!
+//! El lexer reconoce un numero decimal (con `_`, parte decimal y exponente) pegado a un sufijo de la tabla `UNITS`, y lo convierte a
+//! un entero exacto en la **unidad base de su magnitud** (Hz, ns, B, uV...). No hay punto flotante: la conversion es aritmetica de
+//! enteros de 128 bits y falla si el valor no es un numero entero de unidades base (`0.5Hz` no lo es). Las unidades no dependen de
+//! ningun microcontrolador: que un dispositivo pueda generar o medir la magnitud lo valida cada funcion del SDK con su Device Pack.
+//!
+//! Los sufijos distinguen mayusculas y minusculas (`MHz` es frecuencia, `mH` es inductancia, `MB` es memoria, `mV` es voltaje).
+
+use std::fmt;
+
+/// La magnitud fisica de un literal. Dos valores solo se suman o comparan si tienen la misma.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Dim {
+    Frequency,
+    Time,
+    Memory,
+    Baud,
+    DataRate,
+    Voltage,
+    Current,
+    Resistance,
+    Capacitance,
+    Inductance,
+    Power,
+    Temperature,
+    Rotation,
+    Angle,
+    Percent,
+}
+
+impl Dim {
+    /// Nombre de la magnitud, para los mensajes.
+    pub fn name(self) -> &'static str {
+        match self {
+            Dim::Frequency => "frecuencia",
+            Dim::Time => "tiempo",
+            Dim::Memory => "memoria",
+            Dim::Baud => "baudios",
+            Dim::DataRate => "tasa de datos",
+            Dim::Voltage => "voltaje",
+            Dim::Current => "corriente",
+            Dim::Resistance => "resistencia",
+            Dim::Capacitance => "capacitancia",
+            Dim::Inductance => "inductancia",
+            Dim::Power => "potencia",
+            Dim::Temperature => "temperatura",
+            Dim::Rotation => "rotacion",
+            Dim::Angle => "angulo",
+            Dim::Percent => "porcentaje",
+        }
+    }
+
+    /// La unidad en la que se guarda el valor entero.
+    pub fn base_unit(self) -> &'static str {
+        match self {
+            Dim::Frequency => "Hz",
+            Dim::Time => "ns",
+            Dim::Memory => "B",
+            Dim::Baud => "baud",
+            Dim::DataRate => "bps",
+            Dim::Voltage => "uV",
+            Dim::Current => "uA",
+            Dim::Resistance => "mohm",
+            Dim::Capacitance => "pF",
+            Dim::Inductance => "nH",
+            Dim::Power => "uW",
+            Dim::Temperature => "mK",
+            Dim::Rotation => "rpm",
+            Dim::Angle => "udeg",
+            Dim::Percent => "mpct",
+        }
+    }
+
+    /// `true` si su unidad base es la que el lenguaje ya usaba como entero simple (Hz en `CLOCK_HZ`, baudios en `UART.start(baud=9600)`,
+    /// bytes): esos valores se pueden usar donde se espera un numero. Las demas magnitudes solo se aceptan donde un parametro las pide.
+    pub fn is_plain_integer(self) -> bool {
+        matches!(self, Dim::Frequency | Dim::Baud | Dim::DataRate | Dim::Memory)
+    }
+}
+
+impl fmt::Display for Dim {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+/// `valor_base = (valor * num + off) / den`; `round` acepta resultados no enteros (redondea al mas cercano).
+struct Unit {
+    suffix: &'static str,
+    dim: Dim,
+    num: i128,
+    den: i128,
+    off: i128,
+    round: bool,
+}
+
+const fn u(suffix: &'static str, dim: Dim, num: i128) -> Unit {
+    Unit { suffix, dim, num, den: 1, off: 0, round: false }
+}
+
+const UNITS: &[Unit] = &[
+    u("Hz", Dim::Frequency, 1),
+    u("kHz", Dim::Frequency, 1_000),
+    u("MHz", Dim::Frequency, 1_000_000),
+    u("GHz", Dim::Frequency, 1_000_000_000),
+    u("ns", Dim::Time, 1),
+    u("us", Dim::Time, 1_000),
+    u("ms", Dim::Time, 1_000_000),
+    u("s", Dim::Time, 1_000_000_000),
+    u("min", Dim::Time, 60_000_000_000),
+    u("h", Dim::Time, 3_600_000_000_000),
+    u("B", Dim::Memory, 1),
+    u("KB", Dim::Memory, 1_000),
+    u("MB", Dim::Memory, 1_000_000),
+    u("KiB", Dim::Memory, 1_024),
+    u("MiB", Dim::Memory, 1_048_576),
+    u("baud", Dim::Baud, 1),
+    u("kbaud", Dim::Baud, 1_000),
+    u("Mbaud", Dim::Baud, 1_000_000),
+    u("bps", Dim::DataRate, 1),
+    u("kbps", Dim::DataRate, 1_000),
+    u("Mbps", Dim::DataRate, 1_000_000),
+    u("uV", Dim::Voltage, 1),
+    u("mV", Dim::Voltage, 1_000),
+    u("V", Dim::Voltage, 1_000_000),
+    u("uA", Dim::Current, 1),
+    u("mA", Dim::Current, 1_000),
+    u("A", Dim::Current, 1_000_000),
+    u("ohm", Dim::Resistance, 1_000),
+    u("kohm", Dim::Resistance, 1_000_000),
+    u("Mohm", Dim::Resistance, 1_000_000_000),
+    u("pF", Dim::Capacitance, 1),
+    u("nF", Dim::Capacitance, 1_000),
+    u("uF", Dim::Capacitance, 1_000_000),
+    u("mF", Dim::Capacitance, 1_000_000_000),
+    u("F", Dim::Capacitance, 1_000_000_000_000),
+    u("nH", Dim::Inductance, 1),
+    u("uH", Dim::Inductance, 1_000),
+    u("mH", Dim::Inductance, 1_000_000),
+    u("H", Dim::Inductance, 1_000_000_000),
+    u("uW", Dim::Power, 1),
+    u("mW", Dim::Power, 1_000),
+    u("W", Dim::Power, 1_000_000),
+    // temperatura: milikelvin. 0 degC = 273,15 K; degF = (F - 32) * 5/9 + 273,15
+    Unit { suffix: "K", dim: Dim::Temperature, num: 1_000, den: 1, off: 0, round: false },
+    Unit { suffix: "degC", dim: Dim::Temperature, num: 1_000, den: 1, off: 273_150, round: false },
+    Unit { suffix: "degF", dim: Dim::Temperature, num: 5_000, den: 9, off: 273_150 * 9 - 160_000, round: true },
+    u("rpm", Dim::Rotation, 1),
+    // angulo: microgrados. 1 rad = 180/pi grados = 57 295 779,513... udeg (redondeado)
+    u("deg", Dim::Angle, 1_000_000),
+    Unit { suffix: "rad", dim: Dim::Angle, num: 5_729_577_951_308_232, den: 100_000_000, off: 0, round: true },
+    // porcentaje: milesimas de punto porcentual
+    u("pct", Dim::Percent, 1_000),
+];
+
+/// Busca un sufijo exacto.
+pub fn lookup(suffix: &str) -> Option<Dim> {
+    UNITS.iter().find(|x| x.suffix == suffix).map(|x| x.dim)
+}
+
+/// Todos los sufijos y su magnitud (para la documentacion, el autocompletado y las pruebas).
+pub fn all() -> impl Iterator<Item = (&'static str, Dim)> {
+    UNITS.iter().map(|x| (x.suffix, x.dim))
+}
+
+/// Un literal numerico sin signo: mantisa entera y potencia de diez (`11.0592` = 110592 * 10^-4).
+#[derive(Debug, PartialEq, Eq)]
+pub struct Decimal {
+    pub mantissa: i128,
+    pub exp10: i32,
+}
+
+impl Decimal {
+    /// Lee `123`, `1_000`, `11.0592`, `8e6`, `1.5E-3`. `None` si no es un numero decimal o desborda.
+    pub fn parse(text: &str) -> Option<Decimal> {
+        let (num, exp) = match text.find(['e', 'E']) {
+            Some(i) => (&text[..i], Some(&text[i + 1..])),
+            None => (text, None),
+        };
+        let (int_part, frac_part) = match num.split_once('.') {
+            Some((a, b)) => (a, b),
+            None => (num, ""),
+        };
+        let clean = |s: &str| -> Option<String> {
+            let s: String = s.chars().filter(|&c| c != '_').collect();
+            s.chars().all(|c| c.is_ascii_digit()).then_some(s)
+        };
+        let (ip, fp) = (clean(int_part)?, clean(frac_part)?);
+        if ip.is_empty() {
+            return None;
+        }
+        let mantissa = format!("{ip}{fp}").parse::<i128>().ok()?;
+        let mut exp10 = -(fp.len() as i32);
+        if let Some(e) = exp {
+            let e = e.strip_prefix('+').unwrap_or(e);
+            let (neg, digits) = match e.strip_prefix('-') {
+                Some(d) => (true, d),
+                None => (false, e),
+            };
+            let digits = clean(digits).filter(|d| !d.is_empty())?;
+            let v: i32 = digits.parse().ok().filter(|v| *v <= 60)?;
+            exp10 += if neg { -v } else { v };
+        }
+        Some(Decimal { mantissa, exp10 })
+    }
+}
+
+/// Por que un literal con unidad no se pudo convertir.
+#[derive(Debug, PartialEq, Eq)]
+pub enum UnitError {
+    /// El valor no es un numero entero de unidades base (`0.5Hz`, `1.5pF`...).
+    NotExact(&'static str),
+    /// Demasiado grande.
+    TooBig,
+}
+
+/// Convierte `valor` + `suffix` al entero de la unidad base. `None` si el sufijo no existe.
+pub fn to_base(value: &Decimal, suffix: &str) -> Option<Result<(i128, Dim), UnitError>> {
+    let unit = UNITS.iter().find(|x| x.suffix == suffix)?;
+    Some(convert(value, unit).map(|v| (v, unit.dim)))
+}
+
+fn pow10(n: u32) -> Option<i128> {
+    10i128.checked_pow(n)
+}
+
+fn convert(v: &Decimal, unit: &Unit) -> Result<i128, UnitError> {
+    // valor = mantissa * 10^exp10; base = (valor * num + off) / den
+    let (p, q) = if v.exp10 >= 0 { (pow10(v.exp10 as u32).ok_or(UnitError::TooBig)?, 1) } else { (1, pow10((-v.exp10) as u32).ok_or(UnitError::TooBig)?) };
+    let numer = v.mantissa.checked_mul(unit.num).and_then(|a| a.checked_mul(p)).and_then(|a| unit.off.checked_mul(q).and_then(|o| a.checked_add(o))).ok_or(UnitError::TooBig)?;
+    let denom = unit.den.checked_mul(q).ok_or(UnitError::TooBig)?;
+    if numer % denom == 0 {
+        return Ok(numer / denom);
+    }
+    if unit.round {
+        return Ok((numer + denom / 2) / denom);
+    }
+    Err(UnitError::NotExact(unit.dim.base_unit()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn v(text: &str, unit: &str) -> Result<(i128, Dim), UnitError> {
+        to_base(&Decimal::parse(text).unwrap(), unit).unwrap()
+    }
+
+    #[test]
+    fn frequencies_are_exact_in_hz() {
+        assert_eq!(v("8", "MHz"), Ok((8_000_000, Dim::Frequency)));
+        assert_eq!(v("11.0592", "MHz"), Ok((11_059_200, Dim::Frequency)));
+        assert_eq!(v("32.768", "kHz"), Ok((32_768, Dim::Frequency)));
+        assert_eq!(v("11_059_200", "Hz"), Ok((11_059_200, Dim::Frequency)));
+        assert_eq!(v("8e6", "Hz"), Ok((8_000_000, Dim::Frequency)));
+        assert_eq!(v("1.5", "GHz"), Ok((1_500_000_000, Dim::Frequency)));
+        assert_eq!(v("0.5", "Hz"), Err(UnitError::NotExact("Hz")));
+    }
+
+    #[test]
+    fn other_magnitudes_use_their_base_unit() {
+        assert_eq!(v("500", "ms"), Ok((500_000_000, Dim::Time)));
+        assert_eq!(v("3.3", "V"), Ok((3_300_000, Dim::Voltage)));
+        assert_eq!(v("50", "pct"), Ok((50_000, Dim::Percent)));
+        assert_eq!(v("4.7", "kohm"), Ok((4_700_000, Dim::Resistance)));
+        assert_eq!(v("100", "nF"), Ok((100_000, Dim::Capacitance)));
+        assert_eq!(v("1", "KiB"), Ok((1_024, Dim::Memory)));
+        assert_eq!(v("9600", "baud"), Ok((9_600, Dim::Baud)));
+        assert_eq!(v("25", "degC"), Ok((298_150, Dim::Temperature)));
+        assert_eq!(v("300", "K"), Ok((300_000, Dim::Temperature)));
+        assert_eq!(v("90", "deg"), Ok((90_000_000, Dim::Angle)));
+    }
+
+    #[test]
+    fn suffixes_are_case_sensitive() {
+        assert_eq!(lookup("MHz"), Some(Dim::Frequency));
+        assert_eq!(lookup("mHz"), None);
+        assert_eq!(lookup("mH"), Some(Dim::Inductance));
+        assert_eq!(lookup("MB"), Some(Dim::Memory));
+        assert_eq!(lookup("mV"), Some(Dim::Voltage));
+        assert_eq!(lookup("MV"), None);
+    }
+
+    #[test]
+    fn malformed_numbers_are_rejected() {
+        assert_eq!(Decimal::parse("1e"), None);
+        assert_eq!(Decimal::parse(".5"), None);
+        assert_eq!(Decimal::parse("1.2.3"), None);
+        assert!(matches!(v("1000000000000000000000000000000", "GHz"), Err(UnitError::TooBig)));
+    }
+}

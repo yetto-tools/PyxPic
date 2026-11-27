@@ -8,7 +8,8 @@ from pyxpic.device import PIC16F887
 from pyxpic.periph.gpio import RD1
 from pyxpic.periph.spi import SPI
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 
 def main() -> None:

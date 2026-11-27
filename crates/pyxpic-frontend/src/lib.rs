@@ -24,12 +24,13 @@ pub mod target;
 pub mod text;
 pub mod timer;
 pub mod types;
+pub mod units;
 pub mod uart;
 
 pub use adc::{AdcCall, AdcClock, AdcConfig, AdcOp};
 pub use bits::BitsOp;
 pub use check::{time_unit, DelayUnit, PinDecl, Program};
-pub use clock::{ClockKind, ClockSource};
+pub use clock::{ClockKind, ClockSource, OscillatorMode, OscillatorProfile};
 pub use comparator::{CmpId, CmpRef, CompCall, CompOp, CvrefOp};
 pub use diag::{Diagnostic, Diagnostics, Severity, Span};
 pub use eeprom::{EepromCall, EepromOp};
@@ -61,17 +62,25 @@ pub fn declared_device(source: &str) -> Option<String> {
     })
 }
 
-/// `true` si el programa declara su reloj (`CLOCK: ...[...]` o `CLOCK_HZ`): en ese caso el perfil de proyecto no lo cambia.
+/// `true` si el programa declara su reloj (`CLOCK: ...` o `CLOCK_HZ`): en ese caso el perfil de proyecto no lo cambia.
 pub fn declares_clock(source: &str) -> bool {
     let mut d = Diagnostics::default();
     let module = parser::parse(source, &mut d);
     module.items.iter().any(|it| matches!(it, ast::Item::Var(v) if v.name.name == "CLOCK" || v.name.name == "CLOCK_HZ"))
 }
 
-/// Valida la declaracion de reloj de un perfil de proyecto (`Crystal[20 * MHz]`) con las mismas reglas que el fuente. El error trae
+/// Valida la declaracion de reloj de un perfil de proyecto (`Crystal 20MHz`) con las mismas reglas que el fuente. El error trae
 /// los diagnosticos ya formateados.
 pub fn parse_clock(text: &str, target: &TargetProfile) -> Result<ClockSource, String> {
-    let line = format!("CLOCK: {text}\n");
+    // `Crystal 20MHz`, `Internal`, `Crystal 8MHz HS`: la fuente, su frecuencia y, si hace falta, OSC_MODE
+    let mut parts = text.split_whitespace();
+    let mut line = format!("CLOCK: {}\n", parts.next().unwrap_or(""));
+    if let Some(f) = parts.next() {
+        line.push_str(&format!("FREQUENCY: {f}\n"));
+    }
+    if let Some(m) = parts.next() {
+        line.push_str(&format!("OSC_MODE: {m}\n"));
+    }
     let mut t = target.clone();
     t.project_clock = None;
     let res = analyze(&line, &t);
@@ -79,7 +88,7 @@ pub fn parse_clock(text: &str, target: &TargetProfile) -> Result<ClockSource, St
         Some(c) => Ok(c),
         None => {
             let shown = res.diagnostics.render(&line, "pyxpic.toml (clock)");
-            Err(if shown.trim().is_empty() { format!("'{text}' no es una declaracion de reloj: Internal[4 * MHz], Crystal[20 * MHz] o ExternalClock[20 * MHz]") } else { shown })
+            Err(if shown.trim().is_empty() { format!("'{text}' no es una declaracion de reloj: Internal, Internal 8MHz o Crystal 16MHz") } else { shown })
         }
     }
 }

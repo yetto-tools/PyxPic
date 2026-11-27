@@ -447,7 +447,8 @@ fn disasm_rejects_malformed_control_records_with_a_failing_exit_status() {
 fn clock_declaration_sets_fosc_and_rejects_a_conflicting_config() {
     let dir = tmp("clock-source");
     let src = dir.join("reloj.py");
-    std::fs::write(&src, "from pyxpic.device import PIC16F887\nCLOCK: Crystal[20 * MHz]\n\n\ndef main() -> None:\n    pass\n").unwrap();
+    std::fs::write(&src, "from pyxpic.device import PIC16F887\nCLOCK: Crystal
+FREQUENCY: 20MHz\n\n\ndef main() -> None:\n    pass\n").unwrap();
     let out = dir.join("reloj.hex");
     let o = pyxpic(&root(), &["build", src.to_str().unwrap(), "-o", out.to_str().unwrap()]);
     assert!(o.status.success(), "{}", text(&o));
@@ -479,7 +480,7 @@ const BARE_MAIN: &str =
 fn a_project_builds_with_no_arguments_taking_device_clock_config_and_output_from_the_profile() {
     let dir = project_dir(
         "proj-basic",
-        "[project]\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n\n[target.placa]\ndevice = \"PIC16F887\"\nclock = \"Crystal[20 * MHz]\"\nconfig = { WDTE = \"ON\" }\noutput = \"out/placa.hex\"\n",
+        "[project]\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n\n[target.placa]\ndevice = \"PIC16F887\"\nclock = \"Crystal 20MHz\"\nconfig = { WDTE = \"ON\" }\noutput = \"out/placa.hex\"\n",
         BARE_MAIN,
     );
     std::fs::create_dir_all(dir.join("out")).unwrap();
@@ -498,7 +499,7 @@ fn a_project_builds_with_no_arguments_taking_device_clock_config_and_output_from
 
 #[test]
 fn the_program_wins_over_the_profile_and_a_device_mismatch_is_a_clear_error() {
-    let toml = "[project]\ndevices_dir = \"@DEVICES@\"\n\n[target.otra]\ndevice = \"PIC16F886\"\n\n[target.ok]\ndevice = \"PIC16F887\"\nclock = \"Crystal[20 * MHz]\"\n";
+    let toml = "[project]\ndevices_dir = \"@DEVICES@\"\n\n[target.otra]\ndevice = \"PIC16F886\"\n\n[target.ok]\ndevice = \"PIC16F887\"\nclock = \"Crystal 20MHz\"\n";
     let dir = project_dir("proj-mismatch", toml, &format!("from pyxpic.device import PIC16F887\n{BARE_MAIN}"));
     let file = dir.join("main.py");
     let o = pyxpic(&dir, &["build", file.to_str().unwrap(), "--target", "otra"]);
@@ -508,19 +509,21 @@ fn the_program_wins_over_the_profile_and_a_device_mismatch_is_a_clear_error() {
     let o = pyxpic(&dir, &["build", file.to_str().unwrap(), "--target", "ok"]);
     assert!(o.status.success(), "{}", text(&o));
     // el programa que declara su reloj manda sobre el del perfil, y se avisa
-    std::fs::write(&file, format!("from pyxpic.device import PIC16F887\nCLOCK: Internal[8 * MHz]\n{}", BARE_MAIN)).unwrap();
+    std::fs::write(&file, format!("from pyxpic.device import PIC16F887\nCLOCK: Internal
+FREQUENCY: 8MHz\n{}", BARE_MAIN)).unwrap();
     let o = pyxpic(&dir, &["build", file.to_str().unwrap(), "--target", "ok"]);
     let t = text(&o);
     assert!(o.status.success() && t.contains("aviso") && t.contains("manda el programa") && t.contains("Internal 8 MHz"), "{t}");
     // si el reloj es el mismo, no hay aviso
-    std::fs::write(&file, format!("from pyxpic.device import PIC16F887\nCLOCK: Crystal[20 * MHz]\n{}", BARE_MAIN)).unwrap();
+    std::fs::write(&file, format!("from pyxpic.device import PIC16F887\nCLOCK: Crystal
+FREQUENCY: 20MHz\n{}", BARE_MAIN)).unwrap();
     let o = pyxpic(&dir, &["build", file.to_str().unwrap(), "--target", "ok"]);
     assert!(o.status.success() && !text(&o).contains("aviso"), "{}", text(&o));
 }
 
 #[test]
 fn the_target_is_chosen_with_target_or_default_target_and_the_command_line_wins_over_the_profile() {
-    let toml = "[project]\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n\n[target.a]\ndevice = \"PIC16F887\"\nconfig = { WDTE = \"ON\" }\n\n[target.b]\ndevice = \"PIC16F887\"\nclock = \"Internal[8 * MHz]\"\n";
+    let toml = "[project]\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n\n[target.a]\ndevice = \"PIC16F887\"\nconfig = { WDTE = \"ON\" }\n\n[target.b]\ndevice = \"PIC16F887\"\nclock = \"Internal 8MHz\"\n";
     let dir = project_dir("proj-targets", toml, BARE_MAIN);
     let o = pyxpic(&dir, &["build"]);
     assert!(!o.status.success() && text(&o).contains("hay varios perfiles (a, b)") && text(&o).contains("--target"), "{}", text(&o));
@@ -539,7 +542,7 @@ fn the_target_is_chosen_with_target_or_default_target_and_the_command_line_wins_
     std::fs::write(
         dir.join("pyxpic.toml"),
         format!(
-            "[project]\nmain = \"main.py\"\ndevices_dir = \"{}\"\ndefault_target = \"b\"\n\n[target.a]\ndevice = \"PIC16F887\"\n[target.b]\ndevice = \"PIC16F887\"\nclock = \"Internal[8 * MHz]\"\n",
+            "[project]\nmain = \"main.py\"\ndevices_dir = \"{}\"\ndefault_target = \"b\"\n\n[target.a]\ndevice = \"PIC16F887\"\n[target.b]\ndevice = \"PIC16F887\"\nclock = \"Internal 8MHz\"\n",
             devices()
         ),
     )
@@ -557,10 +560,10 @@ fn project_file_errors_are_located_and_explain_the_valid_keys() {
     let o = pyxpic(&root(), &["check", "examples/python/gpio/blink.py", "--target", "x"]);
     assert!(!o.status.success() && text(&o).contains("--target necesita un pyxpic.toml"), "{}", text(&o));
     // un reloj invalido en el perfil se explica con las reglas del reloj
-    let dir = project_dir("proj-badclock", "[project]\ndevices_dir = \"@DEVICES@\"\n[target.a]\ndevice = \"PIC16F887\"\nclock = \"Internal[20 * MHz]\"\n", BARE_MAIN);
+    let dir = project_dir("proj-badclock", "[project]\ndevices_dir = \"@DEVICES@\"\n[target.a]\ndevice = \"PIC16F887\"\nclock = \"Internal 20MHz\"\n", BARE_MAIN);
     let o = pyxpic(&dir, &["build", dir.join("main.py").to_str().unwrap()]);
     let t = text(&o);
-    assert!(!o.status.success() && t.contains("PYP2194") && t.contains("[target.a] clock = \"Internal[20 * MHz]\" no es valido"), "{t}");
+    assert!(!o.status.success() && t.contains("PYP2194") && t.contains("[target.a] clock = \"Internal 20MHz\" no es valido"), "{t}");
     // sin dispositivo en ningun lado: se dice donde ponerlo
     let dir = project_dir("proj-nodevice", "[project]\ndevices_dir = \"@DEVICES@\"\n", "def main() -> None:\n    pass\n");
     let o = pyxpic(&dir, &["build", dir.join("main.py").to_str().unwrap()]);
@@ -592,10 +595,10 @@ fn init_creates_a_valid_project_that_checks_and_builds_with_no_further_edits() {
     let dir = fresh("init-ok");
     let o = pyxpic(&root(), &["init", dir.to_str().unwrap(), "--name", "termometro", "--devices-dir", &devices()]);
     assert!(o.status.success(), "{}", text(&o));
-    assert!(text(&o).contains("Proyecto creado") && text(&o).contains("PIC16F887") && text(&o).contains("Internal[4 * MHz]"), "{}", text(&o));
+    assert!(text(&o).contains("Proyecto creado") && text(&o).contains("PIC16F887") && text(&o).contains("Internal 4MHz"), "{}", text(&o));
     let toml = std::fs::read_to_string(dir.join("pyxpic.toml")).unwrap();
     assert!(
-        toml.contains("name = \"termometro\"") && toml.contains("[target.pic16f887]") && toml.contains("clock = \"Internal[4 * MHz]\"") && toml.contains("output = \"build/termometro.hex\""),
+        toml.contains("name = \"termometro\"") && toml.contains("[target.pic16f887]") && toml.contains("clock = \"Internal 4MHz\"") && toml.contains("output = \"build/termometro.hex\""),
         "{toml}"
     );
     assert!(std::fs::read_to_string(dir.join("main.py")).unwrap().contains("termometro"));
@@ -609,14 +612,14 @@ fn init_creates_a_valid_project_that_checks_and_builds_with_no_further_edits() {
 #[test]
 fn init_takes_a_device_alias_and_a_clock_and_validates_both_before_writing() {
     let dir = fresh("init-opts");
-    let o = pyxpic(&root(), &["init", dir.to_str().unwrap(), "--device", "16f887", "--clock", "Crystal[20 * MHz]", "--devices-dir", &devices()]);
+    let o = pyxpic(&root(), &["init", dir.to_str().unwrap(), "--device", "16f887", "--clock", "Crystal 20MHz", "--devices-dir", &devices()]);
     assert!(o.status.success(), "{}", text(&o));
     let toml = std::fs::read_to_string(dir.join("pyxpic.toml")).unwrap();
-    assert!(toml.contains("device = \"PIC16F887\"") && toml.contains("clock = \"Crystal[20 * MHz]\""), "{toml}");
+    assert!(toml.contains("device = \"PIC16F887\"") && toml.contains("clock = \"Crystal 20MHz\""), "{toml}");
     let o = pyxpic(&dir, &["project", "check"]);
     assert!(o.status.success() && text(&o).contains("Crystal 20 MHz (FOSC = HS)"), "{}", text(&o));
     // un dispositivo desconocido o un reloj imposible no crean nada
-    for (extra, frag) in [(&["--device", "PIC99X999"][..], "desconocido"), (&["--clock", "Internal[20 * MHz]"][..], "PYP2194")] {
+    for (extra, frag) in [(&["--device", "PIC99X999"][..], "desconocido"), (&["--clock", "Internal 20MHz"][..], "PYP2194")] {
         let d = fresh("init-bad");
         let mut args = vec!["init", d.to_str().unwrap(), "--devices-dir"];
         let dev = devices();
@@ -641,7 +644,7 @@ fn init_never_overwrites_an_existing_file() {
 
 #[test]
 fn project_check_reports_every_problem_per_target_and_modifies_nothing() {
-    let toml = "[project]\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n\n[target.bien]\ndevice = \"PIC16F887\"\nclock = \"Crystal[20 * MHz]\"\nconfig = { WDTE = \"ON\" }\n\n[target.mal]\ndevice = \"PIC16F886\"\nclock = \"Internal[20 * MHz]\"\nconfig = { WDTE = \"QUIZAS\", NOEXISTE = 1 }\n";
+    let toml = "[project]\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n\n[target.bien]\ndevice = \"PIC16F887\"\nclock = \"Crystal 20MHz\"\nconfig = { WDTE = \"ON\" }\n\n[target.mal]\ndevice = \"PIC16F886\"\nclock = \"Internal 20MHz\"\nconfig = { WDTE = \"QUIZAS\", NOEXISTE = 1 }\n";
     let dir = project_dir("check-problems", toml, &format!("from pyxpic.device import PIC16F887\n{BARE_MAIN}"));
     let before = (std::fs::read_to_string(dir.join("pyxpic.toml")).unwrap(), std::fs::read_to_string(dir.join("main.py")).unwrap());
     let o = pyxpic(&dir, &["project", "check"]);
@@ -669,14 +672,14 @@ fn project_check_sees_missing_files_source_errors_and_warnings() {
     let o = pyxpic(&dir, &["project", "check"]);
     assert!(!o.status.success() && text(&o).contains("main.py:2:") && text(&o).contains("PYP2"), "{}", text(&o));
     // sin dispositivo en ningun lado
-    let dir = project_dir("check-nodev", "[project]\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n[target.a]\nclock = \"Internal[4 * MHz]\"\n", "def main() -> None:\n    pass\n");
+    let dir = project_dir("check-nodev", "[project]\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n[target.a]\nclock = \"Internal 4MHz\"\n", "def main() -> None:\n    pass\n");
     let o = pyxpic(&dir, &["project", "check"]);
     assert!(!o.status.success() && text(&o).contains("falta el dispositivo"), "{}", text(&o));
 }
 
 #[test]
 fn project_check_json_is_versioned_and_machine_readable() {
-    let toml = "[project]\nname = \"p\"\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n[target.ok]\ndevice = \"PIC16F887\"\nclock = \"Crystal[8 * MHz]\"\nconfig = { WDTE = \"ON\" }\n[target.mal]\ndevice = \"PIC16F887\"\nclock = \"Crystal[24 * MHz]\"\n";
+    let toml = "[project]\nname = \"p\"\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n[target.ok]\ndevice = \"PIC16F887\"\nclock = \"Crystal 8MHz\"\nconfig = { WDTE = \"ON\" }\n[target.mal]\ndevice = \"PIC16F887\"\nclock = \"Crystal 24MHz\"\n";
     let dir = project_dir("check-json", toml, BARE_MAIN);
     let o = pyxpic(&dir, &["project", "check", "--format", "json"]);
     assert_eq!(o.status.code(), Some(1));
@@ -689,7 +692,7 @@ fn project_check_json_is_versioned_and_machine_readable() {
     let ok = targets.iter().find(|t| t["name"] == "ok").unwrap();
     assert_eq!(
         (ok["status"].as_str(), ok["device"].as_str(), ok["clock"]["declaration"].as_str(), ok["config"]["WDTE"].as_str()),
-        (Some("ok"), Some("PIC16F887"), Some("Crystal[8 * MHz]"), Some("ON"))
+        (Some("ok"), Some("PIC16F887"), Some("Crystal 8MHz"), Some("ON"))
     );
     assert!(ok["clock"]["description"].as_str().unwrap().contains("FOSC = HS") && ok["errors"].as_array().unwrap().is_empty());
     let mal = targets.iter().find(|t| t["name"] == "mal").unwrap();
@@ -720,7 +723,7 @@ fn project_command_errors_are_clear() {
 
 // ---- pyxpic project set ------------------------------------------------------------------------------------------------------
 
-const COMMENTED: &str = "# Mi proyecto (este comentario debe sobrevivir)\n[project]\nname = \"demo\"            # nombre\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n\n[target.placa]            # mi placa\ndevice = \"PIC16F887\"\nclock = \"Internal[4 * MHz]\"   # reloj actual\noutput = \"build/demo.hex\"\n";
+const COMMENTED: &str = "# Mi proyecto (este comentario debe sobrevivir)\n[project]\nname = \"demo\"            # nombre\nmain = \"main.py\"\ndevices_dir = \"@DEVICES@\"\n\n[target.placa]            # mi placa\ndevice = \"PIC16F887\"\nclock = \"Internal 4MHz\"   # reloj actual\noutput = \"build/demo.hex\"\n";
 
 fn set_project(name: &str) -> PathBuf {
     project_dir(name, COMMENTED, BARE_MAIN)
@@ -734,17 +737,17 @@ fn toml_of(dir: &Path) -> String {
 fn set_changes_only_the_asked_keys_keeps_comments_and_leaves_a_backup() {
     let dir = set_project("set-ok");
     let before = toml_of(&dir);
-    let o = pyxpic(&dir, &["project", "set", "clock=Crystal[20 * MHz]", "config.WDTE=ON", "config.BOREN=1"]);
+    let o = pyxpic(&dir, &["project", "set", "clock=Crystal 20MHz", "config.WDTE=ON", "config.BOREN=1"]);
     assert!(o.status.success(), "{}", text(&o));
     let t = text(&o);
-    assert!(t.contains("placa.clock: Internal[4 * MHz] -> Crystal[20 * MHz]") && t.contains("placa.config.WDTE: (nuevo) ON") && t.contains("pyxpic.toml.bak"), "{t}");
+    assert!(t.contains("placa.clock: Internal 4MHz -> Crystal 20MHz") && t.contains("placa.config.WDTE: (nuevo) ON") && t.contains("pyxpic.toml.bak"), "{t}");
     let after = toml_of(&dir);
     // los comentarios (los de linea y los del final de linea) y el resto del archivo no se tocan
     for keep in [
         "# Mi proyecto (este comentario debe sobrevivir)",
         "name = \"demo\"            # nombre",
         "[target.placa]            # mi placa",
-        "clock = \"Crystal[20 * MHz]\"   # reloj actual",
+        "clock = \"Crystal 20MHz\"   # reloj actual",
         "output = \"build/demo.hex\"",
     ] {
         assert!(after.contains(keep), "falta {keep:?} en:\n{after}");
@@ -767,7 +770,7 @@ fn set_unset_removes_keys_and_an_empty_config_table_and_same_value_changes_nothi
     assert!(!t.contains("config") && !t.contains("output"), "{t}");
     // el mismo valor: sin cambios y sin copia nueva
     let _ = std::fs::remove_file(dir.join("pyxpic.toml.bak"));
-    let o = pyxpic(&dir, &["project", "set", "clock=Internal[4 * MHz]"]);
+    let o = pyxpic(&dir, &["project", "set", "clock=Internal 4MHz"]);
     assert!(o.status.success() && text(&o).contains("sin cambios"), "{}", text(&o));
     assert!(!dir.join("pyxpic.toml.bak").exists());
 }
@@ -776,8 +779,8 @@ fn set_unset_removes_keys_and_an_empty_config_table_and_same_value_changes_nothi
 fn set_dry_run_shows_the_changes_and_writes_nothing() {
     let dir = set_project("set-dry");
     let before = toml_of(&dir);
-    let o = pyxpic(&dir, &["project", "set", "--dry-run", "clock=Crystal[8 * MHz]"]);
-    assert!(o.status.success() && text(&o).contains("Crystal[8 * MHz]") && text(&o).contains("--dry-run: no se escribio nada"), "{}", text(&o));
+    let o = pyxpic(&dir, &["project", "set", "--dry-run", "clock=Crystal 8MHz"]);
+    assert!(o.status.success() && text(&o).contains("Crystal 8MHz") && text(&o).contains("--dry-run: no se escribio nada"), "{}", text(&o));
     assert_eq!(toml_of(&dir), before);
     assert!(!dir.join("pyxpic.toml.bak").exists());
 }
@@ -787,7 +790,7 @@ fn set_refuses_a_change_that_would_leave_the_profile_invalid_and_writes_nothing(
     let dir = set_project("set-invalid");
     let before = toml_of(&dir);
     for (arg, frag) in
-        [("clock=Internal[20 * MHz]", "PYP2194"), ("clock=Crystal[24 * MHz]", "PYP2194"), ("config.WDTE=QUIZAS", "WDTE"), ("config.NOEXISTE=1", "NOEXISTE"), ("device=PIC99X999", "desconocido")]
+        [("clock=Internal 20MHz", "PYP2194"), ("clock=Crystal 24MHz", "PYP2194"), ("config.WDTE=QUIZAS", "WDTE"), ("config.NOEXISTE=1", "NOEXISTE"), ("device=PIC99X999", "desconocido")]
     {
         let o = pyxpic(&dir, &["project", "set", arg]);
         assert_eq!(o.status.code(), Some(1), "{arg}: {}", text(&o));
@@ -807,17 +810,17 @@ fn set_picks_the_profile_creates_new_ones_and_edits_project_keys() {
     let toml = format!("{COMMENTED}\n[target.otra]\ndevice = \"PIC16F887\"\n");
     let dir = project_dir("set-targets", &toml, BARE_MAIN);
     // dos perfiles y ninguno por defecto: hay que elegir
-    let o = pyxpic(&dir, &["project", "set", "clock=Crystal[8 * MHz]"]);
+    let o = pyxpic(&dir, &["project", "set", "clock=Crystal 8MHz"]);
     assert_eq!(o.status.code(), Some(2), "{}", text(&o));
     assert!(text(&o).contains("hay varios perfiles (otra, placa)"), "{}", text(&o));
-    let o = pyxpic(&dir, &["project", "set", "--target", "otra", "clock=Crystal[8 * MHz]"]);
+    let o = pyxpic(&dir, &["project", "set", "--target", "otra", "clock=Crystal 8MHz"]);
     assert!(o.status.success(), "{}", text(&o));
-    assert!(toml_of(&dir).contains("[target.otra]") && toml_of(&dir).contains("clock = \"Crystal[8 * MHz]\""), "{}", toml_of(&dir));
+    assert!(toml_of(&dir).contains("[target.otra]") && toml_of(&dir).contains("clock = \"Crystal 8MHz\""), "{}", toml_of(&dir));
     // un perfil que no existe: error, o se crea con --create
     let o = pyxpic(&dir, &["project", "set", "--target", "nueva", "device=PIC16F887"]);
     assert_eq!(o.status.code(), Some(2), "{}", text(&o));
     assert!(text(&o).contains("no hay un perfil 'nueva'") && text(&o).contains("--create"), "{}", text(&o));
-    let o = pyxpic(&dir, &["project", "set", "--target", "nueva", "--create", "device=PIC16F887", "clock=Internal[8 * MHz]"]);
+    let o = pyxpic(&dir, &["project", "set", "--target", "nueva", "--create", "device=PIC16F887", "clock=Internal 8MHz"]);
     assert!(o.status.success() && text(&o).contains("perfil nueva: (nuevo)"), "{}", text(&o));
     let o = pyxpic(&dir, &["project", "check", "--target", "nueva"]);
     assert!(o.status.success() && text(&o).contains("Internal 8 MHz"), "{}", text(&o));

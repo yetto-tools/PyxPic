@@ -70,7 +70,8 @@ Un programa dice **a qué PIC está orientado** en su primera línea, y de ahí 
 from pyxpic.device import PIC16F887        # 1. declaración inicial: obligatoria para compilar (pyxpic build)
 from pyxpic.periph.gpio import RB0, RD0
 
-CLOCK: Internal[4 * MHz]                     # 2. fuente y frecuencia del reloj (opcional; docs/sdk-reloj.md)
+CLOCK: Internal
+FREQUENCY: 4MHz                     # 2. fuente y frecuencia del reloj (opcional; docs/sdk-reloj.md)
 
 
 @init_device                               # 3. se ejecuta una vez, antes de main
@@ -89,10 +90,10 @@ def main() -> None:
   **Va siempre en el código**, también en un proyecto con `pyxpic.toml`: el mismo programa puede ser válido para varios PIC y la declaración es lo que dice **para cuál está escrito** y,
   por tanto, qué se espera tener: de ella salen los pines (`PYP2150`), los periféricos (`from pyxpic.periph.pwm import PWM1` es un error si el dispositivo no trae CCP1: `PYP2200`, `PYP2210`...),
   los registros, los tipos nativos, la pila, el reloj máximo, la RAM y la ROM. Si el dispositivo viene solo del perfil de `pyxpic.toml` y el código no lo declara, se avisa (`PYP3018`).
-- **`CLOCK: Internal[4 * MHz]`** (o `Crystal[20 * MHz]`, `ExternalClock[20 * MHz]`): la forma recomendada de declarar el reloj, ver `docs/sdk-reloj.md`. Elige la fuente y la frecuencia, configura `FOSC` y `OSCCON` y se valida contra el reloj máximo del dispositivo. No ocupa RAM y no da el aviso de tipo emulado. Si el programa usa esperas (`pyxpic.system.time`, ver `docs/sdk-time.md`) y no declara el reloj, se usa el reloj por defecto del dispositivo con un aviso.
+- **`CLOCK: Internal` y `FREQUENCY: 4MHz`** (sin frecuencia es 4 MHz; también `Internal 8MHz` y `Crystal 16MHz`): la forma recomendada de declarar el reloj, ver `docs/sdk-reloj.md`. Elige la fuente y la frecuencia, configura `FOSC` y `OSCCON` y se valida contra el reloj máximo del dispositivo. No ocupa RAM y no da el aviso de tipo emulado. Si el programa usa esperas (`pyxpic.system.time`, ver `docs/sdk-time.md`) y no declara el reloj, se usa el reloj por defecto del dispositivo con un aviso.
 - **`CLOCK_HZ: Const[uint32] = <hercios>`**: la forma manual, con ese nombre y forma exactos: solo declara la frecuencia (el oscilador lo configuras tú); se valida contra el reloj máximo. No se puede combinar con `CLOCK`.
 
-**Implementado (#69, `docs/sdk-reloj.md`):** `CLOCK: Internal[4 * MHz]`, `CLOCK: Crystal[20 * MHz]` y `CLOCK: ExternalClock[20 * MHz]`, sin imports (el formato `Nombre[frecuencia]` es Python válido; se descartaron `CLOCK = "4MHz internal"` y el constructor con paréntesis). La expresión se resuelve en compilación, configura `FOSC` y `OSCCON` y valida contra el datasheet. `CLOCK_HZ` sigue admitiéndose como declaración de frecuencia compatible, sin configuración automática del oscilador. La frecuencia declarada es FOSC; en PIC16F887 el reloj de instrucción es FOSC/4.
+**Implementado (#69, `docs/sdk-reloj.md`):** `CLOCK: Internal`, `CLOCK: Internal` y `FREQUENCY: 8MHz` y `CLOCK: Crystal` y `FREQUENCY: 16MHz`, sin imports (`8MHz` es un literal con unidad que lee el lexer; ya no existen la forma `[4 * MHz]` ni `ExternalClock`). La expresión se resuelve en compilación, configura `FOSC` y `OSCCON` y valida contra el datasheet. `CLOCK_HZ` sigue admitiéndose como declaración de frecuencia compatible, sin configuración automática del oscilador. La frecuencia declarada es FOSC; en PIC16F887 el reloj de instrucción es FOSC/4.
 - **`@init_device`**: una sola función `() -> None` (el nombre es libre); el arranque la llama **después de inicializar las variables y antes de `main`**.
   El código no puede llamarla. Cuenta en el análisis de pila y en la regla de no compartir funciones con la interrupción.
 - Las constantes `Const` se sustituyen por su valor al compilar: **no ocupan RAM** aunque sean de 32 bits.

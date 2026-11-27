@@ -35,14 +35,22 @@ const info = {
   int8: "Entero con signo de 8 bits: -128 a 127.",
   int16: "Entero con signo de 16 bits: -32768 a 32767.",
   Const: "Constante resuelta en compilación, por ejemplo `LIMITE: Const[uint8] = 10`.",
-  CLOCK_HZ: "Forma manual de declarar la frecuencia del sistema en Hz para los cálculos de tiempo: no configura el oscilador. Prefiere `CLOCK: Internal[4 * MHz]`.",
-  CLOCK: "Declara la fuente y frecuencia de reloj en compilación: `CLOCK: Internal[4 * MHz]`, `Crystal[20 * MHz]` o `ExternalClock[20 * MHz]`. Con un oscilador externo, RA7 (OSC1/CLKIN) y RA6 (OSC2/CLKOUT) dejan de estar disponibles como E/S. No combinar con CLOCK_HZ.",
-  Internal: "Oscilador interno del PIC16F887: frecuencias nominales de 31 kHz a 8 MHz, en pasos compatibles con OSCCON.",
-  Crystal: "Cristal o resonador en OSC1/OSC2; PyxPic selecciona LP, XT o HS según la frecuencia y reserva RA7 y RA6.",
-  ExternalClock: "Señal de reloj externa en CLKIN/RA7: modo EC; admite hasta 20 MHz en PIC16F887.",
-  MHz: "Unidad de frecuencia para CLOCK: un MHz equivale a 1 000 000 Hz, resuelto en compilación.",
-  kHz: "Unidad de frecuencia para CLOCK: un kHz equivale a 1000 Hz, resuelto en compilación.",
-  Hz: "Unidad de frecuencia para CLOCK en hercios, resuelta en compilación.",
+  CLOCK_HZ: "Forma manual de declarar la frecuencia del sistema en Hz para los cálculos de tiempo: no configura el oscilador. Prefiere `Clock: Internal 4MHz`.",
+  CLOCK: "Fuente del reloj del sistema: `CLOCK: Internal` (oscilador interno, 4 MHz si no hay FREQUENCY) o `CLOCK: Crystal`, `External`, `Resonator`, `RC`. La frecuencia va en `FREQUENCY: 8MHz`. Con un oscilador externo, RA7 y RA6 dejan de estar disponibles como E/S. No combinar con CLOCK_HZ.",
+  FREQUENCY: "Frecuencia de la fuente de reloj: `FREQUENCY: 11.0592MHz`. Acepta literales con unidad (`8MHz`, `32.768kHz`, `8e6Hz`) y expresiones constantes (`16MHz / 2`, `8 * MHz`). El compilador la valida contra los modos del dispositivo.",
+  OSC_MODE: "Modo del oscilador externo: `Auto` (el que corresponde a la frecuencia) o uno del dispositivo (`LP`, `XT`, `HS`, `EC`, `RC` en el PIC16F887).",
+  SOURCE_FREQ: "Constante del compilador: frecuencia de la fuente de reloj, en Hz.",
+  FOSC: "Constante del compilador: frecuencia del sistema, en Hz (sin PLL ni divisores es SOURCE_FREQ).",
+  FCY: "Constante del compilador: frecuencia del ciclo de instruccion, en Hz (FOSC / 4 en PIC16).",
+  Internal: "Oscilador interno: solo las frecuencias que el dispositivo configura por registro (PIC16F887: de 31 kHz a 8 MHz).",
+  Crystal: "Cristal de cuarzo en OSC1/OSC2; PyxPic elige LP, XT o HS segun la frecuencia y reserva RA7 y RA6.",
+  External: "Senal de reloj externa en CLKIN (modo EC en el PIC16F887): reserva RA7 y deja RA6 libre.",
+  Resonator: "Resonador ceramico en OSC1/OSC2: usa los mismos modos que un cristal.",
+  RC: "Oscilador resistencia-capacitor externo; la frecuencia es la declarada en FREQUENCY.",
+  Secondary: "Oscilador secundario (Timer1): solo en dispositivos que lo admiten como reloj del sistema.",
+  MHz: "Unidad de frecuencia: 1 000 000 Hz, resuelto en compilacion. Tambien como sufijo: `8MHz`.",
+  kHz: "Unidad de frecuencia: 1000 Hz, resuelto en compilacion. Tambien como sufijo: `32kHz`.",
+  Hz: "Unidad de frecuencia, en hercios. Tambien como sufijo: `32768Hz`.",
   PIC16F887: "Dispositivo de destino: se declara con `from pyxpic.device import PIC16F887`.",
   ADC: "ADC de 10 bits. `ADC.start()` configura el periférico y `ADC.read(AN0)` lee un canal.",
   AN0: "Canal analógico AN0, asociado a RA0 en PIC16F887.",
@@ -64,7 +72,7 @@ const info = {
 /** Ayuda al pasar el cursor sobre una palabra de PyxPic BASIC (sin distinguir mayusculas). */
 const basicInfo = {
   device: "`DEVICE PIC16F887`: el PIC para el que esta escrito el programa. Obligatorio.",
-  clock: "`CLOCK INTERNAL 4 MHZ`, `CLOCK CRYSTAL 20 MHZ` o `CLOCK EXTERNAL 20 MHZ`: la fuente y la frecuencia del reloj. Con un oscilador externo RA6 y RA7 son del oscilador.",
+  clock: "`CLOCK INTERNAL 4 MHZ` o `CLOCK CRYSTAL 20 MHZ`: la fuente y la frecuencia del reloj. Con un oscilador externo RA6 y RA7 son del oscilador.",
   baud: "`BAUD 9600`: la velocidad de la UART (8N1) para SERTXD, SERRXD y UART.write; sin esta linea son 9600. No se combina con UART.start.",
   symbol: "`SYMBOL k = 5` (constante), `SYMBOL x = b3` (otro nombre para una variable) o `SYMBOL led = D.0` (un pin).",
   dim: "`DIM x AS BYTE|WORD|BIT` y `DIM t(16) AS BYTE` (arreglo). Las variables `b0`..`b27` (BYTE) y `w0`..`w13` (WORD) existen sin declarar y no se solapan.",
@@ -98,7 +106,7 @@ const members = {
 };
 
 /** Palabras que se sugieren en un programa BASIC; despues de `OBJETO.` van los metodos del SDK. */
-const basicWords = ["DEVICE", "CLOCK", "BAUD", "SYMBOL", "DIM", "AS", "BYTE", "WORD", "BIT", "LET", "IF", "THEN", "ELSE", "ELSEIF", "ENDIF", "FOR", "TO", "STEP", "NEXT", "DO", "LOOP", "WHILE", "WEND", "UNTIL", "SELECT CASE", "CASE", "END SELECT", "GOTO", "GOSUB", "RETURN", "EXIT", "END", "HIGH", "LOW", "TOGGLE", "OUTPUT", "INPUT", "PAUSE", "PAUSEUS", "READADC", "READADC10", "READ", "WRITE", "PWMOUT", "SERTXD", "SERRXD", "ON INTERRUPT", "ENABLE INTERRUPTS", "DISABLE INTERRUPTS", "ASM", "END ASM", "AND", "OR", "XOR", "NOT", "MOD", "INTERNAL", "CRYSTAL", "EXTERNAL", "MHZ", "KHZ", "HZ", "CR", "LF", "TAB"];
+const basicWords = ["DEVICE", "CLOCK", "BAUD", "SYMBOL", "DIM", "AS", "BYTE", "WORD", "BIT", "LET", "IF", "THEN", "ELSE", "ELSEIF", "ENDIF", "FOR", "TO", "STEP", "NEXT", "DO", "LOOP", "WHILE", "WEND", "UNTIL", "SELECT CASE", "CASE", "END SELECT", "GOTO", "GOSUB", "RETURN", "EXIT", "END", "HIGH", "LOW", "TOGGLE", "OUTPUT", "INPUT", "PAUSE", "PAUSEUS", "READADC", "READADC10", "READ", "WRITE", "PWMOUT", "SERTXD", "SERRXD", "ON INTERRUPT", "ENABLE INTERRUPTS", "DISABLE INTERRUPTS", "ASM", "END ASM", "AND", "OR", "XOR", "NOT", "MOD", "INTERNAL", "CRYSTAL", "MHZ", "KHZ", "HZ", "CR", "LF", "TAB"];
 
 function basicCompletions(prefix) {
   const match = /\b(ADC|UART|EEPROM|PWM[12])\.\w*$/i.exec(prefix);
@@ -111,7 +119,7 @@ function completions(prefix) {
   const match = /\b(ADC|UART|EEPROM|PWM[12]|SPI|I2C)\.\w*$/.exec(prefix);
   if (match) return members[match[1]];
   if (/\.\w*$/.test(prefix)) return [];
-  return ["uint8", "uint16", "uint32", "int8", "int16", "int32", "Const", "CLOCK", "Internal", "Crystal", "ExternalClock", "MHz", "kHz", "Hz", "CLOCK_HZ", "ord"];
+  return ["uint8", "uint16", "uint32", "int8", "int16", "int32", "Const", "CLOCK", "FREQUENCY", "OSC_MODE", "Internal", "Crystal", "External", "Resonator", "RC", "Secondary", "SOURCE_FREQ", "FOSC", "FCY", "MHz", "kHz", "Hz", "CLOCK_HZ", "ord"];
 }
 
 function isPyxPic(text) {

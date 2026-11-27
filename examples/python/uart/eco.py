@@ -12,7 +12,8 @@ Politica ante lo inesperado:
 from pyxpic.device import PIC16F887
 from pyxpic.periph.uart import UART
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 
 def main() -> None:

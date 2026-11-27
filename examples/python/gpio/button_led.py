@@ -3,7 +3,8 @@ from pyxpic.device import PIC16F887
 from pyxpic import Const, init_device, uint32
 from pyxpic.periph.gpio import RB0, RD0
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 
 @init_device

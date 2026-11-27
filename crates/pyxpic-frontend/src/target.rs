@@ -68,6 +68,8 @@ pub struct TargetProfile {
     pub pin_claims: Option<BTreeMap<String, Vec<PinClaim>>>,
     /// El reloj que pide el perfil de proyecto (`pyxpic.toml`): solo vale si el programa no declara el suyo (el fuente manda).
     pub project_clock: Option<crate::clock::ClockSource>,
+    /// Osciladores que admite el dispositivo (`oscillator.json`). `None` = la tabla del PIC16F887.
+    pub oscillator: Option<crate::clock::OscillatorProfile>,
 }
 
 impl TargetProfile {
@@ -86,6 +88,7 @@ impl TargetProfile {
             registers: None,
             pin_claims: None,
             project_clock: None,
+            oscillator: None,
         }
     }
 
@@ -112,6 +115,11 @@ impl TargetProfile {
 
     pub fn with_clocks_per_cycle(mut self, n: u32) -> Self {
         self.clocks_per_cycle = Some(n);
+        self
+    }
+
+    pub fn with_oscillator(mut self, o: Option<crate::clock::OscillatorProfile>) -> Self {
+        self.oscillator = o;
         self
     }
 

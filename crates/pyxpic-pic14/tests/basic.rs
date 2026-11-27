@@ -55,7 +55,8 @@ fn both(src: &str, names: &[&str], cycles: u64) -> Vec<(u16, u16)> {
 #[test]
 fn blink_in_basic_matches_blink_in_python_instruction_for_instruction() {
     let bas = format!("{HEAD}SYMBOL led = D.0\nmain:\n  HIGH led\n  PAUSE 500\n  LOW led\n  PAUSE 500\n  GOTO main\n");
-    let py = "from pyxpic.device import PIC16F887\nfrom pyxpic.periph.gpio import RD0\nfrom pyxpic.system.time import pause\n\nCLOCK: Internal[4 * MHz]\n\n\ndef main() -> None:\n    RD0.output()\n    while True:\n        RD0.on()\n        pause(500)\n        RD0.off()\n        pause(500)\n";
+    let py = "from pyxpic.device import PIC16F887\nfrom pyxpic.periph.gpio import RD0\nfrom pyxpic.system.time import pause\n\nCLOCK: Internal
+FREQUENCY: 4MHz\n\n\ndef main() -> None:\n    RD0.output()\n    while True:\n        RD0.on()\n        pause(500)\n        RD0.off()\n        pause(500)\n";
     let (_, b) = build(&bas);
     let r = analyze(py, &pack().target_profile());
     let m = lower(&r.program.unwrap());

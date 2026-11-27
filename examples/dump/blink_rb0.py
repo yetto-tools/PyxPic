@@ -3,7 +3,8 @@ from pyxpic.device import PIC16F887
 from pyxpic.periph.gpio import RB0
 from pyxpic.system.time import pause
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 
 @init_device

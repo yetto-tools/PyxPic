@@ -9,7 +9,8 @@ from pyxpic.periph.i2c import I2C
 from pyxpic.regs import PORTD, TRISD
 from pyxpic.system.time import pause
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 
 def main() -> None:

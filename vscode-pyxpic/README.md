@@ -34,7 +34,7 @@ Los archivos Python con imports `from pyxpic... import ...` se abren en el modo 
 
 Si tienes **Code Spell Checker** (`streetsidesoftware.code-spell-checker`), la extensión le registra para el modo PyxPic los diccionarios de Python y las palabras de la API (`cspell/pyxpic-words.txt`), para que `elif`, `pyxpic` o `UART` no salgan como palabras desconocidas. Es opcional: sin él no cambia nada. Los comentarios en español necesitan además su diccionario de español.
 
-El autocompletado y la ayuda también incluyen `CLOCK`, `Internal`, `Crystal`, `ExternalClock`, `Hz`, `kHz` y `MHz`. La configuración real del reloj se describe en [la guía del SDK](../docs/sdk-reloj.md).
+El autocompletado y la ayuda también incluyen `CLOCK`, `Internal`, `Crystal`, `Hz`, `kHz` y `MHz`. La configuración real del reloj se describe en [la guía del SDK](../docs/sdk-reloj.md).
 
 El pinout se elige automáticamente desde el código fuente y, si no hay declaración, desde el perfil activo de `pyxpic.toml`. El selector permanece disponible para inspeccionar cualquier Device Pack instalado y permite volver a **Automático**; esa elección solo cambia la vista y no modifica el proyecto. Esta versión no implementa comprobación continua mientras se escribe, informe de memoria, grabación, terminal serie, simulación visual ni depuración. El comando de compilación puede sustituir el HEX seleccionado; el diálogo de guardado es el del editor.
 

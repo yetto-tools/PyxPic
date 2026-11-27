@@ -3,7 +3,8 @@ from pyxpic.device import PIC16F887
 from pyxpic.periph.adc import ADC, AN0
 from pyxpic.periph.pwm import PWM1
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 
 def main() -> None:

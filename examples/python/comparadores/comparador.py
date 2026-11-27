@@ -4,7 +4,8 @@ from pyxpic.periph.comparator import CMP1, C12IN0, REF_CVREF
 from pyxpic.periph.gpio import RD0
 from pyxpic.periph.vref import CVREF
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 
 def main() -> None:

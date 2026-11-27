@@ -67,7 +67,7 @@ test("la barra de estado y el resumen de la CLI", () => {
 });
 
 test("el informe JSON de la CLI real se lee y cada perfil se puede elegir", () => {
-  const dir = makeProject("informe", ["--clock", "Crystal[20 * MHz]"]);
+  const dir = makeProject("informe", ["--clock", "Crystal 20MHz"]);
   const out = execFileSync(binary, ["project", "check", "--project", path.join(dir, "pyxpic.toml"), "--format", "json"], { cwd: root, encoding: "utf8" });
   const report = modes.parseReport(out);
   assert.equal(report.ok, true);
@@ -191,7 +191,7 @@ test("en un proyecto, compilar usa el perfil, no pregunta dónde guardar y abre 
 });
 
 test("comprobar también abre el panel de salida y usa el dispositivo y el reloj del perfil", async () => {
-  const dir = makeProject("revisado", ["--clock", "Crystal[20 * MHz]"]);
+  const dir = makeProject("revisado", ["--clock", "Crystal 20MHz"]);
   const h = harness(path.join(dir, "main.py"));
   await h.run("pyxpic.check");
   assert.match(h.messages.pop(), /comprobación terminada/);
@@ -221,7 +221,7 @@ test("un archivo abierto con Abrir archivo es un archivo suelto: compilar pregun
 
 test("el perfil de destino se elige con un selector y se usa al compilar", async () => {
   const dir = makeProject("placas");
-  execFileSync(binary, ["project", "set", "--project", path.join(dir, "pyxpic.toml"), "--target", "cristal", "--create", "device=PIC16F887", "clock=Crystal[20 * MHz]", "output=build/cristal.hex"], { cwd: root, stdio: "pipe" });
+  execFileSync(binary, ["project", "set", "--project", path.join(dir, "pyxpic.toml"), "--target", "cristal", "--create", "device=PIC16F887", "clock=Crystal 20MHz", "output=build/cristal.hex"], { cwd: root, stdio: "pipe" });
   execFileSync(binary, ["project", "set", "--project", path.join(dir, "pyxpic.toml"), "project.default_target=pic16f887"], { cwd: root, stdio: "pipe" });
   const h = harness(path.join(dir, "main.py"));
   h.pickQueue.push((item) => item.target === "cristal");
@@ -263,12 +263,12 @@ test("Crear proyecto crea un proyecto de verdad con pyxpic.toml", async () => {
   const h = harness(path.join(parent, "x.py"));
   h.inputs.push("bateria");
   h.openQueue.push([{ fsPath: parent }]);
-  h.pickQueue.push((item) => item.label === "PIC16F887", (item) => item.value === "Crystal[20 * MHz]");
+  h.pickQueue.push((item) => item.label === "PIC16F887", (item) => item.value === "Crystal 20MHz");
   await h.commands.get("pyxpic.newProject")();
   const created = path.join(parent, "bateria");
   const toml = fs.readFileSync(path.join(created, "pyxpic.toml"), "utf8");
   assert.match(toml, /name = "bateria"/);
-  assert.match(toml, /clock = "Crystal\[20 \* MHz\]"/);
+  assert.match(toml, /clock = "Crystal 20MHz"/);
   assert.ok(fs.existsSync(path.join(created, "main.py")));
   const check = execFileSync(binary, ["project", "check", "--project", path.join(created, "pyxpic.toml")], { cwd: root, encoding: "utf8" });
   assert.match(check, /perfil pic16f887: ok/);

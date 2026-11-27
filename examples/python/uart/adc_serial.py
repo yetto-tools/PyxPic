@@ -13,7 +13,8 @@ from pyxpic.periph.adc import ADC, AN0
 from pyxpic.periph.uart import UART
 from pyxpic.system.time import pause
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 
 def main() -> None:

@@ -108,7 +108,8 @@ fn a_probe_reads_acks_from_the_ack_status_bit() {
     let src = r#"from pyxpic.device import PIC16F887
 from pyxpic.regs import SSPADD, SSPBUF, SSPCON, SSPCON2, SSPSTAT
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 visto: uint8 = 0
 ausente: uint8 = 0
@@ -154,7 +155,8 @@ fn writing_sspbuf_during_a_bus_event_sets_wcol_and_is_reported() {
     let src = r#"from pyxpic.device import PIC16F887
 from pyxpic.regs import SSPADD, SSPBUF, SSPCON, SSPCON2
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 
 def main() -> None:
@@ -179,7 +181,8 @@ fn a_bus_event_without_i2c_start_is_a_violation() {
     let src = r#"from pyxpic.device import PIC16F887
 from pyxpic.regs import SSPCON2
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 
 def main() -> None:
@@ -198,7 +201,8 @@ def main() -> None:
 fn bus_timing_follows_sspadd() {
     // un STOP dura un periodo de SCL (SSPADD + 1 ciclos de instruccion) y un byte con su ACK, nueve
     let mk = |add: u8| {
-        format!("from pyxpic.device import PIC16F887\nfrom pyxpic.regs import SSPADD, SSPBUF, SSPCON, SSPCON2, SSPSTAT\n\nCLOCK: Internal[4 * MHz]\n\n\ndef main() -> None:\n    SSPADD.write({add})\n    SSPCON.write(0x28)\n    SSPCON2.SEN.set()\n    while SSPCON2.SEN.value() != 0:\n        pass\n    SSPBUF.write(0x40)\n    while SSPSTAT.R_W.value() != 0:\n        pass\n    SSPCON2.PEN.set()\n    while SSPCON2.PEN.value() != 0:\n        pass\n    while True:\n        pass\n")
+        format!("from pyxpic.device import PIC16F887\nfrom pyxpic.regs import SSPADD, SSPBUF, SSPCON, SSPCON2, SSPSTAT\n\nCLOCK: Internal
+FREQUENCY: 4MHz\n\n\ndef main() -> None:\n    SSPADD.write({add})\n    SSPCON.write(0x28)\n    SSPCON2.SEN.set()\n    while SSPCON2.SEN.value() != 0:\n        pass\n    SSPBUF.write(0x40)\n    while SSPSTAT.R_W.value() != 0:\n        pass\n    SSPCON2.PEN.set()\n    while SSPCON2.PEN.value() != 0:\n        pass\n    while True:\n        pass\n")
     };
     let cycles = |add: u8| {
         let c = build(&mk(add));

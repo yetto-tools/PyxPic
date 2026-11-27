@@ -8,7 +8,8 @@ from pyxpic.periph.i2c import I2C
 from pyxpic.periph.uart import UART
 from pyxpic.system.time import pause
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 
 def main() -> None:

@@ -11,12 +11,12 @@ default_target = "interna"         # perfil por defecto (o el único, si solo ha
 
 [target.interna]                   # un perfil por destino
 device = "PIC16F887"
-clock = "Internal[4 * MHz]"        # la misma declaración que en el fuente (docs/sdk-reloj.md)
+clock = "Internal 4MHz"        # la misma declaración que en el fuente (docs/sdk-reloj.md)
 output = "build/parpadeo_interna.hex"
 
 [target.cristal]
 device = "PIC16F887"
-clock = "Crystal[20 * MHz]"
+clock = "Crystal 20MHz"
 config = { WDTE = "OFF" }          # palabras de configuración por nombre, como --config
 output = "build/parpadeo_cristal.hex"
 ```
@@ -47,11 +47,11 @@ Se busca el `pyxpic.toml` **más cercano** al programa (en su carpeta o en las d
 ## Crear y revisar: `pyxpic init` y `pyxpic project check`
 
 ```
-pyxpic init [carpeta] [--name NOMBRE] [--device PIC16F887] [--clock "Crystal[20 * MHz]"] [--devices-dir DIR]
+pyxpic init [carpeta] [--name NOMBRE] [--device PIC16F887] [--clock "Crystal 20MHz"] [--devices-dir DIR]
 pyxpic project check [--project pyxpic.toml] [--target perfil] [--format text|json] [--devices-dir DIR]
 ```
 
-**`pyxpic init`** crea `pyxpic.toml` y un `main.py` de partida (parpadeo de RB0, con `from pyxpic.device import PIC16F887` en el código) en la carpeta (por defecto la actual). El dispositivo por defecto es `PIC16F887` (acepta `16f887` y `PIC16F887`) y el reloj, el que el dispositivo tiene tras el reset (`Internal[4 * MHz]`); con `--devices-dir` el proyecto recuerda dónde están los Device Packs (`devices_dir`). **Antes de escribir nada** comprueba que el dispositivo existe, que el reloj es válido y que el programa de partida es válido para ese destino: si algo falla, **no se crea nada**. **Nunca sobrescribe**: si ya existe `pyxpic.toml` o `main.py`, termina con error diciendo cuáles y no toca ni el otro archivo.
+**`pyxpic init`** crea `pyxpic.toml` y un `main.py` de partida (parpadeo de RB0, con `from pyxpic.device import PIC16F887` en el código) en la carpeta (por defecto la actual). El dispositivo por defecto es `PIC16F887` (acepta `16f887` y `PIC16F887`) y el reloj, el que el dispositivo tiene tras el reset (`Internal 4MHz`); con `--devices-dir` el proyecto recuerda dónde están los Device Packs (`devices_dir`). **Antes de escribir nada** comprueba que el dispositivo existe, que el reloj es válido y que el programa de partida es válido para ese destino: si algo falla, **no se crea nada**. **Nunca sobrescribe**: si ya existe `pyxpic.toml` o `main.py`, termina con error diciendo cuáles y no toca ni el otro archivo.
 
 **`pyxpic project check`** revisa el proyecto **sin modificar ningún archivo** (ni siquiera crea la carpeta de salida). Para cada perfil (o solo `--target`) comprueba: el dispositivo y su Device Pack (y que no contradiga al del programa), el reloj con las reglas de `docs/sdk-reloj.md`, cada palabra de configuración por nombre y valor, que el programa exista y su análisis completo para ese destino (errores y avisos con archivo, línea y código). Sale con **0** si todos los perfiles están bien, **1** si alguno tiene errores y **2** si no encuentra o no puede leer el proyecto.
 
@@ -62,10 +62,10 @@ El formato `--format json` es **versionado** (`"version": 1`) para herramientas 
   "ok": false,
   "targets": [
     { "name": "ok", "status": "ok", "device": "PIC16F887", "config": { "WDTE": "ON" }, "output": null,
-      "clock": { "declaration": "Crystal[8 * MHz]", "description": "Crystal 8 MHz (FOSC = HS)" },
+      "clock": { "declaration": "Crystal 8MHz", "description": "Crystal 8 MHz (FOSC = HS)" },
       "errors": [], "warnings": [] },
-    { "name": "mal", "status": "error", "device": "PIC16F887", "clock": { "declaration": "Crystal[24 * MHz]", "description": null },
-      "config": {}, "output": null, "errors": ["[target.mal] clock = \"Crystal[24 * MHz]\": ... PYP2194 ..."], "warnings": [] } ] }
+    { "name": "mal", "status": "error", "device": "PIC16F887", "clock": { "declaration": "Crystal 24MHz", "description": null },
+      "config": {}, "output": null, "errors": ["[target.mal] clock = \"Crystal 24MHz\": ... PYP2194 ..."], "warnings": [] } ] }
 ```
 
 Los Device Packs se buscan en `devices_dir` del proyecto, en `$PYXPIC_DEVICES` y en `./devices`: un proyecto creado **fuera** de la carpeta del compilador necesita `--devices-dir` (o la variable de entorno) para encontrarlos.
@@ -75,12 +75,12 @@ Los Device Packs se buscan en `devices_dir` del proyecto, en `$PYXPIC_DEVICES` y
 ```
 pyxpic project set [--target perfil] [--create] [--dry-run] [--unset CLAVE]... [CLAVE=VALOR]...
 
-pyxpic project set clock="Crystal[20 * MHz]" config.WDTE=ON       # el perfil por defecto (o el único)
+pyxpic project set clock="Crystal 20MHz" config.WDTE=ON       # el perfil por defecto (o el único)
 pyxpic project set --target cristal device=PIC16F887               # un perfil concreto
-pyxpic project set --target nueva --create device=PIC16F887 clock="Internal[8 * MHz]"
+pyxpic project set --target nueva --create device=PIC16F887 clock="Internal 8MHz"
 pyxpic project set --unset config.WDTE --unset output
 pyxpic project set project.default_target=cristal project.name=termometro
-pyxpic project set --dry-run clock="Crystal[8 * MHz]"              # solo muestra los cambios
+pyxpic project set --dry-run clock="Crystal 8MHz"              # solo muestra los cambios
 ```
 
 Claves de perfil: `device`, `clock`, `output` y `config.AJUSTE` (un entero queda como entero: `config.BOREN=1`). Claves de proyecto (no necesitan perfil): `project.name`, `project.main`, `project.devices_dir`, `project.default_target`. `--create` crea el perfil si no existe y `--unset` quita una clave (al quitar la última `config.*` desaparece la tabla `config`).
@@ -88,7 +88,7 @@ Claves de perfil: `device`, `clock`, `output` y `config.AJUSTE` (un entero queda
 - **Edita, no reescribe:** el archivo se modifica con `toml_edit`: los **comentarios** (de línea y de final de línea), el orden y los espacios **se conservan**; solo cambia lo pedido.
 - **Valida el resultado entero antes de escribir:** estructura del archivo y el perfil cambiado con las mismas reglas de `project check` (dispositivo y pack, **el programa no declara otro dispositivo**, reloj, configuración, análisis del programa). Si algo queda inválido, **no se escribe nada**, ni la copia, y sale con código 1 explicando qué.
 - **Copia de seguridad:** antes de escribir guarda la versión anterior en `pyxpic.toml.bak` (se reemplaza en cada cambio). Un cambio que no cambia nada (`clock` al mismo valor) no escribe ni crea copia.
-- **`--dry-run`** muestra los cambios (`placa.clock: Internal[4 * MHz] -> Crystal[20 * MHz]`) y los avisos, y no escribe nada.
+- **`--dry-run`** muestra los cambios (`placa.clock: Internal 4MHz -> Crystal 20MHz`) y los avisos, y no escribe nada.
 - Códigos de salida: 0 bien, 1 el cambio dejaría el archivo o el perfil inválido, 2 uso incorrecto (clave desconocida, falta `CLAVE=VALOR`, varios perfiles sin `--target`, perfil inexistente sin `--create`) o error de lectura/escritura.
 
 ## Quién manda
@@ -113,7 +113,7 @@ El archivo se valida **entero** antes de compilar, con el nombre del archivo y l
 | Varios perfiles sin elegir | `hay varios perfiles (a, b) y ninguno por defecto: elige uno con --target o fija default_target` |
 | Perfil inexistente | `no hay un perfil 'zzz'; hay: a, b` |
 | `--target` sin proyecto | `--target necesita un pyxpic.toml` |
-| Reloj inválido en el perfil | Las mismas reglas del fuente: `[target.a] clock = "Internal[20 * MHz]" no es valido` con el `PYP2194` |
+| Reloj inválido en el perfil | Las mismas reglas del fuente: `[target.a] clock = "Internal 20MHz" no es valido` con el `PYP2194` |
 
 Los errores de lectura salen con código de salida 2; los de contenido (dispositivo contrario, reloj inválido) con 1. La carpeta de `output` se **crea** si falta.
 

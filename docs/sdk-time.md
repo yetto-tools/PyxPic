@@ -8,7 +8,8 @@ from pyxpic.device import PIC16F887
 from pyxpic.periph.gpio import RD0
 from pyxpic.system.time import pause
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 @init_device
 def configurar() -> None:
@@ -49,8 +50,8 @@ como dos funciones con el comportamiento de PICAXE tras leer la sección del wat
 
 ## Reloj
 
-- `CLOCK: Internal[4 * MHz]` (o `Crystal[...]` / `ExternalClock[...]`, ver `docs/sdk-reloj.md`) declara la fuente y la frecuencia del reloj del sistema y **configura el oscilador**. La forma manual `CLOCK_HZ: Const[uint32] = <hercios>` solo declara la frecuencia.
-- **Sin reloj declarado** el compilador usa el reloj por defecto del dispositivo (PIC16F887: 4 MHz, `OSCCON<IRCF> = 110`, p.64) y lo **avisa** (`PYP3004`, que sugiere `CLOCK: Internal[4 * MHz]`).
+- `CLOCK: Internal` y `FREQUENCY: 4MHz` (o `CLOCK: Crystal` y `FREQUENCY: 16MHz`, ver `docs/sdk-reloj.md`) declara la fuente y la frecuencia del reloj del sistema y **configura el oscilador**. La forma manual `CLOCK_HZ: Const[uint32] = <hercios>` solo declara la frecuencia.
+- **Sin reloj declarado** el compilador usa el reloj por defecto del dispositivo (PIC16F887: 4 MHz, `OSCCON<IRCF> = 110`, p.64) y lo **avisa** (`PYP3004`, que sugiere `CLOCK: Internal` y `FREQUENCY: 4MHz`).
 - Con la forma manual `CLOCK_HZ`, si declaras un reloj distinto del que da la configuración por defecto, avisa (`PYP3005`): el compilador **no programa el oscilador** (con `CLOCK: ...` sí lo hace) (`OSCCON`, palabras de configuración, #33), así que los
   tiempos solo serán correctos si el reloj real es el declarado. En Proteus, la propiedad *Processor Clock Frequency* del PIC debe coincidir.
 

@@ -16,7 +16,8 @@ fn pack() -> DevicePack {
 }
 
 fn head() -> &'static str {
-    "from pyxpic.device import PIC16F887\nfrom pyxpic.periph.i2c import I2C\n\nCLOCK: Internal[4 * MHz]\n"
+    "from pyxpic.device import PIC16F887\nfrom pyxpic.periph.i2c import I2C\n\nCLOCK: Internal
+FREQUENCY: 4MHz\n"
 }
 
 fn diagnostics(src: &str) -> (bool, String) {

@@ -11,7 +11,8 @@ from pyxpic.periph.uart import UART
 from pyxpic.regs import SSPADD, SSPBUF, SSPCON, SSPCON2, SSPSTAT, TRISC
 from pyxpic.system.time import delay_us, pause
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 BIT_RS: uint8 = 0x01
 BIT_E: uint8 = 0x04

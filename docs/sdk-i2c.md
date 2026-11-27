@@ -10,7 +10,8 @@
 from pyxpic.device import PIC16F887
 from pyxpic.periph.i2c import I2C
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 def main() -> None:
     I2C.start(freq=100000)          # SSPADD, SSPSTAT, SSPCON; SCL (RC3) y SDA (RC4) como entradas

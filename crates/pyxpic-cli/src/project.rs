@@ -13,7 +13,7 @@ pub const FILE: &str = "pyxpic.toml";
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Target {
     pub device: Option<String>,
-    /// La declaracion del reloj como en el fuente: `Crystal[20 * MHz]`.
+    /// La declaracion del reloj como en el fuente: `Crystal 20MHz`.
     pub clock: Option<String>,
     /// Palabras de configuracion por nombre, como `--config`.
     pub config: Vec<(String, String)>,
@@ -157,13 +157,13 @@ mod tests {
 
     #[test]
     fn a_full_project_parses_with_paths_relative_to_the_file() {
-        let p = load("[project]\nname = \"termometro\"\nmain = \"src/main.py\"\ndevices_dir = \"packs\"\ndefault_target = \"fino\"\n\n[target.fino]\ndevice = \"PIC16F887\"\nclock = \"Crystal[20 * MHz]\"\noutput = \"build/t.hex\"\nconfig = { WDTE = \"ON\", BOREN = 1, LVP = false }\n\n[target.otro]\ndevice = \"PIC16F886\"\n").unwrap();
+        let p = load("[project]\nname = \"termometro\"\nmain = \"src/main.py\"\ndevices_dir = \"packs\"\ndefault_target = \"fino\"\n\n[target.fino]\ndevice = \"PIC16F887\"\nclock = \"Crystal 20MHz\"\noutput = \"build/t.hex\"\nconfig = { WDTE = \"ON\", BOREN = 1, LVP = false }\n\n[target.otro]\ndevice = \"PIC16F886\"\n").unwrap();
         assert_eq!(p.name.as_deref(), Some("termometro"));
         assert_eq!(p.main, Some(PathBuf::from("/p/src/main.py")));
         assert_eq!(p.devices_dir, Some(PathBuf::from("/p/packs")));
         let (n, t) = p.target(None).unwrap().unwrap();
         assert_eq!(n, "fino");
-        assert_eq!((t.device.as_deref(), t.clock.as_deref(), t.output), (Some("PIC16F887"), Some("Crystal[20 * MHz]"), Some(PathBuf::from("/p/build/t.hex"))));
+        assert_eq!((t.device.as_deref(), t.clock.as_deref(), t.output), (Some("PIC16F887"), Some("Crystal 20MHz"), Some(PathBuf::from("/p/build/t.hex"))));
         assert_eq!(t.config, vec![("BOREN".to_string(), "1".to_string()), ("LVP".to_string(), "OFF".to_string()), ("WDTE".to_string(), "ON".to_string())]);
         assert_eq!(p.target(Some("otro")).unwrap().unwrap().1.device.as_deref(), Some("PIC16F886"));
     }

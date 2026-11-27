@@ -1,35 +1,101 @@
-//! Fuente y frecuencia del reloj (`CLOCK: Internal[4 * MHz]`, `Crystal[20 * MHz]`, `ExternalClock[20 * MHz]`): lo que cada una
-//! significa en un PIC16F887 y los limites del datasheet.
+//! Fuente y frecuencia del reloj (`CLOCK: Internal`, `FREQUENCY: 8MHz`): lo que cada fuente significa en un dispositivo y sus limites.
 //!
-//! Fuente: DS40001291H, cap. 4 y tabla 17-1 (p.249, leida de la imagen de la pagina):
+//! Los limites salen del perfil del dispositivo (`oscillator.json` del Device Pack, `TargetProfile::oscillator`); no hay una tabla
+//! global para toda la familia PIC. Sin Device Pack (pruebas del frontend con un `TargetProfile` suelto) se usa la tabla del PIC16F887,
+//! que es la del pack `devices/pic16f887`.
+//!
+//! PIC16F887, DS40001291H, cap. 4 y tabla 17-1 (p.249, leida de la imagen de la pagina):
 //!
 //! | Modo | Con cristal o resonador | Con reloj externo en CLKIN |
 //! |---|---|---|
-//! | LP | 32,768 kHz (tipico) | DC a 37 kHz |
-//! | XT | 0,1 a 4 MHz | DC a 4 MHz |
-//! | HS | 1 a 20 MHz | DC a 20 MHz |
+//! | LP | 32,768 kHz (tipico) | - |
+//! | XT | 0,1 a 4 MHz | - |
+//! | HS | 1 a 20 MHz | - |
 //! | EC | - | DC a 20 MHz |
 //!
 //! El oscilador interno (OSCCON, registro 4-1, p.64) da 8 MHz, 4 MHz (el valor tras el reset), 2 MHz, 1 MHz, 500 kHz, 250 kHz y
 //! 125 kHz con HFINTOSC y 31 kHz con LFINTOSC, segun IRCF<2:0>.
 
+/// De donde viene el reloj del sistema.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClockKind {
     /// Oscilador interno (HFINTOSC / LFINTOSC).
     Internal,
-    /// Cristal o resonador entre OSC1 y OSC2.
+    /// Cristal de cuarzo entre OSC1 y OSC2.
     Crystal,
-    /// Una senal de reloj externa en CLKIN.
-    ExternalClock,
+    /// Una senal de reloj generada por otro circuito.
+    External,
+    /// Resonador ceramico entre OSC1 y OSC2.
+    Resonator,
+    /// Resistencia y capacitor externos.
+    Rc,
+    /// Oscilador secundario (Timer1).
+    Secondary,
 }
 
 impl ClockKind {
+    pub const ALL: [ClockKind; 6] = [ClockKind::Internal, ClockKind::Crystal, ClockKind::External, ClockKind::Resonator, ClockKind::Rc, ClockKind::Secondary];
+
+    /// El nombre como se escribe en `CLOCK: ...`.
     pub fn name(self) -> &'static str {
         match self {
             ClockKind::Internal => "Internal",
             ClockKind::Crystal => "Crystal",
-            ClockKind::ExternalClock => "ExternalClock",
+            ClockKind::External => "External",
+            ClockKind::Resonator => "Resonator",
+            ClockKind::Rc => "RC",
+            ClockKind::Secondary => "Secondary",
         }
+    }
+
+    pub fn parse(s: &str) -> Option<ClockKind> {
+        ClockKind::ALL.into_iter().find(|k| k.name() == s)
+    }
+
+    pub fn names() -> String {
+        ClockKind::ALL.iter().map(|k| k.name()).collect::<Vec<_>>().join(", ")
+    }
+}
+
+/// Un modo del oscilador externo del dispositivo (`LP`, `XT`, `HS`, `EC`, `RC`...).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OscillatorMode {
+    pub source: ClockKind,
+    pub mode: String,
+    /// Valor de `FOSC` en el Device Pack.
+    pub fosc: String,
+    pub min_hz: u32,
+    pub max_hz: u32,
+    /// (pin, funcion) que el oscilador toma.
+    pub pins: Vec<(String, String)>,
+}
+
+/// Lo que un dispositivo admite como reloj.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OscillatorProfile {
+    /// `(Hz, IRCF)` de las frecuencias que el oscilador interno puede configurar por registro.
+    pub internal: Vec<(u32, u8)>,
+    /// `FOSC` con el oscilador interno; `None` si el dispositivo no lo tiene.
+    pub internal_fosc: Option<String>,
+    /// Frecuencia e `IRCF` tras el reset.
+    pub reset_hz: u32,
+    pub reset_ircf: u8,
+    pub modes: Vec<OscillatorMode>,
+}
+
+impl OscillatorProfile {
+    /// La tabla del PIC16F887 (la de `devices/pic16f887/oscillator.json`), para el frontend sin Device Pack.
+    pub fn pic16f887() -> OscillatorProfile {
+        let pins2 = || vec![("RA7".to_string(), "OSC1".to_string()), ("RA6".to_string(), "OSC2".to_string())];
+        let mut modes = Vec::new();
+        for (mode, min, max) in [("LP", 30_000, 37_000), ("XT", 100_000, 4_000_000), ("HS", 1_000_000, 20_000_000)] {
+            for source in [ClockKind::Crystal, ClockKind::Resonator] {
+                modes.push(OscillatorMode { source, mode: mode.into(), fosc: mode.into(), min_hz: min, max_hz: max, pins: pins2() });
+            }
+        }
+        modes.push(OscillatorMode { source: ClockKind::External, mode: "EC".into(), fosc: "EC".into(), min_hz: 1, max_hz: 20_000_000, pins: vec![("RA7".into(), "CLKIN".into())] });
+        modes.push(OscillatorMode { source: ClockKind::Rc, mode: "RC".into(), fosc: "EXTRC_NOCLKOUT".into(), min_hz: 1, max_hz: 20_000_000, pins: vec![("RA7".into(), "OSC1".into())] });
+        OscillatorProfile { internal: INTERNAL.to_vec(), internal_fosc: Some("INTRC_NOCLKOUT".into()), reset_hz: INTERNAL_RESET_HZ, reset_ircf: IRCF_RESET, modes }
     }
 }
 
@@ -37,22 +103,24 @@ impl ClockKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClockSource {
     pub kind: ClockKind,
+    /// Frecuencia de la fuente (`SOURCE_FREQ`).
     pub hz: u32,
+    /// Nombre del modo del oscilador (`LP`, `XT`, `HS`, `EC`, `RC`; `INTOSC` con el interno).
+    pub mode: String,
     /// Nombre del valor de `FOSC` en el Device Pack (`XT`, `HS`, `INTRC_NOCLKOUT`...).
-    pub fosc: &'static str,
+    pub fosc: String,
     /// `IRCF<2:0>` del oscilador interno; `None` si el reloj es externo.
     pub ircf: Option<u8>,
     /// Pines que el oscilador toma: (pin, funcion). No pueden ser E/S del programa.
-    pub pins: &'static [(&'static str, &'static str)],
+    pub pins: Vec<(String, String)>,
 }
 
-/// `IRCF<2:0>` y su frecuencia (registro 4-1). 31 kHz es el LFINTOSC nominal.
+/// `IRCF<2:0>` y su frecuencia del PIC16F887 (registro 4-1). 31 kHz es el LFINTOSC nominal.
 pub const INTERNAL: &[(u32, u8)] = &[(31_000, 0), (125_000, 1), (250_000, 2), (500_000, 3), (1_000_000, 4), (2_000_000, 5), (4_000_000, 6), (8_000_000, 7)];
 /// El valor de `IRCF` tras el reset: 4 MHz.
 pub const IRCF_RESET: u8 = 6;
-
-const CRYSTAL_PINS: &[(&str, &str)] = &[("RA7", "OSC1"), ("RA6", "OSC2")];
-const EC_PINS: &[(&str, &str)] = &[("RA7", "CLKIN")];
+/// La frecuencia del oscilador interno tras el reset: la de `CLOCK: Internal` sin `FREQUENCY`.
+pub const INTERNAL_RESET_HZ: u32 = 4_000_000;
 
 pub fn fmt_hz(hz: u32) -> String {
     if hz >= 1_000_000 && hz.is_multiple_of(100_000) {
@@ -64,35 +132,45 @@ pub fn fmt_hz(hz: u32) -> String {
     }
 }
 
-/// Resuelve la fuente y la frecuencia; el error dice cuales valen.
-pub fn resolve(kind: ClockKind, hz: u32) -> Result<ClockSource, String> {
-    match kind {
-        ClockKind::Internal => {
-            match INTERNAL.iter().find(|(f, _)| *f == hz) {
-                Some(&(_, ircf)) => Ok(ClockSource { kind, hz, fosc: "INTRC_NOCLKOUT", ircf: Some(ircf), pins: &[] }),
-                None => {
-                    let list: Vec<String> = INTERNAL.iter().map(|(f, _)| fmt_hz(*f)).collect();
-                    Err(format!("el oscilador interno del PIC16F887 da {} (IRCF de OSCCON, DS40001291H p.64), no {}; para otra frecuencia usa un cristal (Crystal[...]) o un reloj externo (ExternalClock[...])", list.join(", "), fmt_hz(hz)))
-                }
-            }
+/// Resuelve la fuente y la frecuencia contra el perfil del dispositivo; `mode` es `OSC_MODE` (`None` = automatico). El error dice
+/// cuales valen.
+pub fn resolve(profile: &OscillatorProfile, kind: ClockKind, hz: u32, mode: Option<&str>) -> Result<ClockSource, String> {
+    if kind == ClockKind::Internal {
+        let Some(fosc) = &profile.internal_fosc else {
+            return Err("este dispositivo no tiene oscilador interno: declara 'CLOCK: Crystal' y 'FREQUENCY: ...'".into());
+        };
+        if let Some(m) = mode.filter(|m| *m != "Auto") {
+            return Err(format!("OSC_MODE: {m} no se aplica al oscilador interno: su modo lo fija el dispositivo"));
         }
-        ClockKind::Crystal => {
-            let (fosc, ok) = match hz {
-                30_000..=37_000 => ("LP", true),
-                100_000..=4_000_000 => ("XT", true),
-                4_000_001..=20_000_000 => ("HS", true),
-                _ => ("", false),
-            };
-            if !ok {
-                return Err(format!("un cristal de {} no cabe en ningun modo del PIC16F887 (tabla 17-1, p.249): LP es el cristal de 32,768 kHz, XT va de 0,1 a 4 MHz y HS de 1 a 20 MHz", fmt_hz(hz)));
+        return match profile.internal.iter().find(|(f, _)| *f == hz) {
+            Some(&(_, ircf)) => Ok(ClockSource { kind, hz, mode: "INTOSC".into(), fosc: fosc.clone(), ircf: Some(ircf), pins: Vec::new() }),
+            None => {
+                let list: Vec<String> = profile.internal.iter().map(|(f, _)| fmt_hz(*f)).collect();
+                Err(format!("el oscilador interno de este dispositivo da {} (los valores de IRCF de OSCCON), no {}; para otra frecuencia usa un cristal (CLOCK: Crystal)", list.join(", "), fmt_hz(hz)))
             }
-            Ok(ClockSource { kind, hz, fosc, ircf: None, pins: CRYSTAL_PINS })
-        }
-        ClockKind::ExternalClock => {
-            if !(1..=20_000_000).contains(&hz) {
-                return Err(format!("un reloj externo (modo EC) va de continua a 20 MHz (tabla 17-1, p.249), no {}", fmt_hz(hz)));
+        };
+    }
+    let of_kind: Vec<&OscillatorMode> = profile.modes.iter().filter(|m| m.source == kind).collect();
+    if of_kind.is_empty() {
+        return Err(format!("este dispositivo no admite '{}' como fuente de reloj", kind.name()));
+    }
+    let chosen = match mode {
+        None | Some("Auto") => of_kind.iter().find(|m| (m.min_hz..=m.max_hz).contains(&hz)).copied(),
+        Some(want) => match of_kind.iter().find(|m| m.mode.eq_ignore_ascii_case(want)) {
+            Some(m) if (m.min_hz..=m.max_hz).contains(&hz) => Some(*m),
+            Some(m) => return Err(format!("{} no cabe en el modo {}, que va de {} a {}", fmt_hz(hz), m.mode, fmt_hz(m.min_hz), fmt_hz(m.max_hz))),
+            None => {
+                let mut valid: Vec<&str> = of_kind.iter().map(|m| m.mode.as_str()).collect();
+                valid.dedup();
+                return Err(format!("OSC_MODE: {want} no existe para '{}' en este dispositivo; valen Auto, {}", kind.name(), valid.join(", ")));
             }
-            Ok(ClockSource { kind, hz, fosc: "EC", ircf: None, pins: EC_PINS })
+        },
+    };
+    match chosen {
+        Some(m) => Ok(ClockSource { kind, hz, mode: m.mode.clone(), fosc: m.fosc.clone(), ircf: None, pins: m.pins.clone() }),
+        None => {
+            let ranges: Vec<String> = of_kind.iter().map(|m| format!("{} {} a {}", m.mode, fmt_hz(m.min_hz), fmt_hz(m.max_hz))).collect();
+            Err(format!("{} no cabe en ningun modo de '{}' de este dispositivo: {}", fmt_hz(hz), kind.name(), ranges.join(", ")))
         }
     }
 }

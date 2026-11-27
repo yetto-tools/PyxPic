@@ -2,11 +2,14 @@
 //! union implicita de lineas dentro de parentesis y comentarios con '#'.
 
 use crate::diag::{Diagnostics, Span};
+use crate::units::{self, Dim};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Tok {
     Ident(String),
     Int(i128),
+    /// `8MHz`, `500ms`...: el valor exacto en la unidad base de su magnitud (`units.rs`).
+    Quantity(i128, Dim),
     /// Contenido literal entre comillas (sin interpretar escapes).
     Str(String, u8),
     /// `f"..."`: el contenido sin decodificar.
@@ -229,8 +232,63 @@ impl<'a> Lexer<'a> {
         self.push(Tok::Str(inner, q as u8), start);
     }
 
+    /// `8MHz`, `11.0592MHz`, `8e6Hz`, `500ms`, `3.3V`, `50pct`: un numero decimal pegado a un sufijo de `units` es un literal con unidad
+    /// (su valor entero exacto en la unidad base de su magnitud). Devuelve `false`, sin avanzar, si no es ese caso.
+    fn unit_literal(&mut self) -> bool {
+        let start = self.i;
+        let mut j = start;
+        let digits = |j: &mut usize, b: &[u8]| {
+            while *j < b.len() && (b[*j].is_ascii_digit() || b[*j] == b'_') {
+                *j += 1;
+            }
+        };
+        digits(&mut j, self.b);
+        if j == start {
+            return false;
+        }
+        if self.b.get(j) == Some(&b'.') && self.b.get(j + 1).is_some_and(|c| c.is_ascii_digit()) {
+            j += 1;
+            digits(&mut j, self.b);
+        }
+        if matches!(self.b.get(j), Some(b'e' | b'E')) {
+            let mut k = j + 1;
+            if matches!(self.b.get(k), Some(b'+' | b'-')) {
+                k += 1;
+            }
+            if self.b.get(k).is_some_and(|c| c.is_ascii_digit()) {
+                j = k;
+                digits(&mut j, self.b);
+            }
+        }
+        let num_end = j;
+        while j < self.b.len() && (self.b[j].is_ascii_alphanumeric() || self.b[j] == b'_') {
+            j += 1;
+        }
+        let suffix = &self.src[num_end..j];
+        if suffix.is_empty() || units::lookup(suffix).is_none() {
+            return false;
+        }
+        let Some(dec) = units::Decimal::parse(&self.src[start..num_end]) else { return false };
+        self.i = j;
+        match units::to_base(&dec, suffix) {
+            Some(Ok((v, dim))) if v <= u32::MAX as i128 * 1_000_000_000 => self.push(Tok::Quantity(v, dim), start),
+            Some(Err(units::UnitError::NotExact(base))) => {
+                self.d.error("PYP0009", Span::new(start, self.i), format!("'{}' no es un numero entero de {base}: la unidad base de {} es {base}", &self.src[start..j], dec_dim(suffix)));
+                self.push(Tok::Int(0), start);
+            }
+            _ => {
+                self.d.error("PYP0008", Span::new(start, self.i), "literal con unidad invalido o demasiado grande");
+                self.push(Tok::Int(0), start);
+            }
+        }
+        true
+    }
+
     fn number(&mut self) {
         let start = self.i;
+        if self.unit_literal() {
+            return;
+        }
         let (radix, skip) = match (self.peek(0), self.peek(1)) {
             (b'0', b'x' | b'X') => (16, 2),
             (b'0', b'b' | b'B') => (2, 2),
@@ -321,4 +379,9 @@ impl<'a> Lexer<'a> {
         }
         self.push(tok, start);
     }
+}
+
+/// Nombre de la magnitud de un sufijo, para los mensajes.
+fn dec_dim(suffix: &str) -> &'static str {
+    units::lookup(suffix).map(Dim::name).unwrap_or("la magnitud")
 }

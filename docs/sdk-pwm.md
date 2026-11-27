@@ -6,7 +6,8 @@
 from pyxpic.device import PIC16F887
 from pyxpic.periph.pwm import PWM1, PWM2
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 PWM1.start(frequency=1000)       # periodo exacto de 1 kHz; el ciclo de trabajo empieza en 0
 PWM1.duty(250)                   # 250 de 1000 cuentas: 25 %

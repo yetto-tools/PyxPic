@@ -14,7 +14,8 @@ fn pack() -> DevicePack {
     DevicePack::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../devices/pic16f887")).unwrap()
 }
 
-const HEAD: &str = "from pyxpic.device import PIC16F887\nfrom pyxpic.periph.spi import SPI\n\nCLOCK: Internal[4 * MHz]\n";
+const HEAD: &str = "from pyxpic.device import PIC16F887\nfrom pyxpic.periph.spi import SPI\n\nCLOCK: Internal
+FREQUENCY: 4MHz\n";
 
 fn diagnostics(src: &str) -> (bool, String) {
     let r = analyze(src, &pack().target_profile());

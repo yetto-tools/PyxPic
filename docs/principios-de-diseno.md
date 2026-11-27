@@ -8,6 +8,35 @@ La experiencia inicial debe ser accesible como en Arduino, sin renunciar a las c
 
 El acceso a registros y a ensamblador en sintaxis PIC-AS permite un control progresivo. Como objetivo, el listado, el mapa de memoria y el informe de tiempos deben ayudar a inspeccionar el firmware generado. No se promete que una construcción de alto nivel produzca siempre una secuencia fija o ciclos exactos; eso debe especificarse y verificarse por operación. Ninguna de estas metas implica soporte completo ya implementado ni requiere GPASM o XC8.
 
+## Filosofía
+
+PyxPic busca extraer el máximo desempeño y aprovechamiento de los recursos físicos de los PIC, eliminando buena parte de la complejidad de programar directamente en ensamblador. Su sintaxis, de alto nivel, se inspira en Python y BASIC sin adoptar sus modelos de ejecución interpretada. **La complejidad debe residir en el compilador, no en el microcontrolador.**
+
+Principios fundamentales:
+
+- Maximizar el aprovechamiento de CPU, RAM, Flash y periféricos.
+- Generar código nativo eficiente y predecible.
+- Reducir la complejidad de programación sin reducir el control sobre el hardware.
+- Trasladar la complejidad del firmware hacia el compilador.
+- Priorizar el determinismo temporal y de memoria.
+- Mantener la transparencia del código generado.
+- Facilitar la depuración a nivel de código fuente, ensamblador, registros y memoria.
+- Evitar intermediarios, capas de ejecución y abstracciones innecesarias.
+- Resolver durante la compilación todo lo que no necesite resolverse durante la ejecución (las unidades de `docs/sdk-reloj.md` son un ejemplo: `11.0592MHz` es un entero exacto al compilar, sin punto flotante ni RAM).
+- Respetar las capacidades y limitaciones físicas de cada microcontrolador: los límites salen del Device Pack del dispositivo, no de una tabla global de la familia.
+
+### Criterio de incorporación de funcionalidades
+
+Una característica solo se incorpora cuando da una ventaja práctica y demostrable sobre el hardware. No se incorporan funcionalidades que reduzcan injustificadamente los recursos disponibles, introduzcan latencias impredecibles, dificulten la depuración o comprometan la estabilidad del firmware. La calidad de una abstracción se evalúa con el ensamblador generado, los ciclos de ejecución, el consumo de memoria y su comportamiento sobre hardware real (hasta tener la prueba en hardware, el nivel de verificación se dice: simulador, Proteus o hardware).
+
+### Bibliotecas
+
+Las bibliotecas del SDK son nativas y optimizadas para la arquitectura PIC. Pueden tomar como referencia las interfaces de otros ecosistemas, como MicroPython, pero nunca sacrifican eficiencia ni determinismo para mantener la compatibilidad.
+
+### Objetivo
+
+La expresividad de un lenguaje de alto nivel, el control del ensamblador y la eficiencia de la compilación nativa.
+
 ## Reglas que se derivan
 
 1. **Precisión.** El costo en ciclos es predecible, se puede conocer y se reporta. Una espera constante dura exactamente lo pedido (`docs/sdk-time.md`); `pyxpic build --timing` muestra lo emitido y el error.

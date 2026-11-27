@@ -4,7 +4,8 @@ from pyxpic.periph.eeprom import EEPROM
 from pyxpic.periph.gpio import RD0
 from pyxpic.system.time import pause
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 
 def main() -> None:

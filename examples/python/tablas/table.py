@@ -5,7 +5,8 @@ from pyxpic.periph.gpio import RD0
 # 16 entradas uint8 en la memoria de programa (Rom); se leen con SINE[i]; len(SINE) vale 16 al compilar
 SINE: Rom[uint8] = [128, 176, 218, 245, 255, 245, 218, 176, 128, 79, 37, 10, 0, 10, 37, 79]
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 level: uint8 = 0
 
 

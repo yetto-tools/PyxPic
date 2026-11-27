@@ -591,11 +591,11 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
     }
     // build: IR -> instrucciones PIC14 -> Intel HEX
     let pack = pack.expect("comprobado arriba");
-    // `CLOCK: Crystal[20 * MHz]` fija el oscilador (FOSC): pedir otro con --config seria una contradiccion
+    // `CLOCK: Crystal` fija el oscilador (FOSC): pedir otro con --config seria una contradiccion
     if let Some(cs) = &module.clock_source {
         if settings.iter().any(|(n, _)| n == "FOSC") {
             eprintln!(
-                "{file}: error: el programa declara 'CLOCK: {}[...]', que fija FOSC = {}: quita --config FOSC=... (o declara el reloj con CLOCK_HZ para elegir el oscilador a mano)",
+                "{file}: error: el programa declara 'CLOCK: {}', que fija FOSC = {}: quita --config FOSC=... (o declara el reloj con CLOCK_HZ para elegir el oscilador a mano)",
                 cs.kind.name(),
                 cs.fosc
             );
@@ -655,8 +655,8 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
         let how = match (&module.clock_source, asked) {
             (None, 0) => "por defecto del pack: INTOSCIO, WDT apagado, MCLR interno".to_string(),
             (None, n) => format!("{n} ajuste(s) pedidos"),
-            (Some(cs), 0) => format!("FOSC = {} por CLOCK", cs.fosc),
-            (Some(cs), n) => format!("FOSC = {} por CLOCK y {n} ajuste(s) pedidos", cs.fosc),
+            (Some(cs), 0) => format!("FOSC = {} por Clock", cs.fosc),
+            (Some(cs), n) => format!("FOSC = {} por Clock y {n} ajuste(s) pedidos", cs.fosc),
         };
         format!("{} ({how})", names.join(", "))
     };

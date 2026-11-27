@@ -16,7 +16,8 @@ fn pack() -> DevicePack {
 }
 
 fn head() -> String {
-    "from pyxpic.device import PIC16F887\nfrom pyxpic.periph.comparator import CMP1, CMP2, C12IN0, C12IN1, C12IN2, C12IN3, REF_PIN, REF_CVREF, REF_FIXED\nfrom pyxpic.periph.vref import CVREF\nCLOCK: Internal[4 * MHz]\n".to_string()
+    "from pyxpic.device import PIC16F887\nfrom pyxpic.periph.comparator import CMP1, CMP2, C12IN0, C12IN1, C12IN2, C12IN3, REF_PIN, REF_CVREF, REF_FIXED\nfrom pyxpic.periph.vref import CVREF\nCLOCK: Internal
+FREQUENCY: 4MHz\n".to_string()
 }
 
 fn diagnostics(src: &str) -> (bool, String) {
@@ -282,10 +283,12 @@ fn language_rules() {
 
 #[test]
 fn an_unknown_name_is_rejected_at_the_import() {
-    let src = "from pyxpic.device import PIC16F887\nfrom pyxpic.periph.comparator import CMP3\nCLOCK: Internal[4 * MHz]\n\n\ndef main() -> None:\n    while True:\n        pass\n";
+    let src = "from pyxpic.device import PIC16F887\nfrom pyxpic.periph.comparator import CMP3\nCLOCK: Internal
+FREQUENCY: 4MHz\n\n\ndef main() -> None:\n    while True:\n        pass\n";
     let (ok, d) = diagnostics(src);
     assert!(!ok && d.contains("PYP2214"), "{d}");
-    let src = "from pyxpic.device import PIC16F887\nfrom pyxpic.periph.vref import VREF\nCLOCK: Internal[4 * MHz]\n\n\ndef main() -> None:\n    while True:\n        pass\n";
+    let src = "from pyxpic.device import PIC16F887\nfrom pyxpic.periph.vref import VREF\nCLOCK: Internal
+FREQUENCY: 4MHz\n\n\ndef main() -> None:\n    while True:\n        pass\n";
     let (ok, d) = diagnostics(src);
     assert!(!ok && d.contains("PYP2220"), "{d}");
 }
@@ -293,7 +296,8 @@ fn an_unknown_name_is_rejected_at_the_import() {
 #[test]
 fn a_comparator_input_cannot_also_be_a_digital_pin() {
     // RA0 es C12IN0-: usarlo a la vez como pin de E/S choca (PYP2150)
-    let src = "from pyxpic.device import PIC16F887\nfrom pyxpic.periph.gpio import RA0\nfrom pyxpic.periph.comparator import CMP1, C12IN0, REF_FIXED\nCLOCK: Internal[4 * MHz]\n\n\ndef main() -> None:\n    RA0.output()\n    CMP1.start(negative=C12IN0, positive=REF_FIXED)\n    while True:\n        pass\n";
+    let src = "from pyxpic.device import PIC16F887\nfrom pyxpic.periph.gpio import RA0\nfrom pyxpic.periph.comparator import CMP1, C12IN0, REF_FIXED\nCLOCK: Internal
+FREQUENCY: 4MHz\n\n\ndef main() -> None:\n    RA0.output()\n    CMP1.start(negative=C12IN0, positive=REF_FIXED)\n    while True:\n        pass\n";
     let (ok, d) = diagnostics(src);
     assert!(!ok && d.contains("PYP2150"), "{d}");
 }

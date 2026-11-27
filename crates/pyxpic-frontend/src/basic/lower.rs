@@ -1019,7 +1019,7 @@ impl<'a> Lw<'a> {
         let mut body: Vec<&BStmt> = Vec::new();
         let mut asms: Vec<(String, String, usize, Span)> = Vec::new();
         let mut device: Option<(String, Span)> = None;
-        let mut clock: Option<Item> = None;
+        let mut clock: Vec<Item> = Vec::new();
         for s in stmts {
             match &s.kind {
                 BStmtKind::Device(n) => {
@@ -1049,8 +1049,13 @@ impl<'a> Lw<'a> {
                     };
                     let (a, u) = (self.int(amount.span, v), self.name_expr(s.span, unit_name));
                     let e = self.ex(s.span, ExprKind::Binary(BinOp::Mul, Box::new(a), Box::new(u)));
-                    let ann = TypeExpr { span: s.span, kind: TypeExprKind::Clock(kind.clone(), Box::new(e)) };
-                    clock = Some(Item::Var(VarDecl { span: s.span, name: Ident { name: "CLOCK".into(), span: s.span }, ann, value: None }));
+                    // el mismo AST que `CLOCK: Crystal` + `FREQUENCY: 16MHz` de Python
+                    let source = TypeExpr { span: s.span, kind: TypeExprKind::Clock(kind.clone()) };
+                    let freq = TypeExpr { span: s.span, kind: TypeExprKind::Frequency(Box::new(e)) };
+                    clock = vec![
+                        Item::Var(VarDecl { span: s.span, name: Ident { name: "CLOCK".into(), span: s.span }, ann: source, value: None }),
+                        Item::Var(VarDecl { span: s.span, name: Ident { name: "FREQUENCY".into(), span: s.span }, ann: freq, value: None }),
+                    ];
                 }
                 BStmtKind::Import { module, names } => {
                     for (n, _) in names {

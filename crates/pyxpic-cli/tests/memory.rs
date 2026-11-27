@@ -34,7 +34,8 @@ fn json(cwd: &Path, args: &[&str]) -> Value {
     serde_json::from_slice(&o.stdout).unwrap_or_else(|e| panic!("la salida no es un solo JSON: {e}\n{}", text(&o)))
 }
 
-const HEAD: &str = "from pyxpic.device import PIC16F887\nCLOCK: Internal[4 * MHz]\n";
+const HEAD: &str = "from pyxpic.device import PIC16F887\nCLOCK: Internal
+FREQUENCY: 4MHz\n";
 
 #[test]
 fn the_report_matches_the_image_that_build_writes() {

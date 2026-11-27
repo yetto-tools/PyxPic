@@ -20,7 +20,8 @@ Hardware: NO probado, solo en simulador (uart_examples.rs).
 from pyxpic.device import PIC16F887
 from pyxpic.periph.uart import UART
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 linea: uint8[12]
 

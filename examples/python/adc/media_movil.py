@@ -8,7 +8,8 @@ from pyxpic.device import PIC16F887
 from pyxpic.periph.adc import ADC, AN0
 from pyxpic.periph.gpio import RD0
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 muestras: uint8[8]
 media: uint8 = 0

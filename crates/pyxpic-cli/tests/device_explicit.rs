@@ -24,7 +24,8 @@ fn text(o: &Output) -> String {
     format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))
 }
 
-const BODY: &str = "from pyxpic.periph.gpio import RD0\nCLOCK: Internal[4 * MHz]\n\n\ndef main() -> None:\n    RD0.output()\n    while True:\n        RD0.toggle()\n";
+const BODY: &str = "from pyxpic.periph.gpio import RD0\nCLOCK: Internal
+FREQUENCY: 4MHz\n\n\ndef main() -> None:\n    RD0.output()\n    while True:\n        RD0.toggle()\n";
 
 #[test]
 fn check_without_a_device_says_it_is_not_validating_anything() {

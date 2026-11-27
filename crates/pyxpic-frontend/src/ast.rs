@@ -83,6 +83,8 @@ pub struct Expr {
 #[derive(Clone, Debug)]
 pub enum ExprKind {
     Int(i128),
+    /// `8MHz`, `500ms`, `3.3V`: un literal con unidad; el valor es un entero exacto en la unidad base de su magnitud.
+    Quantity(i128, crate::units::Dim),
     Bool(bool),
     Name(String),
     Unary(UnOp, Box<Expr>),
@@ -156,8 +158,12 @@ pub enum TypeExprKind {
     Const(Box<TypeExpr>),
     /// `uint8[16]`: arreglo de capacidad fija en RAM (solo a nivel de modulo).
     Array(Box<TypeExpr>, i128),
-    /// `Internal[4 * MHz]`, `Crystal[...]`, `ExternalClock[...]`: la fuente y la frecuencia del reloj (solo en `CLOCK: ...`).
-    Clock(String, Box<Expr>),
+    /// `CLOCK: Internal`: la fuente del reloj (`Internal`, `Crystal`, `External`, `Resonator`, `RC`, `Secondary`).
+    Clock(String),
+    /// `FREQUENCY: 8MHz`: la frecuencia de la fuente, una expresion constante.
+    Frequency(Box<Expr>),
+    /// `OSC_MODE: HS`: el modo del oscilador externo (`Auto` = el que corresponde a la frecuencia).
+    OscMode(String),
     /// `None` (solo como tipo de retorno)
     None,
 }

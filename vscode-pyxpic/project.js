@@ -3,13 +3,18 @@
 const path = require("node:path");
 
 const clocks = [
-  { label: "Oscilador interno · 4 MHz", value: "Internal[4 * MHz]", detail: "Configuración inicial del PIC16F887; no requiere componentes externos." },
-  { label: "Cristal · 20 MHz", value: "Crystal[20 * MHz]", detail: "Cristal o resonador en OSC1/OSC2; reserva RA6 y RA7." },
-  { label: "Reloj externo · 20 MHz", value: "ExternalClock[20 * MHz]", detail: "Señal de reloj en CLKIN/RA7; reserva RA7." },
+  { label: "Oscilador interno · 4 MHz", value: "Internal 4MHz", detail: "Configuración inicial del PIC16F887; no requiere componentes externos." },
+  { label: "Cristal · 20 MHz", value: "Crystal 20MHz", detail: "Cristal o resonador en OSC1/OSC2; reserva RA6 y RA7." },
 ];
 
+/** `Crystal 20MHz` -> `CLOCK: Crystal` y `FREQUENCY: 20MHz` (dos lineas, como en el fuente). */
+function clockLines(clock) {
+  const [kind, freq, mode] = String(clock).trim().split(/\s+/);
+  return [`CLOCK: ${kind}`, freq ? `FREQUENCY: ${freq}` : undefined, mode ? `OSC_MODE: ${mode}` : undefined].filter(Boolean).join("\n");
+}
+
 function source(device, clock) {
-  return `"""Proyecto PyxPic para ${device}.\n\nEl firmware se compila de Python a instrucciones nativas del PIC.\n"""\nfrom pyxpic.device import ${device}\nfrom pyxpic.periph.gpio import RD0\nfrom pyxpic.system.time import pause\n\nCLOCK: ${clock}\n\n\ndef main() -> None:\n    RD0.output()\n    while True:\n        RD0.toggle()\n        pause(500)\n`;
+  return `"""Proyecto PyxPic para ${device}.\n\nEl firmware se compila de Python a instrucciones nativas del PIC.\n"""\nfrom pyxpic.device import ${device}\nfrom pyxpic.periph.gpio import RD0\nfrom pyxpic.system.time import pause\n\n${clockLines(clock)}\n\n\ndef main() -> None:\n    RD0.output()\n    while True:\n        RD0.toggle()\n        pause(500)\n`;
 }
 
 async function create(vscode, init) {

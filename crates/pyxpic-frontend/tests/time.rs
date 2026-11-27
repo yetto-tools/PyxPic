@@ -96,7 +96,7 @@ fn without_clock_hz_the_device_default_is_used_with_a_warning() {
     let p = r.program.unwrap();
     assert_eq!((p.clock_hz, p.clock_defaulted), (Some(4_000_000), true));
     let out = analyze(src, &pic()).diagnostics.render(src, "t.py");
-    assert!(out.contains("warning[PYP3004]") && out.contains("4000000") && out.contains("CLOCK: Internal[4 * MHz]"), "{out}");
+    assert!(out.contains("warning[PYP3004]") && out.contains("4000000") && out.contains("CLOCK: Internal") && out.contains("FREQUENCY: 4MHz"), "{out}");
 }
 
 #[test]

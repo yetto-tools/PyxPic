@@ -1,70 +1,117 @@
-# Reloj: fuente y frecuencia en una línea (`CLOCK: ...`)
+# Reloj: `CLOCK` y `FREQUENCY` (y literales con unidad)
 
-**Estado: implementado (#69).** Una sola línea elige la fuente del reloj y su frecuencia, **sin imports**:
+**Estado: implementado (#69), fases 1 y 2.** El reloj se declara en dos líneas, **sin imports**: la fuente y su frecuencia por separado.
 
 ```python
-CLOCK: Internal[4 * MHz]           # oscilador interno
-CLOCK: Crystal[20 * MHz]           # cristal en OSC1/OSC2
-CLOCK: ExternalClock[20 * MHz]     # señal de reloj en CLKIN (RA7)
+CLOCK: Internal                 # oscilador interno; sin FREQUENCY es 4 MHz (el valor de reset)
+
+CLOCK: Internal
+FREQUENCY: 8MHz                 # oscilador interno con frecuencia seleccionable
+
+CLOCK: Crystal                  # cristal en OSC1/OSC2
+FREQUENCY: 11.0592MHz           # cualquier valor dentro del rango del modo
 ```
 
-`Internal`, `Crystal`, `ExternalClock`, `MHz`, `kHz` y `Hz` están predeclarados (como `uint8` o `Const`); `from pyxpic.clock import ...` es válido y no hace nada. La frecuencia es una **constante** (`20 * MHz`, `32768 * Hz`, `125 * kHz`). `CLOCK_HZ: Const[uint32] = 4_000_000` es la **forma manual**: solo declara la frecuencia y **no configura el oscilador** (quien la usa elige `FOSC` con `--config`); sigue valiendo, pero la recomendada es `CLOCK`. No se pueden usar las dos a la vez (`PYP2192`).
+`MHz`, `kHz` y `Hz` siguen predeclarados (`8 * MHz` vale), `from pyxpic.clock import ...` es válido y no hace nada, y `CLOCK_HZ: Const[uint32] = 4_000_000` sigue siendo la **forma manual**: solo declara la frecuencia y **no configura el oscilador**. No se pueden usar las dos formas a la vez (`PYP2192`).
 
-Se eligió la sintaxis `Nombre[frecuencia]` porque es Python válido: `CLOCK_HZ: 4MHz internal` no lo es (`4MHz` no se lee como número).
+La declaración **reemplaza** a las formas anteriores `Clock: Internal(8MHz)` y `CLOCK: Internal[4 * MHz]` (error `PYP2190` con el remedio) y a `ExternalClock` (ahora es `CLOCK: External`).
 
-## Qué hace el compilador con cada una
+## Fuentes (`CLOCK`)
+
+| Fuente | Qué es | `FREQUENCY` |
+|---|---|---|
+| `Internal` | Oscilador interno | Opcional (4 MHz); solo las frecuencias que el dispositivo configura por registro |
+| `Crystal` | Cristal de cuarzo en OSC1/OSC2 | Obligatoria; cualquier valor dentro del rango de un modo |
+| `External` | Señal de reloj generada por otro circuito (CLKIN) | Obligatoria |
+| `Resonator` | Resonador cerámico en OSC1/OSC2 | Obligatoria; mismos modos que el cristal |
+| `RC` | Resistencia y capacitor externos | Obligatoria (la frecuencia depende del circuito) |
+| `Secondary` | Oscilador secundario (Timer1) | Solo en dispositivos que lo admiten como reloj del sistema |
+
+`OSC_MODE: HS` (opcional) elige el modo del oscilador externo; sin él, `Auto` toma el primer modo del dispositivo cuyo rango contiene la frecuencia. `OSC_MODE` con `Internal` es un error: el modo del interno lo fija el dispositivo.
+
+## Los límites salen del dispositivo
+
+Cada fuente y cada modo se validan contra el perfil **del dispositivo**, no contra una tabla global de la familia PIC: el Device Pack trae `oscillator.json` con las frecuencias del oscilador interno (y su `IRCF`), los modos externos con su rango y los pines que ocupan. Cambiar de dispositivo cambia lo que vale: el oscilador interno llega a 8 MHz en el PIC16F887, a 16 MHz en los PIC18 K22 y a 64 MHz en los K42/Q43. Sin Device Pack (pruebas del frontend con un perfil suelto) se usa la tabla del PIC16F887.
+
+| PIC16F887 (`devices/pic16f887/oscillator.json`) | Valores |
+|---|---|
+| `Internal` | **31 kHz** (LFINTOSC nominal), 125 kHz, 250 kHz, 500 kHz, 1, 2, **4 (reset)** y 8 MHz (DS40001291H, registro 4-1, p.64). Otra: `PYP2194` |
+| `Crystal` / `Resonator` | **LP** 30–37 kHz (el cristal de 32,768 kHz) · **XT** 100 kHz–4 MHz · **HS** 1–20 MHz (tabla 17-1, p.249) |
+| `External` | **EC**, de 1 Hz a 20 MHz (tabla 17-1) |
+| `RC` | **EXTRC**, sin límite propio en la tabla 17-1: el del dispositivo (20 MHz) |
+| `Secondary` | no admitido como reloj del sistema en este dispositivo |
+
+Con `Auto`, entre 1 y 4 MHz se elige **XT** (menor ganancia); `OSC_MODE: HS` fuerza HS ahí. Los pines que ocupa cada fuente: `Crystal`/`Resonator` toman RA7 (OSC1) y RA6 (OSC2); `External` solo RA7 (CLKIN); `RC` RA7; `Internal`, ninguno. El compilador **avisa** (`PYP3016`) y, importarlos como E/S, es el error `PYP2150`.
+
+## Qué hace el compilador
 
 | Declaración | `FOSC` (palabra de configuración) | Otros efectos |
 |---|---|---|
-| `Internal[f]` | `INTRC_NOCLKOUT` (E/S en RA6 y RA7) | Escribe `OSCCON` (`IRCF`) y espera a que el oscilador esté estable, salvo con 4 MHz (el valor de reset) |
-| `Crystal[f]` | `LP`, `XT` o `HS` según `f` (ver abajo) | Reserva RA7 (OSC1) y RA6 (OSC2) |
-| `ExternalClock[f]` | `EC` (CLKIN en RA7, E/S en RA6) | Reserva RA7 |
+| `Internal` | `INTRC_NOCLKOUT` (E/S en RA6 y RA7) | Escribe `OSCCON` (`IRCF`) y espera a que el oscilador esté estable, salvo con 4 MHz (el valor de reset) |
+| `Crystal`, `Resonator` | `LP`, `XT` o `HS` | Reserva RA7 y RA6 |
+| `External` | `EC` | Reserva RA7 |
+| `RC` | `EXTRC_NOCLKOUT` | Reserva RA7 |
 
-También fija la frecuencia de `pause`, `delay_us`, la UART, el ADC y los temporizadores, igual que `CLOCK_HZ`, y `pyxpic build` imprime el resultado: `Oscilador: Crystal 20 MHz (FOSC = HS)` y `Configuracion: CONFIG1=0x20D2 ... (FOSC = HS por CLOCK)`.
+También fija la frecuencia de `pause`, `delay_us`, la UART, el ADC y los temporizadores, y `pyxpic build` imprime `Oscilador: Crystal 11.0592 MHz (FOSC = HS)`. `CLOCK` **fija** `FOSC`: pedir otro valor con `--config FOSC=...` es un error.
 
-### Límites (DS40001291H, tabla 17-1, p.249, y registro 4-1, p.64)
+### Constantes del reloj
 
-| Fuente | Valores válidos |
-|---|---|
-| `Internal` | **31 kHz** (LFINTOSC nominal), 125 kHz, 250 kHz, 500 kHz, 1, 2, **4 (reset)** y 8 MHz. Ninguna otra: `Internal[20 * MHz]` es el error `PYP2194` |
-| `Crystal` | **LP**: 30 a 37 kHz (el cristal de 32,768 kHz) · **XT**: 100 kHz a 4 MHz · **HS**: más de 4 MHz hasta 20 MHz. Entre 37 y 100 kHz o por encima de 20 MHz no hay modo (`PYP2194`) |
-| `ExternalClock` | De 1 Hz a 20 MHz (modo EC, de continua a 20 MHz) |
+El compilador define, a partir del reloj efectivo (declarado, `CLOCK_HZ` o el del dispositivo): `SOURCE_FREQ` (frecuencia de la fuente), `FOSC` (frecuencia del sistema; sin PLL ni divisores es igual a `SOURCE_FREQ`) y `FCY` (ciclos de instrucción por segundo, `FOSC / 4` en PIC16). Son constantes de compilación (sin RAM ni código): `RELOJ: Const[uint32] = FCY`. Se resuelven con lo declarado hasta el punto de uso, así que `CLOCK` y `FREQUENCY` van al principio.
 
-Entre 1 y 4 MHz el cristal podría usar XT o HS (la tabla permite ambos): se elige **XT**, de menor ganancia. Si necesitas HS ahí, usa la forma manual: `CLOCK_HZ` y `--config FOSC=HS`.
+## Literales con unidad
 
-## `Crystal` o `ExternalClock`: qué pines ocupa cada uno
+Un número decimal pegado a un sufijo es un **literal con unidad**: el lexer lo convierte a un entero exacto en la unidad base de su magnitud, con aritmética de enteros de 128 bits (sin punto flotante, sin RAM, sin código). Si el valor no es un número entero de unidades base (`0.5Hz`) es el error `PYP0009`. Admite `_`, parte decimal y exponente: `8MHz`, `11.0592MHz`, `32.768kHz`, `11_059_200Hz`, `8e6Hz`, `500ms`, `3.3V`, `50pct`. Los sufijos distinguen mayúsculas (`MHz` frecuencia, `mH` inductancia, `MB` memoria, `mV` voltaje).
 
-Son dos montajes distintos y no se pueden confundir:
+| Magnitud | Sufijos | Unidad base |
+|---|---|---|
+| Frecuencia | `Hz` `kHz` `MHz` `GHz` | Hz |
+| Tiempo | `ns` `us` `ms` `s` `min` `h` | ns |
+| Memoria | `B` `KB` `MB` `KiB` `MiB` | B |
+| Comunicación serial | `baud` `kbaud` `Mbaud` | baud |
+| Transferencia de datos | `bps` `kbps` `Mbps` | bps |
+| Voltaje | `uV` `mV` `V` | uV |
+| Corriente | `uA` `mA` `A` | uA |
+| Resistencia | `ohm` `kohm` `Mohm` | mohm |
+| Capacitancia | `pF` `nF` `uF` `mF` `F` | pF |
+| Inductancia | `nH` `uH` `mH` `H` | nH |
+| Potencia | `uW` `mW` `W` | uW |
+| Temperatura | `degC` `degF` `K` | mK (milikelvin) |
+| Rotación | `rpm` | rpm |
+| Ángulo | `deg` `rad` | udeg (`rad` se redondea al microgrado) |
+| Porcentaje | `pct` | mpct (milésimas de punto porcentual) |
 
-| Declaración | Qué hay en el circuito | Pines que ocupa | Pines que quedan libres |
-|---|---|---|---|
-| `Crystal[f]` | Un cristal o resonador entre `OSC1` y `OSC2` | **RA7** (`OSC1`/`CLKIN`) **y RA6** (`OSC2`/`CLKOUT`) | ninguno de los dos |
-| `ExternalClock[f]` | Una **señal** de reloj ya generada, conectada a `CLKIN` | **RA7** (`OSC1`/`CLKIN`) | **RA6** (como E/S) |
-| `Internal[f]` | Nada: el oscilador está dentro del chip | ninguno | RA6 y RA7 |
+Se pueden combinar con expresiones constantes: `4MHz * 2`, `16MHz / 2`, `8 * MHz`, `2MHz + 2MHz`. El verificador conoce la magnitud de cada expresión: **sumar o restar magnitudes distintas** (`4MHz + 1ms`) o un valor con un número sin unidad es `PYP2231`; multiplicar dos magnitudes (`MHz * MHz`) o dividir un número entre una magnitud también; dividir dos de la misma da un número. `FREQUENCY` exige una frecuencia (`PYP2232`: `FREQUENCY: 4` o `FREQUENCY: 3ms`).
 
-Con `Crystal` o `ExternalClock` el compilador **avisa** (`PYP3016`) de los pines que toma: dejan de estar disponibles **para cualquier otro uso** del programa, e importarlos como E/S (`from pyxpic.periph.gpio import RA6`) es el error `PYP2150`. El aviso de `Crystal` dice además que, si lo que llega a RA7 es una señal y no un cristal, se use `ExternalClock`, que deja libre RA6. `Internal` no avisa de nada: no ocupa pines.
+Los valores de las magnitudes cuya unidad base no era un entero del lenguaje (tiempo, voltaje, corriente...) **no se aceptan donde se espera un número** (`X: uint32 = 500ms` es `PYP2230`): solo los consume un parámetro que declara esa magnitud. Las unidades no dependen del microcontrolador; que un dispositivo pueda generar o medir un valor lo valida cada función del SDK con su Device Pack.
 
-## `--config FOSC` y `CLOCK`
+### Qué falta (fases siguientes)
 
-`CLOCK` **fija** `FOSC`: pedir otro valor con `--config FOSC=...` es un error (`el programa declara 'CLOCK: ...', que fija FOSC = HS`). Con `CLOCK_HZ` a secas el oscilador sigue siendo del usuario, y el aviso `PYP3005` ("el compilador todavía no configura el oscilador") se mantiene para ese caso, que es el que sigue siendo cierto.
+- **Fase 3:** `PLL`, `CLOCK_DIVIDER`, `CLOCK_OUTPUT`, `FAIL_SAFE_CLOCK` y `CLOCK_SWITCHING` (el PIC16F887 no tiene PLL ni divisores; sí `FCMEN` e `IESO`). Con PLL, `FOSC` dejará de ser igual a `SOURCE_FREQ`.
+- **Fase 4:** unidades en los periféricos (`UART.start(baud=9600baud)`, `PWM.start(frequency=20kHz, duty=50pct)`, `TMR2.every(20ms)`, `delay(500ms)`, `ADC.start(reference=5V)`) con validación de la magnitud por parámetro. Hoy los parámetros siguen recibiendo enteros (baudios, Hz, ms), y las magnitudes de frecuencia, baudios, tasa y memoria se aceptan donde se espera un número (su unidad base es la que el lenguaje ya usaba).
+- **Fase 5:** BASIC (`CLOCK INTERNAL 8 MHZ` ya produce el mismo AST que Python; faltan los literales con unidad en su lexer) y el resaltado de los sufijos en VS Code.
 
 ## Diagnósticos
 
 | Código | Regla |
 |---|---|
-| `PYP2190` | `CLOCK` mal declarado: no está a nivel de módulo, no se llama `CLOCK`, lleva `= valor` o `pyxpic.clock` no exporta ese nombre |
-| `PYP2192` | `CLOCK` y `CLOCK_HZ` a la vez, o `CLOCK` dos veces |
-| `PYP2193` | La frecuencia no es una constante mayor que 0 |
-| `PYP2194` | La fuente no admite esa frecuencia (con los valores válidos en el mensaje) |
+| `PYP0008` / `PYP0009` | Literal con unidad demasiado grande / no es un número entero de unidades base |
+| `PYP2190` | `CLOCK`, `FREQUENCY` u `OSC_MODE` mal declarados: fuera del nivel de módulo, otro nombre, la forma antigua `Clock: ...(...)`, `ExternalClock`, `FREQUENCY` sin `CLOCK`, lleva `= valor` |
+| `PYP2192` | `CLOCK` y `CLOCK_HZ` a la vez, o cualquiera de las tres declaraciones dos veces |
+| `PYP2193` | Falta `FREQUENCY` (`Crystal`, `External`...), o no es una constante mayor que 0 |
+| `PYP2194` | La fuente o el modo no admiten esa frecuencia, o el dispositivo no tiene esa fuente (con los valores válidos en el mensaje) |
+| `PYP2094` | La frecuencia excede el reloj máximo del dispositivo |
 | `PYP2150` | RA6 o RA7 se importan como E/S y el oscilador externo los usa |
-| `PYP3016` | Aviso al declarar `Crystal` (ocupa RA7 y RA6) o `ExternalClock` (ocupa RA7): esos pines dejan de estar disponibles para cualquier otro uso |
+| `PYP2230` | Una magnitud con unidad (tiempo, voltaje...) donde ningún parámetro la acepta |
+| `PYP2231` | Operación entre magnitudes incompatibles |
+| `PYP2232` | `FREQUENCY` no es una frecuencia o no lleva unidad |
+| `PYP3016` | Aviso al declarar un oscilador externo: pines que dejan de estar disponibles |
 
 ## Lo que no hace, y lo que no puede comprobar
 
 - **El circuito:** que el cristal esté puesto, sus capacitores o que el reloj externo llegue. El compilador solo valida lo que dice el datasheet.
-- **Cambiar de reloj en marcha, Two-Speed Start-up, el monitor de falla (Fail-Safe Clock Monitor), `PLL` y los modos `RC`/`RCIO`:** no se tocan (`RC` se elige a mano con `--config FOSC=EXTRC_NOCLKOUT` y `CLOCK_HZ`).
-- **Desviación del oscilador interno:** `Internal[4 * MHz]` es nominal; el PIC16F887 tiene tolerancia (se calibra con `OSCTUNE`, que no se toca). Para una UART exacta conviene un cristal.
+- **Cambiar de reloj en marcha, Two-Speed Start-up y el monitor de falla:** no se tocan (fase 3). El modo `RC` no valida la frecuencia contra el circuito.
+- **Desviación del oscilador interno:** `Internal` a 4 MHz es nominal; el PIC16F887 tiene tolerancia (se calibra con `OSCTUNE`, que no se toca). Para una UART exacta conviene un cristal.
 
 ## Verificación
 
-`crates/pyxpic-pic14/tests/clock.rs`: una línea sin imports; el modo `FOSC` elegido para cada frecuencia (incluidos los bordes 100 kHz, 4 MHz, 4 000 001 Hz y 20 MHz); las ocho frecuencias del oscilador interno con su `IRCF`; los rechazos con los límites en el mensaje; los errores de declaración; la reserva de pines (`RA6`, `RA7` con cristal, `RA7` con EC, nada con el interno); el número exacto de ciclos de una `pause` con cada frecuencia (4, 8, 20, 1 y 2 MHz); que el oscilador interno a 4 MHz **no escribe** `OSCCON` y los demás sí, esperando la bandera de estabilidad; y que el simulador sigue a `OSCCON` para que la UART use el reloj real. En `crates/pyxpic-cli/tests/cli.rs`: `FOSC = HS` en la palabra de configuración y el rechazo de `--config FOSC`. Con `Internal[4 * MHz]` el `.hex` de `examples/python/uart/adc_serial.py` sale **idéntico** al que ya funcionó en Proteus. Ejemplo: `examples/python/reloj/reloj_cristal.py`. **No probado en hardware:** el simulador modela `OSCCON` y su estabilidad de forma mínima (12 ciclos), no los tiempos reales del oscilador.
+`crates/pyxpic-frontend/src/units.rs` (pruebas unitarias del sistema de sufijos: exactitud, mayúsculas, números mal formados) y `crates/pyxpic-pic14/tests/clock.rs`: el modo `FOSC` elegido para cada fuente y frecuencia (incluidos los bordes 100 kHz, 4 MHz, 4 000 001 Hz, 20 MHz y 11,0592 MHz); las ocho frecuencias del oscilador interno con su `IRCF`; los rechazos con los límites en el mensaje; `OSC_MODE`; los errores de declaración y de magnitudes; la reserva de pines; que los límites cambian con el perfil del dispositivo; las constantes `SOURCE_FREQ`/`FOSC`/`FCY`; que BASIC y Python declaran el mismo reloj; el número exacto de ciclos de una `pause` a 4, 8, 20, 1 y 11,0592 MHz; que `Internal` a 4 MHz **no escribe** `OSCCON` y los demás sí; y que el simulador sigue a `OSCCON` para que la UART use el reloj real. **No probado en hardware:** el simulador modela `OSCCON` y su estabilidad de forma mínima (12 ciclos), no los tiempos reales del oscilador.

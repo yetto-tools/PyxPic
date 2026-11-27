@@ -55,14 +55,14 @@ pub fn locate_pack(name: &str, extra: Option<&str>) -> Result<DevicePack, (Strin
 
 // ---- pyxpic init -----------------------------------------------------------------------------------------------------------------------
 
-/// `4_000_000` -> `4 * MHz`, `125_000` -> `125 * kHz`.
+/// `4_000_000` -> `4MHz`, `125_000` -> `125kHz`.
 fn hz_expr(hz: u32) -> String {
     if hz.is_multiple_of(1_000_000) {
-        format!("{} * MHz", hz / 1_000_000)
+        format!("{}MHz", hz / 1_000_000)
     } else if hz.is_multiple_of(1_000) {
-        format!("{} * kHz", hz / 1_000)
+        format!("{}kHz", hz / 1_000)
     } else {
-        format!("{hz} * Hz")
+        format!("{hz}Hz")
     }
 }
 
@@ -72,7 +72,7 @@ fn toml_str(s: &str) -> String {
 
 const MAIN_TEMPLATE: &str = "\"\"\"@NAME@: parpadeo de RB0 cada 500 ms. El dispositivo se declara aqui, en el codigo; el reloj y la configuracion estan en pyxpic.toml (docs/proyecto.md).\"\"\"\nfrom pyxpic.device import @DEVICE@\nfrom pyxpic.periph.gpio import RB0\nfrom pyxpic.system.time import pause\n\n\ndef main() -> None:\n    RB0.output()\n    while True:\n        RB0.toggle()\n        pause(500)\n";
 
-/// `pyxpic init [carpeta] [--name N] [--device PIC16F887] [--clock "Internal[4 * MHz]"] [--devices-dir D]`
+/// `pyxpic init [carpeta] [--name N] [--device PIC16F887] [--clock "Internal 4MHz"] [--devices-dir D]`
 pub fn init(args: &[String]) -> ExitCode {
     let (mut dir, mut name, mut device, mut clock, mut devices_dir) = (None::<String>, None::<String>, None::<String>, None::<String>, None::<String>);
     let mut it = args.iter();
@@ -104,9 +104,9 @@ pub fn init(args: &[String]) -> ExitCode {
     let clock = match clock {
         Some(c) => c,
         None => match target.default_clock_hz {
-            Some(hz) => format!("Internal[{}]", hz_expr(hz)),
+            Some(hz) => format!("Internal {}", hz_expr(hz)),
             None => {
-                eprintln!("{device} no declara un reloj por defecto: indica uno con --clock \"Crystal[20 * MHz]\"");
+                eprintln!("{device} no declara un reloj por defecto: indica uno con --clock \"Crystal 20MHz\"");
                 return ExitCode::from(2);
             }
         },
@@ -416,7 +416,7 @@ pub fn set_cmd(args: &[String]) -> ExitCode {
             _ => match a.split_once('=') {
                 Some((k, v)) => sets.push((k.trim().to_string(), v.trim().to_string())),
                 None => {
-                    eprintln!("'{a}': se escribe CLAVE=VALOR, por ejemplo clock=\"Crystal[20 * MHz]\" o config.WDTE=ON (claves: {SET_KEYS})");
+                    eprintln!("'{a}': se escribe CLAVE=VALOR, por ejemplo clock=\"Crystal 20MHz\" o config.WDTE=ON (claves: {SET_KEYS})");
                     return ExitCode::from(2);
                 }
             },

@@ -7,7 +7,8 @@ from pyxpic.device import PIC16F887
 from pyxpic.periph.comparator import CMP1, C12IN0, REF_CVREF
 from pyxpic.periph.vref import CVREF
 
-CLOCK: Internal[4 * MHz]
+CLOCK: Internal
+FREQUENCY: 4MHz
 
 CVREF.start(step=8)                                    # CVREF = VDD/4 + 8/32 x VDD = VDD/2
 CMP1.start(negative=C12IN0, positive=REF_CVREF)        # ¿está RA0 por debajo de la mitad de VDD?
