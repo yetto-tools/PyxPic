@@ -139,6 +139,16 @@ fn verify_fn(m: &Module, f: &Function, errs: &mut Vec<String>) {
                         e(format!("{}: I2c {:?} mal formado", at(i), call.op));
                     }
                 }
+                Inst::Spi { call, dst, arg } => {
+                    let u8_ty = Type::Int { bits: 8, signed: false };
+                    let bad = match call.op {
+                        SpiOp::Transfer => !(arg.as_ref().is_some_and(|a| ty(a) == u8_ty) && dst.is_none_or(|d| valid(d) && m.place_ty(f, d) == u8_ty)),
+                        SpiOp::Start(_) => dst.is_some() || arg.is_some(),
+                    };
+                    if bad {
+                        e(format!("{}: Spi {:?} mal formado", at(i), call.op));
+                    }
+                }
                 Inst::Pwm { call, hi, dc } => {
                     let u8_ty = Type::Int { bits: 8, signed: false };
                     let bad = match call.op {

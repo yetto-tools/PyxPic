@@ -278,6 +278,12 @@ impl<'m> Machine<'m> {
                     }
                 }
             }
+            Inst::Spi { dst, .. } => {
+                // sin bus modelado: SDI en reposo se lee 0xFF (el simulador del nucleo si modela el esclavo)
+                if let Some(d) = dst {
+                    self.write(f, fr, *d, 0xFF);
+                }
+            }
             Inst::Pwm { call, hi, dc } => {
                 let i = call.pwm.ccp() as usize - 1;
                 match call.op {

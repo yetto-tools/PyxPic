@@ -30,7 +30,7 @@ fn the_old_flat_paths_no_longer_exist_and_say_the_new_one() {
 
 #[test]
 fn reserved_modules_are_recognised_but_not_implemented_yet() {
-    for m in ["pypic.periph.spi", "pypic.system.wdt", "pypic.system.irq", "pypic.system.clock", "pypic.soft.spi", "pypic.soft.i2c", "pypic.soft.onewire"] {
+    for m in ["pypic.periph.ccp", "pypic.system.wdt", "pypic.system.irq", "pypic.system.clock", "pypic.soft.spi", "pypic.soft.i2c", "pypic.soft.onewire"] {
         let (c, out) = diag(&format!("from {m} import X\n"));
         assert_eq!(c, vec!["PYP2105"], "{m}");
         assert!(out.contains("todavia no esta implementado") && out.contains("catalogo-pic16f887"), "{out}");
@@ -39,7 +39,7 @@ fn reserved_modules_are_recognised_but_not_implemented_yet() {
 
 #[test]
 fn hardware_and_software_versions_are_different_modules_with_different_descriptions() {
-    let (_, hw) = diag("from pypic.periph.spi import SPI\n");
+    let (_, hw) = diag("from pypic.periph.ccp import CCP1\n");
     let (_, sw) = diag("from pypic.soft.spi import SPI\n");
     assert!(hw.contains("periferico por hardware") && !hw.contains("por software"), "{hw}");
     assert!(sw.contains("implementacion por software") && !sw.contains("periferico por hardware"), "{sw}");

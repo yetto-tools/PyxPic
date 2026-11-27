@@ -19,6 +19,7 @@ pub mod parser;
 pub mod pwm;
 pub mod regs;
 pub mod runtime;
+pub mod spi;
 pub mod target;
 pub mod text;
 pub mod timer;
@@ -36,6 +37,7 @@ pub use i2c::{I2cCall, I2cOp, I2cStart};
 pub use pwm::{PwmCall, PwmId, PwmOp, PwmTiming};
 pub use regs::{RegCall, RegOp};
 pub use runtime::{pow2_exp, routine_for, RtKind};
+pub use spi::{SpiCall, SpiOp, SpiStart};
 pub use target::{PinClaim, PinInfo, RegInfo, TargetProfile};
 pub use text::{TextCall, TextOp};
 pub use timer::{TimerCall, TimerId, TimerOp, TimerStart};
@@ -177,6 +179,7 @@ fn analyze_parsed(source: &str, mut module: ast::Module, mut d: Diagnostics, tar
         pwm_calls: c.pwm_calls,
         eeprom_calls: c.eeprom_calls,
         i2c_calls: c.i2c_calls,
+        spi_calls: c.spi_calls,
         comp_calls: c.comp_calls,
         stack_use: c.stack_use,
         uart_calls: c.uart_calls,

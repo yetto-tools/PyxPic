@@ -92,6 +92,10 @@ pub fn print(m: &Module) -> String {
                         let a = arg.as_ref().map(|a| format!(" {}", operand(m, f, a))).unwrap_or_default();
                         format!("{}i2c {:?}{a}", dst.map(|d| format!("{} = ", place(m, f, d))).unwrap_or_default(), call.op)
                     }
+                    Inst::Spi { call, dst, arg } => {
+                        let a = arg.as_ref().map(|a| format!(" {}", operand(m, f, a))).unwrap_or_default();
+                        format!("{}spi {:?}{a}", dst.map(|d| format!("{} = ", place(m, f, d))).unwrap_or_default(), call.op)
+                    }
                     Inst::Pwm { call, hi, dc } => {
                         let a: String = hi.iter().chain(dc.iter()).map(|a| format!(" {}", operand(m, f, a))).collect();
                         format!("pwm {} {:?}{a}", call.pwm.name(), call.op)

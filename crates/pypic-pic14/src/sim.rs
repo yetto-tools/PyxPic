@@ -121,6 +121,8 @@ pub struct Sim {
     adc_remaining: u32,
     /// El MSSP en modo I2C maestro y su bus con esclavos virtuales (`i2c.slaves`); ver `i2c_sim.rs`.
     pub i2c: crate::i2c_sim::I2cBus,
+    /// El MSSP en modo SPI maestro (`spi.miso`, `spi.mosi`); ver `spi_sim.rs`.
+    pub spi: crate::spi_sim::SpiBus,
 }
 
 impl Sim {
@@ -179,6 +181,7 @@ impl Sim {
             ee_done_at: None,
             ee_pending: (0, 0),
             i2c: Default::default(),
+            spi: Default::default(),
         };
         s.reset();
         s
@@ -209,6 +212,7 @@ impl Sim {
         self.ram[0x8F] = 0x64; // OSCCON: IRCF = 110 (4 MHz) y HFINTOSC estable
         self.osc_ready_at = 0;
         self.i2c.reset();
+        self.spi.reset();
         self.pc = 0;
         self.pclath = 0;
         self.sp = 0;
@@ -285,7 +289,11 @@ impl Sim {
                     self.uart_tx_write(v);
                 }
                 if a == 0x13 {
-                    self.i2c.sspbuf_write(&mut self.ram, old, self.cycles + 1);
+                    if crate::spi_sim::SpiBus::enabled(&self.ram) {
+                        self.spi.sspbuf_write(&mut self.ram, old, self.cycles + 1);
+                    } else {
+                        self.i2c.sspbuf_write(&mut self.ram, old, self.cycles + 1);
+                    }
                 }
                 if a == 0x91 {
                     self.i2c.sspcon2_write(&mut self.ram, old, self.cycles + 1);
@@ -372,6 +380,8 @@ impl Sim {
         let inst = Inst::decode(word).unwrap_or(Inst::Nop);
         // una instruccion que lee RCREG (1Ah, banco 0) saca el caracter del FIFO
         let pops_rcreg = self.bank_base() == 0 && file_read(inst) == Some(0x1A);
+        // y leer SSPBUF (13h) baja BF
+        let reads_sspbuf = self.bank_base() == 0 && file_read(inst) == Some(0x13);
         self.pcl_write = None;
         let mut cyc = 1u64;
         let mut skip = false;
@@ -534,6 +544,9 @@ impl Sim {
             next = target & 0x1FFF;
             cyc = 2;
         }
+        if reads_sspbuf {
+            self.spi.sspbuf_read(&mut self.ram);
+        }
         if pops_rcreg {
             self.uart_pop();
         }
@@ -569,6 +582,7 @@ impl Sim {
         self.tick_eeprom(now);
         self.tick_uart(now);
         self.i2c.tick(&mut self.ram, now);
+        self.spi.tick(&mut self.ram, now);
         let (option, intcon) = (self.ram[0x81], 0x0B);
         // Timer0: T0CS = 0 (reloj interno); PSA = 0 asigna el preescalador a Timer0
         if option & 0x20 == 0 {

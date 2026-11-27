@@ -52,6 +52,8 @@ const info = {
   EEPROM: "EEPROM de datos de 256 bytes. `EEPROM.read(a)` lee un byte; `EEPROM.write(a, v)` escribe y espera hasta 6 ms; `EEPROM.start_write(a, v)` no espera.",
   UART: "EUSART asíncrono: `UART.start(baud=9600)` configura transmisión y recepción.",
   ord: "`ord('A')` es 65: el código ASCII de un carácter, resuelto al compilar (sin costo en el PIC). Úsalo para comparar bytes: `if c == ord('A'):`.",
+  SPI: "SPI maestro (SCK RC3, SDI RC4, SDO RC5): `SPI.start(freq=1000000, mode=0)` y `SPI.transfer(b)`, que envía y devuelve el byte recibido. El chip select es un pin tuyo.",
+  transfer: "`SPI.transfer(b)` envía un byte por SDO y devuelve el que llega a la vez por SDI.",
   pause: "`pause(ms)` espera una cantidad de milisegundos; consulta el costo y los límites de `pypic.system.time`.",
   read: "Lectura del periférico. `ADC.read(AN0)` devuelve uint16; `UART.read()` recibe un byte y espera si es necesario.",
   start: "Configura e inicia el periférico. Los parámetros dependen de si se usa ADC, UART o PWM.",
@@ -90,6 +92,8 @@ const members = {
   EEPROM: ["read", "write", "start_write", "busy", "failed"],
   PWM1: ["start", "duty", "stop"],
   PWM2: ["start", "duty", "stop"],
+  SPI: ["start", "transfer"],
+  I2C: ["start", "begin", "restart", "end", "write"],
   UART: ["start", "write", "read", "send", "recv", "tx_ready", "rx_ready", "sending", "overrun", "framing_error", "clear_overrun", "write_text", "write9", "send9", "read9", "recv9"],
 };
 
@@ -104,7 +108,7 @@ function basicCompletions(prefix) {
 }
 
 function completions(prefix) {
-  const match = /\b(ADC|UART|EEPROM|PWM[12])\.\w*$/.exec(prefix);
+  const match = /\b(ADC|UART|EEPROM|PWM[12]|SPI|I2C)\.\w*$/.exec(prefix);
   if (match) return members[match[1]];
   if (/\.\w*$/.test(prefix)) return [];
   return ["uint8", "uint16", "uint32", "int8", "int16", "int32", "Const", "CLOCK", "Internal", "Crystal", "ExternalClock", "MHz", "kHz", "Hz", "CLOCK_HZ", "ord"];

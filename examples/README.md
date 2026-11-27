@@ -45,6 +45,7 @@ Varios ejemplos existen en los tres lenguajes y hacen lo mismo (cada uno nombra 
 | LCD 16x2 con controlador I2C propio (0x3E) | `python/i2c/lcd_controlador.py` | — | — |
 | Busqueda de direcciones I2C (informa por la UART) | `python/i2c/lcd_buscar.py` | — | — |
 | Escaner I2C con `pypic.periph.i2c` (informa por la UART) | `python/i2c/escaner.py` | — | — |
+| SPI en lazo con `pypic.periph.spi` | `python/spi/lazo.py` | — | — |
 | Saludo con un contador por la UART | `python/uart/saludo_texto.py` | `basic/uart/saludo.bas` | — |
 | Media móvil del ADC | `python/adc/media_movil.py` | `basic/adc/media_movil.bas` | — |
 | Comparador contra CVREF | `python/comparadores/comparador.py` | `basic/comparadores/comparador.bas` | — |

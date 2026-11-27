@@ -17,6 +17,7 @@ use crate::eeprom::{EepromCall, EepromOp};
 use crate::i2c::{self, I2cCall, I2cOp, I2cStart};
 use crate::pwm::{self, PwmCall, PwmId, PwmOp, PwmTiming};
 use crate::regs::{RegCall, RegOp, BANK_BITS, WRITE_PROTECTED};
+use crate::spi::{self, SpiCall, SpiOp, SpiStart};
 use crate::target::RegInfo;
 use crate::text::{TextCall, TextOp};
 use crate::timer::{self, Gate, GateSource, TimerCall, TimerId, TimerOp, TimerSource, TimerStart};
@@ -169,6 +170,8 @@ pub struct Program {
     pub eeprom_calls: BTreeMap<u32, EepromCall>,
     /// Llamadas a metodos de `pypic.periph.i2c`, por id de expresion.
     pub i2c_calls: BTreeMap<u32, I2cCall>,
+    /// Llamadas a metodos de `pypic.periph.spi`, por id de expresion.
+    pub spi_calls: BTreeMap<u32, SpiCall>,
     /// Llamadas a metodos de `pypic.periph.comparator` y `pypic.periph.vref`, por id de expresion.
     pub comp_calls: BTreeMap<u32, CompCall>,
     /// Niveles de la pila de hardware en el peor caso: (contexto principal, interrupcion), con la llamada de arranque y la entrada a la interrupcion incluidas.
@@ -208,6 +211,8 @@ pub struct Checked {
     pub eeprom_calls: BTreeMap<u32, EepromCall>,
     /// Llamadas a metodos de `pypic.periph.i2c`, por id de expresion.
     pub i2c_calls: BTreeMap<u32, I2cCall>,
+    /// Llamadas a metodos de `pypic.periph.spi`, por id de expresion.
+    pub spi_calls: BTreeMap<u32, SpiCall>,
     pub comp_calls: BTreeMap<u32, CompCall>,
     pub stack_use: Option<(u32, u32)>,
     pub uart_calls: BTreeMap<u32, UartCall>,
@@ -266,6 +271,10 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         i2c_calls: BTreeMap::new(),
         i2c_pending: Vec::new(),
         i2c_needs: None,
+        spi_name: false,
+        spi_calls: BTreeMap::new(),
+        spi_pending: Vec::new(),
+        spi_needs: None,
         comp_names: HashSet::new(),
         comp_consts: HashSet::new(),
         cvref_name: false,
@@ -322,6 +331,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         pwm_calls: c.pwm_calls,
         eeprom_calls: c.eeprom_calls,
         i2c_calls: c.i2c_calls,
+        spi_calls: c.spi_calls,
         comp_calls: c.comp_calls,
         stack_use: c.stack_use,
         uart_calls: c.uart_calls,
@@ -418,6 +428,10 @@ struct Checker<'a> {
     i2c_calls: BTreeMap<u32, I2cCall>,
     i2c_pending: Vec<I2cPending>,
     i2c_needs: Option<Span>,
+    spi_name: bool,
+    spi_calls: BTreeMap<u32, SpiCall>,
+    spi_pending: Vec<SpiPending>,
+    spi_needs: Option<Span>,
     /// Comparadores (`CMP1`, `CMP2`), sus constantes (`C12IN0`.., `REF_PIN`..), CVREF, las llamadas y si algun comparador pide CVREF.
     comp_names: HashSet<String>,
     comp_consts: HashSet<String>,
@@ -521,6 +535,15 @@ struct I2cPending {
     func: Option<usize>,
 }
 
+/// Una llamada a `SPI.start(freq=..., mode=...)` por resolver (necesita el reloj del sistema).
+struct SpiPending {
+    id: u32,
+    span: Span,
+    freq: u32,
+    mode: u8,
+    func: Option<usize>,
+}
+
 /// Una llamada a `UART.start(baud=...)` por resolver (necesita el reloj del sistema).
 struct UartPending {
     id: u32,
@@ -586,6 +609,7 @@ impl<'a> Checker<'a> {
         self.check_comparator_usage();
         self.check_pwm_usage();
         self.check_uart_usage();
+        self.check_spi_usage();
         self.check_i2c_usage();
         self.check_time_usage();
         self.check_asm_usage();
@@ -786,6 +810,22 @@ impl<'a> Checker<'a> {
                     self.i2c_name = true;
                 } else {
                     self.d.error("PYP2224", n.span, format!("'pypic.periph.i2c' no exporta '{}' (exporta: I2C)", n.name));
+                }
+            }
+            return;
+        }
+        if module == "pypic.periph.spi" {
+            for n in names {
+                if n.name == "SPI" {
+                    if let Some(set) = &self.target.peripherals {
+                        if !set.contains("MSSP") {
+                            self.d.error("PYP2233", n.span, format!("'{}' no tiene SPI: el dispositivo no trae el modulo MSSP", self.target.name));
+                            continue;
+                        }
+                    }
+                    self.spi_name = true;
+                } else {
+                    self.d.error("PYP2233", n.span, format!("'pypic.periph.spi' no exporta '{}' (exporta: SPI)", n.name));
                 }
             }
             return;
@@ -2426,6 +2466,99 @@ impl<'a> Checker<'a> {
         }
     }
 
+    // ------------------------------------------------------ SPI maestro por hardware (pypic.periph.spi)
+    fn spi_method(&mut self, e: &Expr, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
+        if method == "start" {
+            if !args.is_empty() {
+                self.d.error("PYP2234", args[0].span, "SPI.start se escribe con argumentos con nombre: SPI.start(freq=1000000, mode=0)");
+            }
+            let (mut freq, mut mode) = (None, Some(0u8));
+            for k in kwargs {
+                self.expr(&k.value);
+                let value = self.konst(&k.value).filter(|_| self.ty(&k.value) != Type::Bool);
+                match k.name.as_str() {
+                    "freq" => match value {
+                        Some(f) if (1..=20_000_000).contains(&f) => freq = Some(f as u32),
+                        _ => self.d.error("PYP2234", k.value.span, "SPI.start: freq es una constante de 1 a 20000000 (Hz), la maxima que admite el dispositivo conectado"),
+                    },
+                    "mode" => match value {
+                        Some(m) if (0..=3).contains(&m) => mode = Some(m as u8),
+                        _ => {
+                            self.d.error("PYP2234", k.value.span, "SPI.start: mode es una constante de 0 a 3 (el modo SPI estandar)");
+                            mode = None;
+                        }
+                    },
+                    other => self.d.error("PYP2234", k.name_span, format!("SPI.start no tiene el argumento '{other}' (admite: freq, mode)")),
+                }
+            }
+            let (Some(freq), Some(mode)) = (freq, mode) else {
+                if kwargs.iter().all(|k| k.name != "freq") {
+                    self.d.error("PYP2234", e.span, "SPI.start necesita freq=...: SPI.start(freq=1000000)");
+                }
+                return self.set(e, Type::Void, None);
+            };
+            self.note_claims_of("SSPEN", &["SCK", "SDI", "SDO"], e.span);
+            self.spi_pending.push(SpiPending { id: e.id, span: e.span, freq, mode, func: self.cur });
+            return self.set(e, Type::Void, None);
+        }
+        if let Some(k) = kwargs.first() {
+            self.d.error("PYP2234", k.name_span, format!("SPI.{method} no acepta argumentos con nombre"));
+        }
+        if method != "transfer" {
+            self.d.error("PYP2235", e.span, format!("SPI no tiene el metodo '{method}' (disponibles: start, transfer; SPI envia y recibe a la vez)"));
+            for a in args {
+                self.expr(a);
+            }
+            return self.set(e, Type::Error, None);
+        }
+        if args.len() != 1 {
+            self.d.error("PYP2055", e.span, "'SPI.transfer' recibe el byte a enviar y devuelve el recibido");
+            for a in args {
+                self.expr(a);
+            }
+            return self.set(e, Type::Error, None);
+        }
+        self.expect(&args[0], U8, Some("SPI.transfer envia un uint8: convierte con uint8(...)"));
+        self.spi_needs.get_or_insert(e.span);
+        self.spi_calls.insert(e.id, SpiCall { op: SpiOp::Transfer });
+        self.set(e, U8, None)
+    }
+
+    /// SPI usado sin un `SPI.start` alcanzable, una sola configuracion, el divisor resuelto con el reloj y el MSSP no compartido con I2C.
+    fn check_spi_usage(&mut self) {
+        let pend = std::mem::take(&mut self.spi_pending);
+        let uses_i2c = !self.i2c_pending.is_empty() || self.i2c_needs.is_some();
+        if let Some(p) = pend.first().filter(|_| uses_i2c) {
+            self.d.error("PYP2239", p.span, "el programa usa SPI e I2C: los dos son el mismo modulo MSSP (y comparten RC3 y RC4)");
+        }
+        if let Some(sp) = self.spi_needs.take() {
+            let reach = self.entry_reachable();
+            if !pend.iter().any(|p| p.func.is_none_or(|f| reach.contains(&f))) {
+                let why = if pend.is_empty() { "nunca se llama a SPI.start(freq=...)" } else { "las llamadas a SPI.start() estan en funciones que ni main ni @init_device pueden llamar" };
+                self.d.error("PYP2237", sp, format!("el SPI se usa pero {why}: inicializalo en main o en una funcion que main llame (se comprueba que exista, no el orden)"));
+            }
+        }
+        if let Some(first) = pend.first() {
+            if let Some(other) = pend.iter().find(|p| (p.freq, p.mode) != (first.freq, first.mode)) {
+                self.d.error("PYP2238", other.span, "dos SPI.start con distinta freq o mode: el programa usa una sola configuracion del MSSP");
+            }
+        }
+        for p in pend {
+            let Some(hz) = self.effective_clock(p.span, "SPI.start") else { continue };
+            let Some(sspm) = spi::solve(hz, p.freq) else {
+                self.d.error("PYP2238", p.span, format!("con un reloj de {hz} Hz el SPI mas lento es FOSC/64 = {} Hz, mas rapido que los {} Hz pedidos", hz / 64, p.freq));
+                continue;
+            };
+            let st = SpiStart { freq: p.freq, mode: p.mode, sspm: Some(sspm) };
+            let got = st.achieved(hz);
+            // por encima de FOSC/4 pedir "lo mas rapido posible" no merece aviso
+            if (got as f64) < p.freq as f64 * 0.8 && sspm != 0 {
+                self.d.warning("PYP3023", p.span, format!("a {hz} Hz el MSSP da SCK = {got} Hz para un maximo de {} Hz (solo hay FOSC/4, /16 y /64)", p.freq));
+            }
+            self.spi_calls.insert(p.id, SpiCall { op: SpiOp::Start(st) });
+        }
+    }
+
     // ------------------------------------------------------ EEPROM de datos (pypic.periph.eeprom)
     fn eeprom_method(&mut self, e: &Expr, method: &str, args: &[Expr], kwargs: &[Kwarg]) -> Type {
         if let Some(k) = kwargs.first() {
@@ -2666,6 +2799,9 @@ impl<'a> Checker<'a> {
         }
         if obj == "I2C" && self.i2c_name {
             return self.i2c_method(e, method, args, kwargs);
+        }
+        if obj == "SPI" && self.spi_name {
+            return self.spi_method(e, method, args, kwargs);
         }
         if let Some(id) = CmpId::from_name(obj).filter(|_| self.comp_names.contains(obj)) {
             return self.cmp_method(e, id, method, args, kwargs);
@@ -3718,6 +3854,8 @@ impl<'a> Checker<'a> {
             self.d.error("PYP2175", e.span, "'ADC' es el convertidor: usa sus metodos (ADC.start(), ADC.read(AN0), ADC.result()...)");
         } else if self.adc_consts.contains(n) {
             self.d.error("PYP2175", e.span, format!("'{n}' es una constante del ADC: solo se usa como argumento de ADC.select/read o ADC.start(clock=...)"));
+        } else if self.spi_name && n == "SPI" {
+            self.d.error("PYP2236", e.span, "'SPI' es el bus del MSSP: usa sus metodos (SPI.start(freq=1000000), SPI.transfer(b))");
         } else if self.i2c_name && n == "I2C" {
             self.d.error("PYP2229", e.span, "'I2C' es el bus maestro del MSSP: usa sus metodos (I2C.start(freq=100000), I2C.begin(), I2C.write(b), I2C.end()...)");
         } else if self.eeprom_name && n == "EEPROM" {
@@ -4260,6 +4398,7 @@ const IMPLEMENTED_MODULES: &[&str] = &[
     "pypic.periph.pwm",
     "pypic.periph.eeprom",
     "pypic.periph.i2c",
+    "pypic.periph.spi",
     "pypic.periph.comparator",
     "pypic.periph.vref",
     "pypic.periph.gpio",

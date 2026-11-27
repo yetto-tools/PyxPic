@@ -10,8 +10,8 @@ use std::fmt;
 
 use pypic_frontend::timer::{GateSource, TimerSource};
 use pypic_ir::ir::{
-    AdcCall, AdcOp, BinOp, BitsOp, CmpOp, CmpRef, CompCall, CompOp, CvrefOp, DelayUnit, EepromCall, EepromOp, Function, I2cCall, I2cOp, Module, Operand, Pin, Place, PwmCall, PwmOp, RegCall, RegOp, Terminator,
-    TimerCall, TimerId, TimerOp, TimerStart, Type, UartCall, UartOp, UnaryOp,
+    AdcCall, AdcOp, BinOp, BitsOp, CmpOp, CmpRef, CompCall, CompOp, CvrefOp, DelayUnit, EepromCall, EepromOp, Function, I2cCall, I2cOp, Module, Operand, Pin, Place, PwmCall, PwmOp, RegCall, RegOp,
+    SpiCall, SpiOp, Terminator, TimerCall, TimerId, TimerOp, TimerStart, Type, UartCall, UartOp, UnaryOp,
 };
 
 use crate::asm::{assemble_fragment, AsmError, FragItem};
@@ -1003,6 +1003,7 @@ impl<'a> Gen<'a> {
             I::Pwm { call, hi, dc } => self.pwm(call, hi.as_ref(), dc.as_ref()),
             I::Eeprom { call, dst, addr, val } => self.eeprom(call, *dst, addr.as_ref(), val.as_ref()),
             I::I2c { call, dst, arg } => self.i2c(call, *dst, arg.as_ref()),
+            I::Spi { call, dst, arg } => self.spi(call, *dst, arg.as_ref()),
             I::Uart { call, dst, arg } => self.uart(call, *dst, arg.as_ref()),
             I::RomGet { dst, rom, index } => self.rom_get(*dst, *rom, index),
             I::ArrGet { dst, arr, index } => self.arr_get(*dst, *arr, index),
@@ -2043,6 +2044,44 @@ impl<'a> Gen<'a> {
                     // ACKSTAT = 0: el esclavo respondio
                     self.asm.i(Btfsc(STATUS, BIT_Z));
                     self.asm.i(Incf(d, F));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // ---- SPI maestro (pypic.periph.spi, docs/sdk-spi.md) ----
+    fn spi(&mut self, call: &SpiCall, dst: Option<Place>, arg: Option<&Operand>) -> Result<(), CodegenError> {
+        match call.op {
+            SpiOp::Start(st) => {
+                let sspm = st.sspm.expect("el frontend resuelve el divisor");
+                // 13.3.2: apagar el modulo antes de reconfigurarlo
+                self.write_banked("SSPCON", 0)?;
+                self.write_banked("SSPSTAT", if st.cke() { 1u8 << self.bit_pos("CKE")? } else { 0 })?;
+                // SCK y SDO salidas, SDI entrada
+                self.bit_op("TRISC3", false)?;
+                self.bit_op("TRISC4", true)?;
+                self.bit_op("TRISC5", false)?;
+                let ckp = if st.ckp() { 1u8 << self.bit_pos("CKP")? } else { 0 };
+                self.write_banked("SSPCON", (1u8 << self.bit_pos("SSPEN")?) | ckp | sspm)?;
+            }
+            SpiOp::Transfer => {
+                let b = self.bytes(arg.expect("Transfer lleva un byte"))?[0];
+                let sspbuf = self.reg_bank0("SSPBUF")?;
+                self.ld(b);
+                self.asm.i(Movwf(sspbuf));
+                let (addr, bf) = self.bit_loc("BF")?;
+                self.banked(addr, |g, f| {
+                    let top = g.asm.label("spi.espera");
+                    g.asm.place(top);
+                    g.asm.i(Btfss(f, bf));
+                    g.asm.goto(top);
+                });
+                // se lee siempre: baja BF para el siguiente intercambio
+                self.asm.i(Movf(sspbuf, W));
+                if let Some(dst) = dst {
+                    let d = self.regs(dst)?[0];
+                    self.asm.i(Movwf(d));
                 }
             }
         }

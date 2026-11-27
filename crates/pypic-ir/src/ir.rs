@@ -6,8 +6,8 @@
 
 pub use pypic_frontend::ast::{BinOp, CmpOp};
 pub use pypic_frontend::{
-    AdcCall, AdcOp, BitsOp, CmpId, CmpRef, CompCall, CompOp, CvrefOp, DelayUnit, EepromCall, EepromOp, I2cCall, I2cOp, PwmCall, PwmId, PwmOp, PwmTiming, RegCall, RegOp, TimerCall, TimerId, TimerOp, TimerStart, Type,
-    UartCall, UartOp,
+    AdcCall, AdcOp, BitsOp, CmpId, CmpRef, CompCall, CompOp, CvrefOp, DelayUnit, EepromCall, EepromOp, I2cCall, I2cOp, PwmCall, PwmId, PwmOp, PwmTiming, RegCall, RegOp, SpiCall, SpiOp, TimerCall,
+    TimerId, TimerOp, TimerStart, Type, UartCall, UartOp,
 };
 
 pub type BlockId = usize;
@@ -156,6 +156,12 @@ pub enum Inst {
     /// esclavo respondio). Todas esperan a que el MSSP termine, asi que el bus queda en reposo al volver.
     I2c {
         call: I2cCall,
+        dst: Option<Place>,
+        arg: Option<Operand>,
+    },
+    /// Operacion del SPI maestro. `arg` es el byte de `Transfer` (u8) y `dst` recibe el byte que llego a la vez (u8). Espera a que termine.
+    Spi {
+        call: SpiCall,
         dst: Option<Place>,
         arg: Option<Operand>,
     },
