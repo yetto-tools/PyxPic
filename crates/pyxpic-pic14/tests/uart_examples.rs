@@ -96,11 +96,10 @@ fn eco_recovers_from_an_overrun_and_keeps_receiving() {
 }
 
 #[test]
-fn led_comandos_turns_rd0_on_and_off_and_ignores_the_rest() {
+fn led_comandos_turns_rd0_on_off_and_toggles_it() {
     let c = build("led_comandos");
     let mut s = sim(&c);
-    // A, un byte invalido, B, otro invalido
-    feed(&mut s, &[65, 90, 66, 0], 3_000);
+    feed(&mut s, b"AZB\0TT", 3_000);
     let step = FRAME + 3_000;
     run(&mut s, 2_000 + step / 2);
     assert_eq!(s.pin('D', 0), Some(true), "tras A");
@@ -110,6 +109,10 @@ fn led_comandos_turns_rd0_on_and_off_and_ignores_the_rest() {
     assert_eq!(s.pin('D', 0), Some(false), "tras B");
     run(&mut s, 2_000 + 3 * step + step / 2);
     assert_eq!(s.pin('D', 0), Some(false), "un byte invalido no cambia el LED");
+    run(&mut s, 2_000 + 4 * step + step / 2);
+    assert_eq!(s.pin('D', 0), Some(true), "la primera T enciende RD0");
+    run(&mut s, 2_000 + 5 * step + step / 2);
+    assert_eq!(s.pin('D', 0), Some(false), "la segunda T apaga RD0");
     assert!(sent(&s).is_empty(), "no contesta nada");
 }
 

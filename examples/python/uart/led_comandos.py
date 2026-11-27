@@ -27,3 +27,5 @@ def main() -> None:
                 RD0.on()
             elif comando == ord('B'):
                 RD0.off()
+            elif comando == ord('T'):
+                RD0.toggle()
