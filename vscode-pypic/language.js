@@ -51,6 +51,7 @@ const info = {
   duty: "`PWM1.duty(v)` escribe el ciclo de trabajo en cuentas de TOSC x prescaler (10 bits); el periodo completo tiene 4 x (PR2 + 1) cuentas.",
   EEPROM: "EEPROM de datos de 256 bytes. `EEPROM.read(a)` lee un byte; `EEPROM.write(a, v)` escribe y espera hasta 6 ms; `EEPROM.start_write(a, v)` no espera.",
   UART: "EUSART asíncrono: `UART.start(baud=9600)` configura transmisión y recepción.",
+  ord: "`ord('A')` es 65: el código ASCII de un carácter, resuelto al compilar (sin costo en el PIC). Úsalo para comparar bytes: `if c == ord('A'):`.",
   pause: "`pause(ms)` espera una cantidad de milisegundos; consulta el costo y los límites de `pypic.system.time`.",
   read: "Lectura del periférico. `ADC.read(AN0)` devuelve uint16; `UART.read()` recibe un byte y espera si es necesario.",
   start: "Configura e inicia el periférico. Los parámetros dependen de si se usa ADC, UART o PWM.",
@@ -106,7 +107,7 @@ function completions(prefix) {
   const match = /\b(ADC|UART|EEPROM|PWM[12])\.\w*$/.exec(prefix);
   if (match) return members[match[1]];
   if (/\.\w*$/.test(prefix)) return [];
-  return ["uint8", "uint16", "uint32", "int8", "int16", "int32", "Const", "CLOCK", "Internal", "Crystal", "ExternalClock", "MHz", "kHz", "Hz", "CLOCK_HZ"];
+  return ["uint8", "uint16", "uint32", "int8", "int16", "int32", "Const", "CLOCK", "Internal", "Crystal", "ExternalClock", "MHz", "kHz", "Hz", "CLOCK_HZ", "ord"];
 }
 
 function isPyPic(text) {

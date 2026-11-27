@@ -23,7 +23,7 @@ def main() -> None:
             UART.clear_overrun()
         if UART.rx_ready():
             comando: uint8 = UART.recv()
-            if comando == 65:
+            if comando == ord('A'):
                 RD0.on()
-            elif comando == 66:
+            elif comando == ord('B'):
                 RD0.off()

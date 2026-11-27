@@ -3681,7 +3681,7 @@ impl<'a> Checker<'a> {
             ExprKind::Name(n) => self.name(e, n),
             ExprKind::Index { obj, obj_span, index } => self.index_expr(e, obj, *obj_span, index),
             ExprKind::Str(_) | ExprKind::FStr(_) => {
-                self.d.error("PYP2164", e.span, "un texto entre comillas o una f-string solo se admite como argumento de UART.write_text");
+                self.d.error("PYP2164", e.span, "un texto entre comillas o una f-string solo se admite como argumento de UART.write_text (para el codigo de un caracter usa ord('A'))");
                 self.set(e, Type::Error, None)
             }
             ExprKind::List(items) => {
@@ -4112,6 +4112,23 @@ impl<'a> Checker<'a> {
         self.set(e, U16, None)
     }
 
+    /// `ord('A')` -> 65, como en Python (docs/sdk-texto.md): el codigo ASCII de un caracter escrito en el programa.
+    /// Es una constante: se resuelve al compilar y no genera codigo.
+    fn ord_call(&mut self, e: &Expr, args: &[Expr]) -> Type {
+        if let [Expr { kind: ExprKind::Str(raw), .. }] = args {
+            if let Ok([byte]) = uart::decode_text(raw).as_deref() {
+                let value = *byte as i128;
+                return self.set(e, Type::Literal, Some(value));
+            }
+        } else {
+            for a in args {
+                self.expr(a);
+            }
+        }
+        self.d.error("PYP2232", e.span, "ord() recibe un solo caracter ASCII entre comillas: ord('A') es 65 (se resuelve al compilar; un byte recibido ya es su codigo y se compara directo)");
+        self.set(e, Type::Error, None)
+    }
+
     fn call(&mut self, e: &Expr, func: &str, args: &[Expr]) -> Type {
         if func == "len" && !self.fidx.contains_key("len") {
             return match args {
@@ -4136,6 +4153,9 @@ impl<'a> Checker<'a> {
         }
         if (func == "parse_dec" || func == "parse_hex") && !self.fidx.contains_key(func) {
             return self.parse_call(e, func, args);
+        }
+        if func == "ord" && !self.fidx.contains_key("ord") {
+            return self.ord_call(e, args);
         }
         if self.bits_fns.contains(func) {
             return self.bits_call(e, func, args);

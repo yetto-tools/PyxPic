@@ -38,6 +38,25 @@ Se desarman en la IR en un bucle de aritmética de **16 bits** (emulada por soft
 
 **Memoria:** el código de una conversión ocupa **cientos de palabras** de flash y los temporales (índice, valor, cifra...) se **reutilizan en toda la función**. Un programa que lee una línea, convierte en las dos bases y responde con f-strings (`convertidor.py`) usa **1286 palabras y 53 de los 80 bytes** de RAM del banco 0. El arreglo de texto es RAM fija.
 
+## Carácter a número: `ord`
+
+**Estado: implementado.** `ord('A')` es **65**, como en Python: el código ASCII de un carácter escrito en el programa. Sirve para comparar o enviar bytes sin escribir el número.
+
+```python
+comando: uint8 = UART.recv()
+if comando == ord('A'):          # lo mismo que comando == 65
+    RD0.on()
+UART.write(ord('\n'))            # 10
+```
+
+* **Costo cero:** se resuelve al compilar; el HEX es el mismo que con el número (es `movlw 'A'` de ensamblador).
+* Admite **un solo carácter ASCII** entre comillas, o uno de los escapes `\n`, `\r`, `\t`, `\0`, `\\`, `\"` y `\'`. Otra cosa (una variable, dos caracteres, `ñ`) es el error `PYP2232`.
+* Se adapta al tipo entero con el que se usa, como cualquier literal. Está predeclarada; una función tuya llamada `ord` tiene prioridad.
+* `comando == 'A'` **no** se admite: en Python comparar un número con un texto da siempre `False`.
+* **No hay `chr()`:** en el PIC el byte recibido ya es el carácter; `UART.write(65)` envía la `A`. `chr()` devolvería un texto y no existe todavía el tipo `char` (#63).
+
+Pruebas: `crates/pypic-pic14/tests/text_ord.rs`.
+
 ## Lo que no hay (todavía)
 
 - **Con signo** (`int16`) y números con **punto decimal**.
