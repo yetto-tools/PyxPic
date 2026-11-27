@@ -4,10 +4,10 @@ Conexion: SCL = RC3 y SDA = RC4 con resistencias de 4,7 k a VDD; PCF8574 con A0,
 interruptores de P0..P7 a tierra; LED con resistencia en RD0..RD7. Un LED encendido es una entrada en alto (interruptor abierto).
 Si el PCF8574 no responde, PORTD conserva el ultimo valor.
 """
-from pypic.device import PIC16F887
-from pypic.periph.i2c import I2C
-from pypic.regs import PORTD, TRISD
-from pypic.system.time import pause
+from pyxpic.device import PIC16F887
+from pyxpic.periph.i2c import I2C
+from pyxpic.regs import PORTD, TRISD
+from pyxpic.system.time import pause
 
 CLOCK: Internal[4 * MHz]
 

@@ -1,7 +1,7 @@
 ; Eco: devuelve cada byte recibido sin modificar, a 9600 baudios 8N1 (RC6/TX, RC7/RX) - PIC16F887, 4 MHz.
 ; Equivale a examples/python/uart/eco.py y a examples/basic/uart/eco.bas. Se ensambla con:
 ;
-;   pypic asm eco.s -Wl,-presetVec=0h,-pintentry=4h -o eco.hex
+;   pyxpic asm eco.s -Wl,-presetVec=0h,-pintentry=4h -o eco.hex
 ;
 ; BRGH = 1 y SPBRG = 25: 4 MHz / (16 x 26) = 9615 baudios (0,16 % de error). TRISC<7:6> quedan como entradas: el EUSART toma los pines.
 ; Un desbordamiento del receptor (OERR) lo detiene hasta bajar CREN y subirlo otra vez; los bytes que llegaron mientras tanto se pierden.

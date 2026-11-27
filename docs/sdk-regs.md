@@ -1,12 +1,12 @@
-# SDK: registros y bits (`pypic.regs`)
+# SDK: registros y bits (`pyxpic.regs`)
 
 Todo registro de funciones especiales (SFR) del dispositivo se importa por nombre, validado contra `registers.json` del Device Pack, y se usa con
 métodos, igual que los pines y los timers. Es el equivalente de `MOVF`, `MOVWF`, `BSF`, `BCF` y `XORWF` del ensamblador, con el banco gestionado
 por el compilador pero **visible** en el costo (`--listing`, `--timing`).
 
 ```python
-from pypic.device import PIC16F887
-from pypic.regs import OPTION_REG, WPUB, STATUS
+from pyxpic.device import PIC16F887
+from pyxpic.regs import OPTION_REG, WPUB, STATUS
 
 OPTION_REG.RBPU.clear()        # BCF OPTION_REG,RBPU
 WPUB.write(0b0000_0011)        # MOVLW / MOVWF WPUB
@@ -57,7 +57,7 @@ Encender un periférico puede quitarle un pin al GPIO: con `RCSTA.SPEN` en 1, RC
 
 | Código | Regla |
 |---|---|
-| `PYP2150` | Un pin que un periférico encendido toma también se importa como E/S (`from pypic.periph.gpio import RC6`): el mensaje nombra el pin, la función y el periférico |
+| `PYP2150` | Un pin que un periférico encendido toma también se importa como E/S (`from pyxpic.periph.gpio import RC6`): el mensaje nombra el pin, la función y el periférico |
 | `PYP3010` (aviso) | Dos periféricos distintos reclaman el mismo pin (`T0CKI` de Timer0 y `C1OUT` del comparador en RA4) |
 | `PYP2125` | Lo mismo que `PYP2150` para el reloj externo de un timer iniciado con `TMRx.start(...)` |
 
@@ -66,6 +66,6 @@ analógico usado como digital: el compilador ya lo pasa a digital (borra su bit 
 
 ## Verificación
 
-`crates/pypic-pic14/tests/regs.rs`: prueba diferencial entre el intérprete de la IR (que modela los registros como memoria plana) y el simulador del
+`crates/pyxpic-pic14/tests/regs.rs`: prueba diferencial entre el intérprete de la IR (que modela los registros como memoria plana) y el simulador del
 núcleo sobre registros de los cuatro bancos, composición con expresiones y bucles, vuelta al banco 0 y todos los rechazos de arriba.
 Ejemplo: `examples/python/registros/registers.py`.

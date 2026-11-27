@@ -9,8 +9,8 @@ Politica ante lo inesperado:
   * Desbordamiento (OERR): el chip deja de recibir hasta borrarlo, asi que se borra con clear_overrun() para no quedarse mudo;
     los bytes que llegaron mientras tanto se pierden.
 """
-from pypic.device import PIC16F887
-from pypic.periph.uart import UART
+from pyxpic.device import PIC16F887
+from pyxpic.periph.uart import UART
 
 CLOCK: Internal[4 * MHz]
 

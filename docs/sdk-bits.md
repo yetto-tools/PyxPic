@@ -1,10 +1,10 @@
-# SDK: bits y acarreo (`pypic.bits`)
+# SDK: bits y acarreo (`pyxpic.bits`)
 
 Intrínsecos que mapean **1:1 a una instrucción** del PIC16 (principio del proyecto: ensamblador de alto nivel, `docs/principios-de-diseno.md`), con el costo
 en ciclos a la vista en `--listing`. Sirven para portar rutinas de ensamblador: desplazamientos multibyte, CRC, rotaciones, banderas de bit.
 
 ```python
-from pypic.bits import swap, rol_c, ror_c, clear_carry, set_carry, carry, bit_set, bit_clear, bit_test
+from pyxpic.bits import swap, rol_c, ror_c, clear_carry, set_carry, carry, bit_set, bit_clear, bit_test
 
 clear_carry()        # BCF STATUS,C
 lo = rol_c(lo)       # RLF lo,F       (el bit 7 pasa a C y C entra por el bit 0)
@@ -33,7 +33,7 @@ El compilador no promete qué deja en `C` una suma o una comparación, así que 
 
 | Error | Qué dice |
 |---|---|
-| `PYP2140` | `pypic.bits` no exporta ese nombre |
+| `PYP2140` | `pyxpic.bits` no exporta ese nombre |
 | `PYP2141` | Aridad o tipo (`rol_c` rota un `uint8`; `bit_*` hasta 16 bits) |
 | `PYP2142` | El acarreo no está definido aquí / no es la expresión completa |
 | `PYP2143` | El argumento debe ser una variable (no una expresión ni una constante `Const`) |
@@ -43,10 +43,10 @@ El compilador no promete qué deja en `C` una suma o una comparación, así que 
 
 `zero()` y `digit_carry()` (las banderas Z y DC) **no se ofrecen**: tras una suma o una comparación generadas por el compilador, qué instrucción fue la última
 y si dejó Z o DC no es parte del contrato del lenguaje, y exponerlo sería prometer algo que cambia con cada optimización. Para banderas del núcleo en
-código de usuario existe `pypic.regs` (`STATUS.Z.value()`, sin garantía de contexto) y, con garantía total, `@asm_function`. Queda abierto en #59.
+código de usuario existe `pyxpic.regs` (`STATUS.Z.value()`, sin garantía de contexto) y, con garantía total, `@asm_function`. Queda abierto en #59.
 
 ## Verificación
 
-`crates/pypic-pic14/tests/bits.rs`: prueba diferencial entre el intérprete de la IR (que modela C exactamente) y el simulador del núcleo — desplazamiento de
+`crates/pyxpic-pic14/tests/bits.rs`: prueba diferencial entre el intérprete de la IR (que modela C exactamente) y el simulador del núcleo — desplazamiento de
 16 bits encadenado, rotación a la derecha con `C` puesto, `swap`, bits en `uint8`/`uint16`/locales, un bucle que multiplica por 2^12 — más todos los rechazos de arriba.
 Ejemplo: `examples/python/registros/shift16.py`.

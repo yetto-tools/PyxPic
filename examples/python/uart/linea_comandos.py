@@ -12,9 +12,9 @@ Politica ante lo inesperado:
     quedaria esperando. Con una terminal humana a 9600 baudios no llega a pasar; para trafico denso, ver errores.py.
 Hardware: NO probado, solo en simulador (uart_examples.rs).
 """
-from pypic.device import PIC16F887
-from pypic.periph.gpio import RD0
-from pypic.periph.uart import UART
+from pyxpic.device import PIC16F887
+from pyxpic.periph.gpio import RD0
+from pyxpic.periph.uart import UART
 
 CLOCK: Internal[4 * MHz]
 

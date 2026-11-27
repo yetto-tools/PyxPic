@@ -1,9 +1,9 @@
-# Diagnósticos en JSON: `pypic check --format json`
+# Diagnósticos en JSON: `pyxpic check --format json`
 
 **Estado: implementado (#10).** Los diagnósticos del compilador en un formato **estable y versionado**, para el LSP, la extensión de VS Code y otras herramientas. La salida de texto de siempre no cambia.
 
 ```
-pypic check programa.py --format json [--devices-dir DIR] [--device DIR] [--project pypic.toml] [--target perfil]
+pyxpic check programa.py --format json [--devices-dir DIR] [--device DIR] [--project pyxpic.toml] [--target perfil]
 ```
 
 Solo vale con `check` (`build` e `ir` imprimen texto y rechazan `--format json` con código de salida 2). La salida estándar es **un solo documento JSON** y nada más (sin la línea `programa.py: ok`); `stderr` queda vacío. Código de salida: **0** si no hay errores (los avisos no impiden compilar) y **1** si hay algún error. Si ni siquiera se puede leer el archivo, el error sale como texto en `stderr` con código 2 (no hay análisis que informar).
@@ -50,7 +50,7 @@ Con errores de sintaxis también salen los errores de tipos de lo que el parser 
 
 ## Cómo se garantiza que no cambia
 
-`crates/pypic-cli/tests/snapshots/check_errors.json` y `check_warnings.json` son **instantáneas** del formato: `crates/pypic-cli/tests/cli.rs` compara la salida real con ellas **byte a byte**. Cambiar el formato a propósito exige actualizar la instantánea, y si rompe a quien lo lee, subir `version`. Otras pruebas comprueban un solo documento y nada en `stderr`, las posiciones (de 1 en adelante, el fin no está antes del inicio, el rango del `300`), un programa limpio (`ok: true` y lista vacía) y que `build` e `ir` rechazan `--format json`.
+`crates/pyxpic-cli/tests/snapshots/check_errors.json` y `check_warnings.json` son **instantáneas** del formato: `crates/pyxpic-cli/tests/cli.rs` compara la salida real con ellas **byte a byte**. Cambiar el formato a propósito exige actualizar la instantánea, y si rompe a quien lo lee, subir `version`. Otras pruebas comprueban un solo documento y nada en `stderr`, las posiciones (de 1 en adelante, el fin no está antes del inicio, el rango del `300`), un programa limpio (`ok: true` y lista vacía) y que `build` e `ir` rechazan `--format json`.
 
 ## Lo que no hace todavía
 

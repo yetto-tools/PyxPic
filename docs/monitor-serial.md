@@ -1,11 +1,11 @@
-# Terminal serial: `pypic monitor` (#72)
+# Terminal serial: `pyxpic monitor` (#72)
 
 Lee un puerto serie (o la salida por UART de un programa en el simulador) y la muestra; lo que se escribe en la entrada estándar se envía al puerto. Todo es local: no se envía nada fuera del equipo.
 
 ```
-pypic monitor --list [--format json]                  puertos disponibles
-pypic monitor --port COM3 --baud 9600 [opciones]      terminal serial
-pypic monitor --sim programa.py|.bas [--seconds N]    la UART del programa en el simulador (sin hardware)
+pyxpic monitor --list [--format json]                  puertos disponibles
+pyxpic monitor --port COM3 --baud 9600 [opciones]      terminal serial
+pyxpic monitor --sim programa.py|.bas [--seconds N]    la UART del programa en el simulador (sin hardware)
 ```
 
 Opciones: `--data-bits 5..8`, `--parity none|even|odd`, `--stop-bits 1|2`, `--flow none|rts|xon`, `--encoding ascii|utf8|hex`, `--timestamps` (`[MM:SS.mmm]` desde que empezó la sesión), `--log archivo`, `--filter REGEX`, `--format text|jsonl`, `--eol none|cr|lf|crlf`, `--send-encoding ascii|hex`, `--send-file archivo`, `--reconnect`. Con `--sim` también valen `--devices-dir`, `--project`, `--target`, `--device`, `--config` y `--no-opt`, como en `build`.
@@ -14,7 +14,7 @@ Opciones: `--data-bits 5..8`, `--parity none|even|odd`, `--stop-bits 1|2`, `--fl
 
 | Situación | Salida |
 |---|---|
-| Puerto inexistente | mensaje con el nombre y la pista `pypic monitor --list`, código 2 |
+| Puerto inexistente | mensaje con el nombre y la pista `pyxpic monitor --list`, código 2 |
 | Puerto ocupado o sin permiso | mensaje que lo dice, código 2 |
 | Configuración no admitida | mensaje que sugiere otra velocidad u otros bits, código 2 |
 | Desconexión a mitad de sesión | evento `closed`, código 3 (con `--reconnect` reintenta cada segundo) |

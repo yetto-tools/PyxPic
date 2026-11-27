@@ -8,9 +8,9 @@ Politica ante lo inesperado:
   * Desbordamiento (OERR): se borra con clear_overrun(); el eco de un byte bloquea hasta ~1 ms (write espera TXIF), asi que
     una rafaga mas rapida que el eco puede perder bytes.
 """
-from pypic.device import PIC16F887
-from pypic.periph.gpio import RD0
-from pypic.periph.uart import UART
+from pyxpic.device import PIC16F887
+from pyxpic.periph.gpio import RD0
+from pyxpic.periph.uart import UART
 
 CLOCK: Internal[4 * MHz]
 

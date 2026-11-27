@@ -17,8 +17,8 @@ Politica ante lo inesperado:
   * Desbordamiento del receptor (OERR): read_line lo borra y reinicia la linea; esa linea puede contestar "ERR" o un valor distinto.
 Hardware: NO probado, solo en simulador (uart_examples.rs).
 """
-from pypic.device import PIC16F887
-from pypic.periph.uart import UART
+from pyxpic.device import PIC16F887
+from pyxpic.periph.uart import UART
 
 CLOCK: Internal[4 * MHz]
 

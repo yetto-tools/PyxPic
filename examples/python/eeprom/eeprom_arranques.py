@@ -1,8 +1,8 @@
 """Cuenta los arranques en la EEPROM (direccion 0) y parpadea RD0 tantas veces como arranques lleva: el contador sobrevive al apagado."""
-from pypic.device import PIC16F887
-from pypic.periph.eeprom import EEPROM
-from pypic.periph.gpio import RD0
-from pypic.system.time import pause
+from pyxpic.device import PIC16F887
+from pyxpic.periph.eeprom import EEPROM
+from pyxpic.periph.gpio import RD0
+from pyxpic.system.time import pause
 
 CLOCK: Internal[4 * MHz]
 

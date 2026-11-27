@@ -1,0 +1,8 @@
+[package]
+name = "pyxpic-frontend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PyxPic compiler frontend: lexer, parser, subset validation and type checking (host-side only)"
+
+[dependencies]

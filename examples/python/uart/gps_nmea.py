@@ -13,9 +13,9 @@ Politica ante lo inesperado:
   * Desbordamiento (OERR): se borra con clear_overrun() y la trama en curso fallara el checksum.
   * RD0 se enciende con cada trama GGA valida y se apaga con cada trama invalida.
 """
-from pypic.device import PIC16F887
-from pypic.periph.gpio import RD0
-from pypic.periph.uart import UART
+from pyxpic.device import PIC16F887
+from pyxpic.periph.gpio import RD0
+from pyxpic.periph.uart import UART
 
 CLOCK: Internal[4 * MHz]
 

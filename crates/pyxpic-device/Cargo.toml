@@ -1,0 +1,11 @@
+[package]
+name = "pyxpic-device"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PyxPic Device Packs: versioned JSON schema, loader, validator and TargetProfile bridge"
+
+[dependencies]
+pyxpic-frontend = { path = "../pyxpic-frontend" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

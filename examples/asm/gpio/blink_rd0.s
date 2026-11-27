@@ -2,7 +2,7 @@
 ; Es el mismo programa que examples/hex/blink_rd0.hex (verificado en Proteus), escrito con la sintaxis
 ; de MPLAB XC8 PIC Assembler (pic-as). Se ensambla con:
 ;
-;   pypic asm blink_rd0.s -Wl,-presetVec=0h,-pintentry=4h -o blink_rd0.hex
+;   pyxpic asm blink_rd0.s -Wl,-presetVec=0h,-pintentry=4h -o blink_rd0.hex
 ;
 ; (-mcpu=16F887 se toma de la directiva PROCESSOR; -p fija donde va cada psect, igual que en pic-as.)
 

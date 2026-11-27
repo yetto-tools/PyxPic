@@ -1,10 +1,10 @@
 # Blink de muestra para Proteus (`examples/hex/blink_rd0.hex`)
 
-**Estado:** verificado a nivel de ciclo en el simulador del host (`pypic-pic14`). En **Proteus** el usuario confirmó el
+**Estado:** verificado a nivel de ciclo en el simulador del host (`pyxpic-pic14`). En **Proteus** el usuario confirmó el
 2026-11-23 que **el LED se enciende y se apaga** con el montaje descrito abajo (captura con RD0 en alto y LED encendido).
 **El período (~1,18 s) no se midió con números en Proteus**; para hacerlo basta un *Counter Timer* con `CE` y `RST` en RD0
 (debe marcar ~0,592 s). Issue #30.
-Es un programa hecho a mano con el codificador de PyPIC (`crates/pypic-pic14/src/samples.rs`), no salida del compilador.
+Es un programa hecho a mano con el codificador de PyxPic (`crates/pyxpic-pic14/src/samples.rs`), no salida del compilador.
 
 ## Montaje en Proteus
 
@@ -46,5 +46,5 @@ CONFIG2 = `3FFFh` (sin protección de escritura, BOR a 4,0 V).
 
 ## Si algo no funciona
 
-`cargo run -p pypic-cli -- disasm examples/hex/blink_rd0.hex` muestra exactamente qué contiene el archivo.
+`cargo run -p pyxpic-cli -- disasm examples/hex/blink_rd0.hex` muestra exactamente qué contiene el archivo.
 Cuéntame qué hace el LED y qué ves en las propiedades del PIC (o una captura) y lo reviso.

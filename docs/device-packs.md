@@ -1,4 +1,4 @@
-# Device Packs (`pypic-device`)
+# Device Packs (`pyxpic-device`)
 
 **Estado: implementado.** Un Device Pack describe un MCU con datos verificados contra su
 datasheet oficial. Todo corre en el host; el MCU solo ejecuta el firmware nativo resultante.
@@ -21,12 +21,12 @@ Pendiente (issues abiertos): más encapsulados (#24) y PIC12F625 (#25).
 - En `config.json` v2, `id_locations` describe nombre, dirección y máscara de bits útiles, separados de los campos de configuración. En el PIC16F887 son `IDLOC0`–`IDLOC3`, direcciones `2000h`–`2003h` y máscara `7Fh` (datasheet, sección 14.8).
 - Direcciones y valores numéricos pueden ser enteros o cadenas `"0x1FFF"`.
 - Cada dato lleva su fuente (`source`/`sources`) con página del datasheet.
-- `cpu.data_bits` es el ancho nativo del MCU (8/16/32) y `pypic.max_int_bits` el ancho máximo de entero que PyPIC admite
+- `cpu.data_bits` es el ancho nativo del MCU (8/16/32) y `pyxpic.max_int_bits` el ancho máximo de entero que PyxPic admite
   (nativo o emulado). De ahí sale el `TargetProfile` del frontend: `native_bits = cpu.data_bits`,
-  `max_int_bits = pypic.max_int_bits`. Los tipos más anchos que el nativo compilan con aviso de coste (`PYP3001`).
-- `pypic.support_level`: `experimental`, `compila`, `simula`, `probado en hardware`, `depuracion fisica`.
+  `max_int_bits = pyxpic.max_int_bits`. Los tipos más anchos que el nativo compilan con aviso de coste (`PYP3001`).
+- `pyxpic.support_level`: `experimental`, `compila`, `simula`, `probado en hardware`, `depuracion fisica`.
 
-## Validación (`DevicePack::validate`, `pypic device validate <dir>`)
+## Validación (`DevicePack::validate`, `pyxpic device validate <dir>`)
 
 Comprueba la coherencia interna, no solo el formato:
 
@@ -49,8 +49,8 @@ Comprueba la coherencia interna, no solo el formato:
 ## Uso
 
 ```
-cargo run -p pypic-cli -- device validate devices/pic16f887
-cargo run -p pypic-cli -- check examples/python/gpio/counter.py --device devices/pic16f887
+cargo run -p pyxpic-cli -- device validate devices/pic16f887
+cargo run -p pyxpic-cli -- check examples/python/gpio/counter.py --device devices/pic16f887
 ```
 
 `--native-bits` y `--max-int-bits` sobrescriben los valores del pack.
@@ -96,15 +96,15 @@ y de que el SDK de periféricos ([sdk-modulos.md](sdk-modulos.md)) sepa qué pin
 
 ## Configuración por nombre (`config.json`)
 
-Cada palabra tiene `default` (el valor de la memoria sin programar, `0x3FFF`) y, opcionalmente, **`build_default`**: lo que `pypic build` programa si no se pide otra cosa
+Cada palabra tiene `default` (el valor de la memoria sin programar, `0x3FFF`) y, opcionalmente, **`build_default`**: lo que `pyxpic build` programa si no se pide otra cosa
 (en el PIC16F887, `CONFIG1 = 0x20D4`: oscilador interno INTOSCIO, WDT apagado, MCLR interno). Cada campo puede traer **`names`**: el nombre del valor en pic-as y en el DFP
 (`"ON"`, `"OFF"`, `"INTRC_NOCLKOUT"`...) → valor numérico; el pack comprueba que cada nombre apunte a un valor que exista y que no se repita.
 
 ```
-pypic build blink.py --config WDTE=ON,FOSC=XT --config BOR4V=BOR21V     # por nombre, repetible
-pypic build blink.py --config CONFIG1=0x20D4                            # o la palabra entera
+pyxpic build blink.py --config WDTE=ON,FOSC=XT --config BOR4V=BOR21V     # por nombre, repetible
+pyxpic build blink.py --config CONFIG1=0x20D4                            # o la palabra entera
 ```
 
 Se parte de `build_default` y se aplica cada ajuste encima; un ajuste o valor que el pack no tiene es un error que lista las opciones (`ON (WDT habilitado), OFF (...)`),
-y repetir un ajuste también. El mismo `config.json` da los nombres de `CONFIG` en `pypic asm` ([asm-pic14.md](asm-pic14.md)). Los límites de memoria
-(`memory.json`) ya se toman del pack. El archivo de proyecto `pypic.toml` para fijar estos ajustes sin la línea de órdenes es #37.
+y repetir un ajuste también. El mismo `config.json` da los nombres de `CONFIG` en `pyxpic asm` ([asm-pic14.md](asm-pic14.md)). Los límites de memoria
+(`memory.json`) ya se toman del pack. El archivo de proyecto `pyxpic.toml` para fijar estos ajustes sin la línea de órdenes es #37.

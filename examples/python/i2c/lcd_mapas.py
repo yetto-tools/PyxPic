@@ -6,9 +6,9 @@
 Se repite cada 3 segundos. El texto que aparezca dice cual disposicion tiene tu mochila (o tu modelo de Proteus): cambia las constantes de lcd_i2c.py a esa.
 Conexion: como lcd_i2c.py (RC3/SCL y RC4/SDA con pull-ups, direccion 0x27 = 0x4E). Entrada: ninguna.
 """
-from pypic.device import PIC16F887
-from pypic.regs import SSPADD, SSPBUF, SSPCON, SSPCON2, SSPSTAT, TRISC
-from pypic.system.time import delay_us, pause
+from pyxpic.device import PIC16F887
+from pyxpic.regs import SSPADD, SSPBUF, SSPCON, SSPCON2, SSPSTAT, TRISC
+from pyxpic.system.time import delay_us, pause
 
 CLOCK: Internal[4 * MHz]
 

@@ -4,9 +4,9 @@ El arreglo muestras guarda los 8 bits altos de cada lectura (0..255). Es RAM fij
 El indice pos se acota con & 7, asi nunca sale del arreglo (un indice fuera de rango se satura a la ultima posicion, ver
 docs/sdk-arreglos.md). Las primeras 8 vueltas la media incluye muestras en cero del arranque.
 """
-from pypic.device import PIC16F887
-from pypic.periph.adc import ADC, AN0
-from pypic.periph.gpio import RD0
+from pyxpic.device import PIC16F887
+from pyxpic.periph.adc import ADC, AN0
+from pyxpic.periph.gpio import RD0
 
 CLOCK: Internal[4 * MHz]
 

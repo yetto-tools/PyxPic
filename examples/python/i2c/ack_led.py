@@ -7,10 +7,10 @@ Que se ve:
   * despues, LED apagado y quieto: el bus no avanza (SDA o SCL a masa, sin pull-ups o unidos entre si).
 Conexion: RC3/SCL y RC4/SDA con pull-ups de 4,7 kohm a VDD; LED con resistencia en RD0. Entrada: ninguna.
 """
-from pypic.device import PIC16F887
-from pypic.periph.gpio import RD0
-from pypic.regs import SSPADD, SSPBUF, SSPCON, SSPCON2, SSPSTAT, TRISC
-from pypic.system.time import pause
+from pyxpic.device import PIC16F887
+from pyxpic.periph.gpio import RD0
+from pyxpic.regs import SSPADD, SSPBUF, SSPCON, SSPCON2, SSPSTAT, TRISC
+from pyxpic.system.time import pause
 
 CLOCK: Internal[4 * MHz]
 

@@ -1,7 +1,7 @@
 """Parpadeo de RD0 cada 500 ms con Timer2 en lugar de una espera bloqueante: 25 avisos de 20 ms."""
-from pypic.device import PIC16F887
-from pypic.periph.gpio import RD0
-from pypic.periph.timer import TMR2
+from pyxpic.device import PIC16F887
+from pyxpic.periph.gpio import RD0
+from pyxpic.periph.timer import TMR2
 
 CLOCK: Internal[4 * MHz]
 

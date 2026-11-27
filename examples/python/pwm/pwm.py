@@ -1,7 +1,7 @@
 """Regula el brillo de un LED en RC2 (PWM1) con un potenciometro en AN0: el ADC da 0..1023 y el PWM toma 0..1023."""
-from pypic.device import PIC16F887
-from pypic.periph.adc import ADC, AN0
-from pypic.periph.pwm import PWM1
+from pyxpic.device import PIC16F887
+from pyxpic.periph.adc import ADC, AN0
+from pyxpic.periph.pwm import PWM1
 
 CLOCK: Internal[4 * MHz]
 

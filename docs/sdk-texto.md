@@ -55,7 +55,7 @@ UART.write(ord('\n'))            # 10
 * `comando == 'A'` **no** se admite: en Python comparar un número con un texto da siempre `False`.
 * **No hay `chr()`:** en el PIC el byte recibido ya es el carácter; `UART.write(65)` envía la `A`. `chr()` devolvería un texto y no existe todavía el tipo `char` (#63).
 
-Pruebas: `crates/pypic-pic14/tests/text_ord.rs`.
+Pruebas: `crates/pyxpic-pic14/tests/text_ord.rs`.
 
 ## Lo que no hay (todavía)
 
@@ -67,4 +67,4 @@ Pruebas: `crates/pypic-pic14/tests/text_ord.rs`.
 
 ## Verificación
 
-`crates/pypic-pic14/tests/text_parse.rs`: la conversión del **PIC**, la del **intérprete** de la IR y una **referencia independiente en Rust** (`pypic_frontend::text::parse`) coinciden en más de 60 textos: bordes de 16 bits (`65535`, `65536`, `6553`, `65539`, `0xFFFF`, `10000`), ceros a la izquierda, mayúsculas y minúsculas, con y sin prefijo, y texto inválido (vacío, `12a`, `-5`, `NUL`, `0x`, `G`, espacios). Además: los valores de ida y vuelta (cada borde pasa a texto y vuelve igual), el indicador que se reescribe siempre, `n` mayor que la capacidad, una variable local como indicador, la llamada como sentencia y los diagnósticos. `crates/pypic-pic14/tests/uart_examples.rs` prueba el convertidor completo por el puerto serie simulado. **No probado en hardware.**
+`crates/pyxpic-pic14/tests/text_parse.rs`: la conversión del **PIC**, la del **intérprete** de la IR y una **referencia independiente en Rust** (`pyxpic_frontend::text::parse`) coinciden en más de 60 textos: bordes de 16 bits (`65535`, `65536`, `6553`, `65539`, `0xFFFF`, `10000`), ceros a la izquierda, mayúsculas y minúsculas, con y sin prefijo, y texto inválido (vacío, `12a`, `-5`, `NUL`, `0x`, `G`, espacios). Además: los valores de ida y vuelta (cada borde pasa a texto y vuelve igual), el indicador que se reescribe siempre, `n` mayor que la capacidad, una variable local como indicador, la llamada como sentencia y los diagnósticos. `crates/pyxpic-pic14/tests/uart_examples.rs` prueba el convertidor completo por el puerto serie simulado. **No probado en hardware.**

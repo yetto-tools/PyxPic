@@ -3,10 +3,10 @@
 Conexion: un cable de RC5 (SDO) a RC4 (SDI); un LED con resistencia en RD0. Sin el cable el LED queda apagado.
 Pines del MSSP: SCK = RC3, SDI = RC4, SDO = RC5.
 """
-from pypic.device import PIC16F887
-from pypic.periph.gpio import RD0
-from pypic.periph.spi import SPI
-from pypic.system.time import pause
+from pyxpic.device import PIC16F887
+from pyxpic.periph.gpio import RD0
+from pyxpic.periph.spi import SPI
+from pyxpic.system.time import pause
 
 CLOCK: Internal[4 * MHz]
 

@@ -1,10 +1,10 @@
-# SDK: convertidor analógico-digital (`pypic.periph.adc`)
+# SDK: convertidor analógico-digital (`pyxpic.periph.adc`)
 
 **Estado: implementado (primer módulo de #45).** Convertidor de 10 bits con 14 canales del PIC16F887 (DS40001291H, cap. 9 y tabla 17-11). Todo se resuelve al compilar; el costo en ciclos está a la vista.
 
 ```python
-from pypic.device import PIC16F887
-from pypic.periph.adc import ADC, AN0, AN5
+from pyxpic.device import PIC16F887
+from pyxpic.periph.adc import ADC, AN0, AN5
 
 CLOCK: Internal[4 * MHz]
 
@@ -12,11 +12,11 @@ ADC.start()                      # ADCON1/ADCON0: resultado a la derecha, refere
 v: uint16 = ADC.read(AN0)           # 0..1023
 ```
 
-## Las condiciones eléctricas que PyPIC asume
+## Las condiciones eléctricas que PyxPic asume
 
 El compilador **no conoce tu circuito**, así que el tiempo de adquisición y la ventana de `TAD` no son verdades universales sino **suposiciones declaradas**, con valores del datasheet (tabla 17-11, p.258) y una forma de cambiarlas:
 
-| Parámetro | Qué dice el datasheet | Qué hace PyPIC |
+| Parámetro | Qué dice el datasheet | Qué hace PyxPic |
 |---|---|---|
 | **Adquisición** `TACQ` (AD132) | No da mínimo ni máximo: solo el **valor típico de 11,5 µs** (5 V, 25 °C). Depende de la impedancia de la fuente (se recomienda ≤ 10 kΩ), la tensión y la temperatura; la ecuación 9-1 da 4,67 µs para 10 kΩ, 50 °C y 5 V, y usa `TAMP`, cuyo **máximo es 5 µs** (AD133) | Por defecto **11,5 µs**, redondeados hacia arriba a ciclos. `ADC.start(acquisition_us=N)` lo fija (1–1000). Menos de 5 µs es el aviso `PYP3013` |
 | **`TAD`** reloj de FOSC (AD130) | **Mínimo 1,6 µs** con VREF ≥ 3,0 V y **3,0 µs** con VREF de rango completo; **máximo 9,0 µs** | Supone **VDD > 3,0 V y VREF = VDD**. `ADC.start(low_voltage=True)` supone VDD < 3,0 V (mínimo 3,0 µs) |
@@ -50,7 +50,7 @@ Con `low_voltage=True`: 4 MHz → `FOSC/32` (8 µs) y 1 MHz → `FOSC/8` (8 µs)
 
 | Código | Regla |
 |---|---|
-| `PYP2170` | `pypic.periph.adc` no exporta ese nombre (lista los canales), o el dispositivo no tiene ADC / ese canal |
+| `PYP2170` | `pyxpic.periph.adc` no exporta ese nombre (lista los canales), o el dispositivo no tiene ADC / ese canal |
 | `PYP2171` | Se usa el ADC pero no hay un `ADC.start()` que `main` o `@init_device` puedan ejecutar (una llamada en una función que nadie llama no cuenta) |
 | `PYP2172` | Argumentos de `start` inválidos (admite `clock`, `acquisition_us`, `low_voltage`) |
 | `PYP2173` | Método que no existe |
@@ -68,5 +68,5 @@ Con `low_voltage=True`: 4 MHz → `FOSC/32` (8 µs) y 1 MHz → `FOSC/8` (8 µs)
 
 El simulador del núcleo modela el ADC: `GO/DONE`, la conversión de 11 `TAD`, `ADRESH:ADRESL` según `ADFM` y `ADIF`, y **vigila el contrato**: una violación si se pone `GO` con un `TAD` fuera de AD130 (con la alimentación que se le declare, `adc_low_voltage`), con menos adquisición que la declarada (`adc_tacq_ns`, por defecto 11,5 µs) desde el último cambio de canal, o con el ADC apagado.
 **Que el simulador no se queje no demuestra que el circuito real cumpla**: el simulador usa las mismas suposiciones que el compilador, de modo que una adquisición insuficiente para *tu* fuente (alta impedancia, temperatura) no se ve en él: se calcula con la ecuación 9-1 y se declara con `acquisition_us`.
-`crates/pypic-pic14/tests/adc.rs`: lecturas contra el intérprete de referencia, reloj automático desde 32 kHz hasta 20 MHz con VDD alta y baja, adquisición configurable, `TAD` entre 6 y 9 µs sin aviso y por encima de 9 µs con él, `start()` inalcanzable, orden de lectura/inicio, conflictos de pines, reglas del lenguaje, la tabla de pines contra el Device Pack y los costos de arriba. Ejemplo: `examples/python/adc/adc.py`.
+`crates/pyxpic-pic14/tests/adc.rs`: lecturas contra el intérprete de referencia, reloj automático desde 32 kHz hasta 20 MHz con VDD alta y baja, adquisición configurable, `TAD` entre 6 y 9 µs sin aviso y por encima de 9 µs con él, `start()` inalcanzable, orden de lectura/inicio, conflictos de pines, reglas del lenguaje, la tabla de pines contra el Device Pack y los costos de arriba. Ejemplo: `examples/python/adc/adc.py`.
 **No se ha probado con un convertidor real.**

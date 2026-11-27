@@ -1,0 +1,20 @@
+[package]
+name = "pyxpic-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "pyxpic"
+path = "src/main.rs"
+
+[dependencies]
+pyxpic-frontend = { path = "../pyxpic-frontend" }
+pyxpic-ir = { path = "../pyxpic-ir" }
+pyxpic-device = { path = "../pyxpic-device" }
+pyxpic-pic14 = { path = "../pyxpic-pic14" }
+toml = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
+toml_edit = "0.25"
+serialport = { version = "4.10", default-features = false }
+regex = "1"

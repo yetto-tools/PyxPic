@@ -99,10 +99,10 @@ Multiplicación, división, módulo y desplazamientos por variable son rutinas n
 | Sin recursión (`PYP2013`) | ✅ frontend |
 | Ninguna función compartida entre `main` e ISR (`PYP2060`) | ✅ frontend |
 | Profundidad de pila de retorno (`PYP2061`) | ✅ frontend (solo llamadas del usuario) |
-| Codificación/decodificación de las 35 instrucciones (`crates/pypic-pic14`) | ✅ verificada contra la tabla 15-2 (p.227), exhaustiva sobre las 16 384 palabras |
-| Escritor/lector de Intel HEX (palabra → 2 bytes little-endian, dirección de bytes = 2 × dirección de palabra; config en `400Eh`/`4010h`) | ✅ vectores calculados a mano + ida y vuelta (`crates/pypic-pic14`); **pendiente de verificar en Proteus** |
+| Codificación/decodificación de las 35 instrucciones (`crates/pyxpic-pic14`) | ✅ verificada contra la tabla 15-2 (p.227), exhaustiva sobre las 16 384 palabras |
+| Escritor/lector de Intel HEX (palabra → 2 bytes little-endian, dirección de bytes = 2 × dirección de palabra; config en `400Eh`/`4010h`) | ✅ vectores calculados a mano + ida y vuelta (`crates/pyxpic-pic14`); **pendiente de verificar en Proteus** |
 | Convención de llamada, invariante de banco 0 (todo el dato en banco 0), temporales por contexto, prólogo/epílogo de ISR, arranque | ✅ `codegen` (ver `docs/backend-pic14.md`); verificado con pruebas diferenciales IR ↔ simulador PIC14 e interrupciones inyectadas |
 | Rutinas de runtime (`*`, `//`, `%`, desplazamientos variables), una copia por contexto | ✅ `docs/sdk-runtime.md` |
-| Programas de más de 2048 palabras (PCLATH, una función por página, prólogo en el vector) | ✅ `crates/pypic-pic14/tests/pages.rs` |
+| Programas de más de 2048 palabras (PCLATH, una función por página, prólogo en el vector) | ✅ `crates/pyxpic-pic14/tests/pages.rs` |
 | Overlay de locales y otros bancos de datos | ⏳ backend (#26) |
 | Re-comprobación de pila con rutinas de runtime | ⏳ backend |

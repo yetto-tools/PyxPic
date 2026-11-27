@@ -1,0 +1,19 @@
+# Proyecto de ejemplo: un solo programa para dos placas.
+#   pyxpic build                      -> el perfil por defecto (interna, 4 MHz)
+#   pyxpic build --target cristal     -> el mismo programa con un cristal de 20 MHz
+[project]
+name = "parpadeo"
+main = "main.py"
+devices_dir = "../../../devices"      # relativa a este archivo
+default_target = "interna"
+
+[target.interna]
+device = "PIC16F887"
+clock = "Internal[4 * MHz]"
+output = "build/parpadeo_interna.hex"
+
+[target.cristal]
+device = "PIC16F887"
+clock = "Crystal[20 * MHz]"
+config = { WDTE = "OFF" }          # palabras de configuracion por nombre, como --config
+output = "build/parpadeo_cristal.hex"

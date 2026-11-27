@@ -1,6 +1,6 @@
 # Visión y alcance
 
-PyPIC es un proyecto open source de lenguaje Python restringido, compilado AOT a código máquina nativo para microcontroladores de toda la familia PIC (de 8, 16 y 32 bits: PIC16, PIC18, PIC24, dsPIC y PIC32), sin intérprete ni runtime MicroPython en el MCU. Incluye CLI, SDK, extensiones de VS Code y herramientas de hardware. Objetivo inicial PIC16F887; segundo objetivo PIC12F625; ampliar a otras familias PIC8 mediante arquitectura extensible. Diferenciar entre requisitos aprobados, propuestas y funciones implementadas (ninguna implementación se presupone).
+PyxPic es un proyecto open source de lenguaje Python restringido, compilado AOT a código máquina nativo para microcontroladores de toda la familia PIC (de 8, 16 y 32 bits: PIC16, PIC18, PIC24, dsPIC y PIC32), sin intérprete ni runtime MicroPython en el MCU. Incluye CLI, SDK, extensiones de VS Code y herramientas de hardware. Objetivo inicial PIC16F887; segundo objetivo PIC12F625; ampliar a otras familias PIC8 mediante arquitectura extensible. Diferenciar entre requisitos aprobados, propuestas y funciones implementadas (ninguna implementación se presupone).
 
 Principios: independencia de XC8; toolchains externos opcionales; código reproducible; diagnósticos conscientes del hardware; diseño modular; transparencia en compatibilidad y licencias.
 
@@ -8,7 +8,7 @@ Usuarios: estudiantes, aficionados, profesionales de firmware y colaboradores co
 
 ## Facilidad de uso y control del hardware
 
-PyPIC busca la facilidad de inicio y de desarrollo de Arduino, conservando como objetivo el acceso a toda la capacidad del PIC y el control que ofrece su ensamblador. El usuario debe poder comenzar con ejemplos cortos y avanzar gradualmente hacia un control explícito del hardware dentro de un mismo proyecto:
+PyxPic busca la facilidad de inicio y de desarrollo de Arduino, conservando como objetivo el acceso a toda la capacidad del PIC y el control que ofrece su ensamblador. El usuario debe poder comenzar con ejemplos cortos y avanzar gradualmente hacia un control explícito del hardware dentro de un mismo proyecto:
 
 1. Operaciones de alto nivel para tareas habituales, con valores predeterminados documentados y configurables.
 2. Primitivas de periféricos para controlar cada paso, incluidos estados, esperas y operaciones no bloqueantes cuando existan.

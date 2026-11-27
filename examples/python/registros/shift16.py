@@ -1,6 +1,6 @@
 """Desplaza un valor de 16 bits una posicion a la izquierda con RLF encadenado por el acarreo, como en ensamblador."""
-from pypic.device import PIC16F887
-from pypic.bits import clear_carry, rol_c, carry, bit_set
+from pyxpic.device import PIC16F887
+from pyxpic.bits import clear_carry, rol_c, carry, bit_set
 
 lo: uint8 = 0x81
 hi: uint8 = 0x40

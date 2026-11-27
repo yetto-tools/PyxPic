@@ -1,13 +1,13 @@
-# SDK: acceso a pines (`pypic.periph.gpio`)
+# SDK: acceso a pines (`pyxpic.periph.gpio`)
 
 **Estado: primer corte implementado.** Todo se resuelve al compilar; el MCU ejecuta solo instrucciones nativas
-(sin intérprete ni runtime Python). Los nombres siguen la idea de MicroPython (`on/off/toggle/value`) pero PyPIC **no** es MicroPython.
+(sin intérprete ni runtime Python). Los nombres siguen la idea de MicroPython (`on/off/toggle/value`) pero PyxPic **no** es MicroPython.
 
 ## Decisión de diseño: los pines son nombres predeclarados
 
 ```python
-from pypic.device import PIC16F887
-from pypic.periph.gpio import RD0, RB0
+from pyxpic.device import PIC16F887
+from pyxpic.periph.gpio import RD0, RB0
 
 def main() -> None:
     RD0.output()
@@ -22,7 +22,7 @@ def main() -> None:
 Se descartó el estilo `led = Pin("RD0", Pin.OUT)` (el de MicroPython) para evitar confusiones:
 
 - No hay cadenas ni constructores: un pin mal escrito es un **nombre no definido** y el compilador lo rechaza.
-- `pypic.periph.gpio` exporta **un nombre por pin de E/S del dispositivo** (según el Device Pack); importar uno que no existe es un error
+- `pyxpic.periph.gpio` exporta **un nombre por pin de E/S del dispositivo** (según el Device Pack); importar uno que no existe es un error
   que lista los pines disponibles. Las patas de alimentación no se exportan.
 - No hay objetos que se puedan crear en ejecución, pasar como argumento o guardar: cada `RD0` es el pin físico.
 
@@ -58,7 +58,7 @@ No analiza el orden de ejecución: llamar `RD0.on()` antes de `RD0.output()` com
 - **Arranque:** pone en 0 el latch de cada puerto usado, porque tras el reset es indefinido (DS40001291H p.27). Así las salidas empiezan en bajo.
 - **`output()` / `input()`:** si el pin tiene función analógica (`ANn`) limpia su bit de `ANSEL`/`ANSELH` (banco 3, `188h`/`189h`); sin esto los pines
   analógicos **leen 0 aunque haya señal**. Luego fija `TRISx` (banco 1) y **vuelve siempre al banco 0** (invariante de la ABI).
-- El dispositivo se declara al comienzo del programa (`from pypic.device import PIC16F887`, ver `docs/frontend.md`): de ahí sale el pack con los pines y sus canales analógicos.
+- El dispositivo se declara al comienzo del programa (`from pyxpic.device import PIC16F887`, ver `docs/frontend.md`): de ahí sale el pack con los pines y sus canales analógicos.
 - Lo natural es configurar los pines en una función `@init_device`, que el arranque ejecuta antes de `main`.
 
 ## Límites actuales
@@ -72,13 +72,13 @@ No analiza el orden de ejecución: llamar `RD0.on()` antes de `RD0.output()` com
 ## Cómo se verifica
 
 Pruebas del frontend (diagnósticos), del Device Pack (pines reales del PIC16F887) y **diferenciales**: el mismo programa en el intérprete de la IR y, compilado, en
-el simulador PIC14; se comparan **los cambios de nivel de cada pin en orden**, no solo el estado final (`crates/pypic-pic14/tests/gpio.rs`). El simulador
+el simulador PIC14; se comparan **los cambios de nivel de cada pin en orden**, no solo el estado final (`crates/pyxpic-pic14/tests/gpio.rs`). El simulador
 del host no sustituye a Proteus ni al hardware.
 
 ## Ejemplo para Proteus: `examples/python/gpio/button_led.py`
 
 ```
-pypic build examples/python/gpio/button_led.py -o examples/hex/button_led.hex
+pyxpic build examples/python/gpio/button_led.py -o examples/hex/button_led.hex
 ```
 
 Montaje: PIC16F887; LED + resistencia de 330 Ω entre **RD0 (pin 19)** y GND; un **pulsador en RB0 (pin 33)** hacia +5 V con una resistencia de **10 kΩ a GND**

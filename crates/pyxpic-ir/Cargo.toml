@@ -1,0 +1,9 @@
+[package]
+name = "pyxpic-ir"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PyxPic typed, target-independent IR and lowering from the checked frontend program"
+
+[dependencies]
+pyxpic-frontend = { path = "../pyxpic-frontend" }

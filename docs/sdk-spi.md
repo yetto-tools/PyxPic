@@ -1,12 +1,12 @@
-# SPI maestro por hardware (`pypic.periph.spi`)
+# SPI maestro por hardware (`pyxpic.periph.spi`)
 
-**Estado: implementado en modo maestro (`start`, `transfer`) y verificado en el simulador de PyPIC. Sin probar en Proteus ni en hardware.**
+**Estado: implementado en modo maestro (`start`, `transfer`) y verificado en el simulador de PyxPic. Sin probar en Proteus ni en hardware.**
 Usa el MSSP del PIC16F887 (DS40001291H, cap. 13, pp. 176-184).
 
 ```python
-from pypic.device import PIC16F887
-from pypic.periph.gpio import RD1
-from pypic.periph.spi import SPI
+from pyxpic.device import PIC16F887
+from pyxpic.periph.gpio import RD1
+from pyxpic.periph.spi import SPI
 
 CLOCK: Internal[4 * MHz]
 
@@ -66,8 +66,8 @@ Con `start`, RC3, RC4 y RC5 quedan tomados: usarlos además como E/S es `PYP2150
 
 ## Lo que no hay (todavía)
 
-Modo esclavo, reloj de Timer2/2 (`SSPM` = 0011), `SMP` = 1, recepción por interrupción, dos configuraciones en un programa y SPI por software (`pypic.soft.spi`).
+Modo esclavo, reloj de Timer2/2 (`SSPM` = 0011), `SMP` = 1, recepción por interrupción, dos configuraciones en un programa y SPI por software (`pyxpic.soft.spi`).
 
 ## Verificación
 
-`crates/pypic-pic14/tests/spi_modulo.rs`: bytes enviados y recibidos, los tres divisores, los registros de cada modo, las direcciones de los pines, los diagnósticos y el ejemplo `examples/python/spi/lazo.py` (cable de RC5 a RC4; LED en RD0). El modelo (`crates/pypic-pic14/src/spi_sim.rs`) **no simula las formas de onda**: que cada `mode` funcione con un dispositivo real queda por comprobar en Proteus o en hardware. El intérprete de la IR no modela el bus y devuelve `0xFF`.
+`crates/pyxpic-pic14/tests/spi_modulo.rs`: bytes enviados y recibidos, los tres divisores, los registros de cada modo, las direcciones de los pines, los diagnósticos y el ejemplo `examples/python/spi/lazo.py` (cable de RC5 a RC4; LED en RD0). El modelo (`crates/pyxpic-pic14/src/spi_sim.rs`) **no simula las formas de onda**: que cada `mode` funcione con un dispositivo real queda por comprobar en Proteus o en hardware. El intérprete de la IR no modela el bus y devuelve `0xFF`.

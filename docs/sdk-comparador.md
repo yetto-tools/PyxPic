@@ -1,11 +1,11 @@
-# SDK: comparadores y referencia de tensión (`pypic.periph.comparator` y `pypic.periph.vref`)
+# SDK: comparadores y referencia de tensión (`pyxpic.periph.comparator` y `pyxpic.periph.vref`)
 
 **Estado: implementado (cuarto módulo de #45, sin salida a pin, sincronización con Timer1 ni pestillo SR).** Los dos comparadores analógicos C1 y C2 y la referencia CVREF del PIC16F887 (DS40001291H, cap. 8, pp. 85-98; especificaciones en las tablas 17-7 y 17-8, p.256).
 
 ```python
-from pypic.device import PIC16F887
-from pypic.periph.comparator import CMP1, C12IN0, REF_CVREF
-from pypic.periph.vref import CVREF
+from pyxpic.device import PIC16F887
+from pyxpic.periph.comparator import CMP1, C12IN0, REF_CVREF
+from pyxpic.periph.vref import CVREF
 
 CLOCK: Internal[4 * MHz]
 
@@ -49,7 +49,7 @@ Todas las esperas son **ciclos exactos** a partir del reloj declarado (como `ADC
 | Referencia fija de 0,6 V | **100 µs** máximo (VR02, solo caracterizado, no probado) | `CMPx.start(positive=REF_FIXED)` |
 | Asentamiento de CVREF | **10 µs** máximo (CV04) | `CVREF.start` y `CVREF.set` |
 
-El **tiempo de respuesta** al cambiar una entrada (CM04: 150 ns típico y 600 ns máximo al caer, 200 ns y 1 000 ns al subir) **no** lo espera nadie: un `out()` justo después de cambiar una tensión externa puede leer el nivel anterior. La interrupción del comparador (`C1IF` en `PIR2`) se maneja con `pypic.regs` (`PIR2.C1IF`, `PIE2.C1IE`); `start` la deja en 0 (leer `CMxCON0` borra la condición de discrepancia, 8.4, y luego baja la bandera).
+El **tiempo de respuesta** al cambiar una entrada (CM04: 150 ns típico y 600 ns máximo al caer, 200 ns y 1 000 ns al subir) **no** lo espera nadie: un `out()` justo después de cambiar una tensión externa puede leer el nivel anterior. La interrupción del comparador (`C1IF` en `PIR2`) se maneja con `pyxpic.regs` (`PIR2.C1IF`, `PIE2.C1IE`); `start` la deja en 0 (leer `CMxCON0` borra la condición de discrepancia, 8.4, y luego baja la bandera).
 
 ### Condiciones eléctricas
 
@@ -74,7 +74,7 @@ La referencia es ratiométrica (sigue a VDD, 8.10.4) y no llega a VSS ni a VDD p
 
 ## Lo que NO hace
 
-- **Sacar `CxOUT` o CVREF a un pin** (`CxOE`, `VROE`): hoy no hay una forma de pedirlo; con `pypic.regs` se escribe `CM1CON0.C1OE` (y `TRISA4 = 0`).
+- **Sacar `CxOUT` o CVREF a un pin** (`CxOE`, `VROE`): hoy no hay una forma de pedirlo; con `pyxpic.regs` se escribe `CM1CON0.C1OE` (y `TRISA4 = 0`).
 - **Sincronizar `C2OUT` con Timer1, usarlo de compuerta** (`C2SYNC`, `T1GSS`) ni **el pestillo SR** (`SRCON`): es el módulo `latch` de #45.
 - **Despertar del sueño** o **apagar el PWM** con un comparador (la entrada de apagado del ECCP): no están.
 - **Referencias externas** (`VREF+` y `VREF-`, `VRSS = 1`): solo VDD y VSS.
@@ -83,18 +83,18 @@ La referencia es ratiométrica (sigue a VDD, 8.10.4) y no llega a VSS ni a VDD p
 
 ## Verificación
 
-El simulador del núcleo modela `CMxCON0` (`CxOUT` y `CxPOL`), la copia `MCxOUT` de `CM2CON1`, `CxIF` en cada cambio, CVREF por la ecuación 8-1 y la referencia fija con `FVREN`. Las entradas analógicas son las cuentas de 10 bits de `adc_inputs` (0 a 1 023 = VSS a VDD) y la referencia fija de 0,6 V se convierte con VDD = 5 V. Las pruebas diferenciales (`crates/pypic-pic14/tests/comparator.rs`) comparan el intérprete de IR con el simulador para las cuatro entradas −, las tres referencias, los 16 pasos de los dos rangos de CVREF y la polaridad. **Sin pruebas en Proteus ni en hardware.** No se modelan el tiempo de respuesta (CM04), el offset ni la condición de discrepancia con lectura de `CMxCON0` (la bandera sube en cada cambio de nivel).
+El simulador del núcleo modela `CMxCON0` (`CxOUT` y `CxPOL`), la copia `MCxOUT` de `CM2CON1`, `CxIF` en cada cambio, CVREF por la ecuación 8-1 y la referencia fija con `FVREN`. Las entradas analógicas son las cuentas de 10 bits de `adc_inputs` (0 a 1 023 = VSS a VDD) y la referencia fija de 0,6 V se convierte con VDD = 5 V. Las pruebas diferenciales (`crates/pyxpic-pic14/tests/comparator.rs`) comparan el intérprete de IR con el simulador para las cuatro entradas −, las tres referencias, los 16 pasos de los dos rangos de CVREF y la polaridad. **Sin pruebas en Proteus ni en hardware.** No se modelan el tiempo de respuesta (CM04), el offset ni la condición de discrepancia con lectura de `CMxCON0` (la bandera sube en cada cambio de nivel).
 
 ## Reglas
 
 | Código | Regla |
 |---|---|
-| `PYP2214` | `pypic.periph.comparator` no exporta ese nombre o el dispositivo no trae `COMPARATORS` |
+| `PYP2214` | `pyxpic.periph.comparator` no exporta ese nombre o el dispositivo no trae `COMPARATORS` |
 | `PYP2215` | Argumentos de `CMPx.start`: solo con nombre, `negative` y `positive` obligatorios, constantes válidas, `invert` es `True` o `False`; argumentos con nombre en `stop` y `out` |
 | `PYP2216` | Método que no existe (`start`, `stop`, `out`) |
 | `PYP2217` | `CMPx` o una constante (`C12IN0`, `REF_PIN`...) usada como valor |
 | `PYP2218` | `REF_CVREF` sin ninguna llamada a `CVREF.start()` en el programa (se comprueba que exista, no el orden) |
-| `PYP2220` | `pypic.periph.vref` no exporta ese nombre (`CVREF`) o el dispositivo no trae `VREF` |
+| `PYP2220` | `pyxpic.periph.vref` no exporta ese nombre (`CVREF`) o el dispositivo no trae `VREF` |
 | `PYP2221` | Argumentos de `CVREF.start` y `CVREF.set`: `step` es una constante de 0 a 15, `low_range` es `True` o `False` |
 | `PYP2222` | Método que no existe (`start`, `set`, `stop`) |
 | `PYP2223` | `CVREF` usado como valor |

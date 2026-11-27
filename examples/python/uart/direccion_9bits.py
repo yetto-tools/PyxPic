@@ -15,9 +15,9 @@ Politica ante lo inesperado:
   * Desbordamiento (OERR): se borra con clear_overrun(); los caracteres perdidos no se recuperan.
 Hardware: NO probado, solo en simulador. Los 9 bits no estan verificados en Proteus todavia.
 """
-from pypic.device import PIC16F887
-from pypic.periph.gpio import RD0
-from pypic.periph.uart import UART
+from pyxpic.device import PIC16F887
+from pyxpic.periph.gpio import RD0
+from pyxpic.periph.uart import UART
 
 CLOCK: Internal[4 * MHz]
 DIRECCION: Const[uint16] = 0x05

@@ -34,7 +34,7 @@ Sin `identity.expectedName` / `identity.expectedEmail` la guardia **bloquea** (n
 La guardia no decide la identidad: comprueba la que Git ya iba a usar. Esa sale de `~/.gitconfig` con reglas `includeIf` por carpeta:
 
 ```
-[includeIf "gitdir:C:/Users/erashon/umg/PyPic/"]
+[includeIf "gitdir:C:/Users/erashon/umg/PyxPic/"]
     path = C:/Users/erashon/.gitconfig-personal
 ```
 

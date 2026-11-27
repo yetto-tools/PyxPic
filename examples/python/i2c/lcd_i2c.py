@@ -1,18 +1,18 @@
-"""Pantalla LCD 16x2 (HD44780) con la mochila I2C PCF8574: escribe "Hola PyPIC" en la primera linea y "I2C 100 kHz" en la segunda.
+"""Pantalla LCD 16x2 (HD44780) con la mochila I2C PCF8574: escribe "Hola PyxPic" en la primera linea y "I2C 100 kHz" en la segunda.
 
 Conexion: RC3/SCL y RC4/SDA del PIC a SCL y SDA de la mochila, con resistencias de pull-up de 4,7 kohm a VDD en cada linea (el PIC no las tiene: muchas mochilas
 ya traen las suyas); VDD y tierra comunes. La direccion de la mochila es 0x27 (PCF8574) o 0x3F (PCF8574A): se escribe ya desplazada (0x4E o 0x7E), que es lo que el
 bus transmite con el bit R/W en 0. Cableado de la mochila mas comun: P0 = RS, P1 = RW, P2 = E, P3 = luz de fondo, P4 a P7 = D4 a D7; si la tuya es otra, cambia
 las cuatro constantes de abajo.
 
-El I2C usa el MSSP del PIC16F887 en modo maestro (docs/sdk-i2c.md) por medio de pypic.regs: todavia no hay un modulo pypic.periph.i2c. Cada byte hacia la mochila
+El I2C usa el MSSP del PIC16F887 en modo maestro (docs/sdk-i2c.md) por medio de pyxpic.regs: todavia no hay un modulo pyxpic.periph.i2c. Cada byte hacia la mochila
 es una transaccion completa (START, direccion, dato, STOP); el pulso de E se manda como dos bytes. Los tiempos son los del HD44780: E activo mas de 450 ns
 (aqui, una transaccion de bus entera), 37 us por orden (se espera 100 us) y 1,52 ms tras borrar la pantalla (se espera 2 ms).
 Entrada: ninguna.
 """
-from pypic.device import PIC16F887
-from pypic.regs import SSPADD, SSPBUF, SSPCON, SSPCON2, SSPSTAT, TRISC
-from pypic.system.time import delay_us, pause
+from pyxpic.device import PIC16F887
+from pyxpic.regs import SSPADD, SSPBUF, SSPCON, SSPCON2, SSPSTAT, TRISC
+from pyxpic.system.time import delay_us, pause
 
 CLOCK: Internal[4 * MHz]
 
@@ -21,7 +21,7 @@ BIT_RS:    uint8 = 0x01
 BIT_E:     uint8 = 0x04
 BIT_LUZ:   uint8 = 0x08
 
-LINEA1: Rom[uint8] = [72, 111, 108, 97, 32, 80, 121, 80, 73, 67]              # "Hola PyPIC"
+LINEA1: Rom[uint8] = [72, 111, 108, 97, 32, 80, 121, 120, 80, 105, 99]              # "Hola PyxPic"
 LINEA2: Rom[uint8] = [73, 50, 67, 32, 49, 48, 48, 32, 107, 72, 122]           # "I2C 100 kHz"
 
 
@@ -84,7 +84,7 @@ def main() -> None:
     i2c_iniciar()
     pantalla_iniciar()
     enviar(0x80, 0)                       # primera linea
-    for i in range(10):
+    for i in range(11):
         enviar(LINEA1[i], BIT_RS)
     enviar(0xC0, 0)                       # segunda linea
     for i in range(11):

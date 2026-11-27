@@ -1,7 +1,7 @@
 """Lee un potenciometro en AN0 (RA0) y enciende RD0 cuando pasa de la mitad de la escala."""
-from pypic.device import PIC16F887
-from pypic.periph.adc import ADC, AN0
-from pypic.periph.gpio import RD0
+from pyxpic.device import PIC16F887
+from pyxpic.periph.adc import ADC, AN0
+from pyxpic.periph.gpio import RD0
 
 CLOCK: Internal[4 * MHz]   # el reloj de conversion (FOSC/8 a 4 MHz: TAD = 2 us) lo elige el compilador
 

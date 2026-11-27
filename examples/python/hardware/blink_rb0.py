@@ -1,7 +1,7 @@
 """Parpadeo de un LED en RB0: 500 ms encendido y 500 ms apagado, exactos al ciclo de instruccion."""
-from pypic.device import PIC16F887
-from pypic.periph.gpio import RB0
-from pypic.system.time import pause
+from pyxpic.device import PIC16F887
+from pyxpic.periph.gpio import RB0
+from pyxpic.system.time import pause
 
 CLOCK: Internal[4 * MHz]
 

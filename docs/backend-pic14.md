@@ -1,10 +1,10 @@
-# Generador de código PIC14 (`pypic-pic14::codegen`)
+# Generador de código PIC14 (`pyxpic-pic14::codegen`)
 
 **Estado: primer corte implementado.** IR tipada → instrucciones PIC14 nativas → Intel HEX. Todo corre en el host; el MCU solo
 ejecuta las instrucciones generadas (sin intérprete ni VM). Reglas de la ABI: `docs/abi-pic14.md`.
 
 ```
-pypic build programa.py -o salida.hex [--listing] [--device devices/pic16f887]
+pyxpic build programa.py -o salida.hex [--listing] [--device devices/pic16f887]
 ```
 
 ## Qué soporta
@@ -36,11 +36,11 @@ pypic build programa.py -o salida.hex [--listing] [--device devices/pic16f887]
 - `uint32` / `int32`.
 - Más de 80 bytes de datos: no hay otros bancos ni solapamiento de locales (#26).
 - Más de 2048 palabras: no se maneja PCLATH.
-- Acceso a pines (`pypic.periph.gpio`, ver `docs/sdk-gpio.md`) solo en los puertos A–E; sin retardos (`sleep_ms`) todavía.
+- Acceso a pines (`pyxpic.periph.gpio`, ver `docs/sdk-gpio.md`) solo en los puertos A–E; sin retardos (`sleep_ms`) todavía.
 
 ## Cómo se verifica
 
-`crates/pypic-pic14/tests/codegen.rs`: pruebas **diferenciales**. El mismo programa se ejecuta en el intérprete de referencia de la IR
+`crates/pyxpic-pic14/tests/codegen.rs`: pruebas **diferenciales**. El mismo programa se ejecuta en el intérprete de referencia de la IR
 (el oráculo) y, ya compilado, en el simulador del núcleo PIC14; los globales finales deben coincidir.
 
 - Más de 3 000 casos de `+ - & | ^` y más de 4 000 de comparaciones, en `uint8/int8/uint16/int16`, con operandos límite y aleatorios (semilla fija).

@@ -1,12 +1,12 @@
-# SDK: manejo del tiempo (`pypic.system.time`)
+# SDK: manejo del tiempo (`pyxpic.system.time`)
 
 **Estado: esperas activas implementadas; `nap`/`sleep` definidas y reservadas.** Todo se resuelve al compilar a instrucciones nativas
 (sin runtime). La razón de ser de un PIC es su **manejo del tiempo preciso y determinista**, y por eso el compilador trabaja en la unidad del hardware: el **ciclo de instrucción**.
 
 ```python
-from pypic.device import PIC16F887
-from pypic.periph.gpio import RD0
-from pypic.system.time import pause
+from pyxpic.device import PIC16F887
+from pyxpic.periph.gpio import RD0
+from pyxpic.system.time import pause
 
 CLOCK: Internal[4 * MHz]
 
@@ -22,7 +22,7 @@ def main() -> None:
 
 ## Una sola forma por operación
 
-PyPIC no tiene sinónimos: cada operación tiene **un** nombre, para evitar ambigüedades. Los nombres siguen a PICAXE cuando existe equivalente.
+PyxPic no tiene sinónimos: cada operación tiene **un** nombre, para evitar ambigüedades. Los nombres siguen a PICAXE cuando existe equivalente.
 
 | Función | Unidad | Argumento | Mecanismo | Precisión |
 |---|---|---|---|---|
@@ -43,7 +43,7 @@ como dos funciones con el comportamiento de PICAXE tras leer la sección del wat
   para cualquier cantidad de 0 a 400, en todos los umbrales, hasta 100 millones de ciclos y con valores pseudoaleatorios.
 - **Variable (`uint16`)**: `n` vueltas de exactamente 1 unidad más **8 ciclos fijos** de entrada (9 si `n = 0`).
 - **Un ciclo de instrucción = 4 relojes** en el PIC16F887 (DS40001291H p.1: 20 MHz → 200 ns); el dato sale del Device Pack (`cpu.clocks_per_instruction`).
-- **Informe de tiempos**: `pypic build prog.py --timing` muestra, por cada espera, lo pedido, los ciclos emitidos, el tiempo real y el error.
+- **Informe de tiempos**: `pyxpic build prog.py --timing` muestra, por cada espera, lo pedido, los ciclos emitidos, el tiempo real y el error.
 - **Avisos**: `PYP3003` si el tiempo pedido no cae en ciclos enteros (con el error de redondeo), `PYP3002` si con cantidad variable una unidad no es un número entero de ciclos.
 - Las esperas son **activas**: la CPU sigue ejecutando, por lo que **una interrupción alarga la espera** en lo que dure su rutina. Por eso no pueden usarse dentro de la interrupción (`PYP2102`).
 
@@ -71,4 +71,4 @@ Cada espera usa 5 bytes de contadores (compartidos por todas las esperas del pro
 
 ## Timers
 
-Los temporizadores son periféricos y tienen su propio documento: `docs/sdk-timer.md` (`from pypic.periph.timer import TMR2`).
+Los temporizadores son periféricos y tienen su propio documento: `docs/sdk-timer.md` (`from pyxpic.periph.timer import TMR2`).

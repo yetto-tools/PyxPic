@@ -3,10 +3,10 @@
 SCL es RC3 y SDA es RC4 (con pull-ups de 4,7 k a VDD). La dirección que responde es de 7 bits: la que se escribe en I2C.write es esa
 dirección desplazada un bit a la izquierda (el bit 0 es R/W = 0, escritura).
 """
-from pypic.device import PIC16F887
-from pypic.periph.i2c import I2C
-from pypic.periph.uart import UART
-from pypic.system.time import pause
+from pyxpic.device import PIC16F887
+from pyxpic.periph.i2c import I2C
+from pyxpic.periph.uart import UART
+from pyxpic.system.time import pause
 
 CLOCK: Internal[4 * MHz]
 

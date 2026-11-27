@@ -1,11 +1,11 @@
 # Ensamblador en línea (`@asm_function`)
 
-**Estado: implementado (#42, primera parte).** Cuando el lenguaje no alcanza, una función puede escribirse **entera** en ensamblador del PIC16 clásico, con las 35 instrucciones y el mismo ensamblador que `pypic asm`, con la **sintaxis de pic-as** (MPLAB XC8 PIC Assembler,
-[asm-pic14.md](asm-pic14.md)). Es la salida de emergencia que hace que PyPIC no limite lo que se puede hacer con un PIC.
+**Estado: implementado (#42, primera parte).** Cuando el lenguaje no alcanza, una función puede escribirse **entera** en ensamblador del PIC16 clásico, con las 35 instrucciones y el mismo ensamblador que `pyxpic asm`, con la **sintaxis de pic-as** (MPLAB XC8 PIC Assembler,
+[asm-pic14.md](asm-pic14.md)). Es la salida de emergencia que hace que PyxPic no limite lo que se puede hacer con un PIC.
 
 ```python
-from pypic.device import PIC16F887
-from pypic import uint8, asm_function
+from pyxpic.device import PIC16F887
+from pyxpic import uint8, asm_function
 
 swapped: uint8 = 0
 
@@ -42,7 +42,7 @@ Se adoptó lo útil de otros lenguajes y se descartó lo incómodo:
 - **Parámetros y retorno** de hasta 16 bits (`uint8`, `int8`, `uint16`, `int16`, `bool`). Cada parámetro es un símbolo con la dirección de su byte bajo; un `uint16` ocupa `x` (bajo) y `x+1` (alto).
 - **Resultado**: el byte bajo en `W`; en un resultado de 16 bits, el alto se escribe antes en `RETV` (`0x7C`).
 - **Globales**: por su nombre (`hits`, `marker`...); las constantes `Const` valen su valor.
-- **Registros y bits predefinidos**: los mismos que da `#include <xc.inc>` en `pypic asm`, desde `registers.json` del Device Pack (73 registros del PIC16F887).
+- **Registros y bits predefinidos**: los mismos que da `#include <xc.inc>` en `pyxpic asm`, desde `registers.json` del Device Pack (73 registros del PIC16F887).
   Cada registro vale su **dirección completa** (`TRISD` = `0x88`), así que fuera del banco 0 se usa `BANKMASK(TRISD)` tras cambiar el banco a mano con
   `BSF STATUS,STATUS_RP0_POSN`; cada campo tiene `REGISTRO_CAMPO_POSN` (`STATUS_Z_POSN`, `ADCON0_GO_DONE_POSN`...) y los campos únicos de más de una letra son macros
   (`BSF GO_DONE` = `BSF ADCON0,1`). Un parámetro o global con uno de esos nombres da error `ASM005` solo si el bloque lo usa.

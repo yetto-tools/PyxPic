@@ -1,7 +1,7 @@
 ; Cuenta los arranques en la EEPROM (direccion 0) y parpadea RD0 tantas veces como arranques lleva - PIC16F887, 4 MHz.
 ; Equivale a examples/python/eeprom/eeprom_arranques.py y a examples/basic/eeprom/eeprom_arranques.bas. Se ensambla con:
 ;
-;   pypic asm eeprom_arranques.s -Wl,-presetVec=0h,-pintentry=4h -o eeprom_arranques.hex
+;   pyxpic asm eeprom_arranques.s -Wl,-presetVec=0h,-pintentry=4h -o eeprom_arranques.hex
 ;
 ; Lectura (DS40001291H 10.1.2): EEADR, EEPGD = 0 y RD = 1. Escritura (10.1.3): EEADR, EEDAT, WREN = 1, 55h y AAh a EECON2 y WR = 1; este
 ; programa nunca habilita las interrupciones, asi que no hace falta bajar GIE antes de la secuencia.

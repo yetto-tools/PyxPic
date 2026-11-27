@@ -3,7 +3,7 @@ Documento de contexto y propuesta técnica para desarrollo
 
 1. OBJETIVO
 Crear BASM, un lenguaje híbrido inspirado en BASIC, PICAXE y Assembly, inicialmente dirigido al PIC16F887. Debe simplificar la programación sin impedir el acceso directo al hardware. Se compilará a código máquina nativo: no se pretende implementar un intérprete BASIC, una máquina virtual ni un intérprete Python en el microcontrolador.
-BASM podrá funcionar independientemente de PyPIC, compartiendo backend, ensamblador, SDK, simulador y herramientas de depuración. La dependencia de XC8, MPASM o PIC-AS será opcional mediante backends externos. Nombre propuesto del compilador: basmc; extensión: .basm.
+BASM podrá funcionar independientemente de PyxPic, compartiendo backend, ensamblador, SDK, simulador y herramientas de depuración. La dependencia de XC8, MPASM o PIC-AS será opcional mediante backends externos. Nombre propuesto del compilador: basmc; extensión: .basm.
 
 2. MOTIVACIÓN: PICAXE Y ASSEMBLY
 PICAXE ofrece instrucciones BASIC de alto nivel, variables compartidas y descarga serial mediante firmware residente. BASM adopta la ergonomía, pero no el intérprete: la traducción ocurre en el equipo de desarrollo. Un bootloader nativo será opcional.
@@ -159,7 +159,7 @@ MAIN:
 END
 
 7. ARQUITECTURA DEL COMPILADOR
-Frontends: BASM, PyPIC (subconjunto de sintaxis Python), programación visual por bloques.
+Frontends: BASM, PyxPic (subconjunto de sintaxis Python), programación visual por bloques.
 Pipeline: lexer/parser -> AST -> análisis semántico y tipos -> IR común -> optimizador -> asignación de memoria y recursos -> backend específico de arquitectura -> ensamblador/enlazador -> Intel HEX y archivos auxiliares.
 Soportar salida Assembly legible, listado de instrucciones, mapa de símbolos, reporte RAM/Flash, información de depuración y, opcionalmente, BIN con formato documentado para palabras de programa de 14 bits.
 Desarrollar ensamblador nativo independiente. Permitir adaptadores opcionales para herramientas externas y transpilación a C/Assembly cuando proceda.
@@ -182,18 +182,18 @@ Diagnósticos con archivo, línea, código de error, descripción y solución. V
 
 10. SOPORTE MULTIFAMILIA
 No codificar toda la lógica exclusivamente para PIC16F887. Separar descripciones de dispositivos (SFR, bits, pines, bancos, memoria, vectores, periféricos, configuración y capacidades) de las reglas del lenguaje.
-Objetivos futuros: PIC baseline (PIC10/12), mid-range clásico (PIC16F887), enhanced mid-range y PIC18. El soporte del PIC12F625 puede considerarse tras el primer objetivo de PyPIC. Validar cada modelo y sus capacidades antes de habilitar funciones. No prometer compatibilidad universal automática.
+Objetivos futuros: PIC baseline (PIC10/12), mid-range clásico (PIC16F887), enhanced mid-range y PIC18. El soporte del PIC12F625 puede considerarse tras el primer objetivo de PyxPic. Validar cada modelo y sus capacidades antes de habilitar funciones. No prometer compatibilidad universal automática.
 
 11. BOOTLOADER OPCIONAL
 Instalación inicial por ICSP/PICkit; descarga posterior por UART mediante USB-TTL con niveles compatibles. Escribir código máquina en Flash, no tokens BASIC. Considerar identificación del dispositivo, CRC, validación de rangos, protección de la región del bootloader, vectores, recuperación ante fallos y verificación posterior. Reservar Flash y pines cuando sea necesario. No sustituye ICSP para recuperación ni para todas las configuraciones. El firmware debe poder funcionar sin bootloader.
 
 12. ECOSISTEMA Y HERRAMIENTAS
-PyPIC: frontend de sintaxis Python compilada, no intérprete.
+PyxPic: frontend de sintaxis Python compilada, no intérprete.
 BASM: frontend BASIC Assembly independiente.
 basmc: CLI propuesta.
 BASM SDK: librerías de GPIO, ADC, PWM, temporizadores, UART, SPI, I2C, EEPROM y utilidades.
-PyPIC Blocks: programación visual.
-PyPIC Boot: bootloader opcional.
+PyxPic Blocks: programación visual.
+PyxPic Boot: bootloader opcional.
 Extensión VS Code: autocompletado, resaltado, diagnósticos, compilación, selección de dispositivo, depuración, breakpoints y vista pinout inspirada en PICAXE. Wizard de proyectos nuevos y migración de dispositivo/backend. Terminal serial y escáner I2C (mediante firmware o adaptador compatible). Diferenciar simulación y depuración en hardware: esta última depende de interfaces y recursos físicos.
 
 13. HOJA DE RUTA PROPUESTA
@@ -204,7 +204,7 @@ Extensión VS Code: autocompletado, resaltado, diagnósticos, compilación, sele
 0.5 Optimización, gestión de recursos, memoria y diagnósticos.
 0.6 Simulador, depuración y extensión IDE.
 0.7 Bootloader opcional.
-1.0 Integración completa con PyPIC y SDK estable.
+1.0 Integración completa con PyxPic y SDK estable.
 1.5 Soporte multifamilia.
 2.0 Programación visual por bloques.
 
@@ -212,6 +212,6 @@ Extensión VS Code: autocompletado, resaltado, diagnósticos, compilación, sele
 Comparar opcodes y archivos HEX contra herramientas de referencia. Pruebas de límites 8/16/32/64 bits, alias b/w/d/q/bit, signo, acarreo, bancos, páginas, llamadas, ISR, conflictos y memoria agotada. Probar blink, ADC, UART, PWM, I2C y SPI tanto en simulador como en placa real. Validar temporizaciones con instrumentos. Revisar configuración de reloj, fuses y condiciones eléctricas.
 
 15. ESTADO Y DECISIONES PENDIENTES
-BASM es una propuesta de diseño; las instrucciones extendidas, API, herramientas y hojas de ruta no se han implementado ni validado en este documento. Falta formalizar gramática, ABI, alcance de alias, semántica de desbordamiento, modelo de interrupciones, convención de llamadas, formato de objetos, licencias y versiones. Los ejemplos son conceptuales salvo el ejemplo de Assembly convencional, que igualmente requiere pruebas. La nomenclatura BASM reemplaza la propuesta anterior PASM (PyPIC Assembly+).
+BASM es una propuesta de diseño; las instrucciones extendidas, API, herramientas y hojas de ruta no se han implementado ni validado en este documento. Falta formalizar gramática, ABI, alcance de alias, semántica de desbordamiento, modelo de interrupciones, convención de llamadas, formato de objetos, licencias y versiones. Los ejemplos son conceptuales salvo el ejemplo de Assembly convencional, que igualmente requiere pruebas. La nomenclatura BASM reemplaza la propuesta anterior PASM (PyxPic Assembly+).
 
 Principio rector: la simplicidad de BASIC, el poder de Assembly y el rendimiento del código máquina nativo. Facilitar el acceso al hardware sin restringirlo.

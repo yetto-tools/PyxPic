@@ -1,13 +1,13 @@
-# `pypic memory`: cuánta memoria usa el programa
+# `pyxpic memory`: cuánta memoria usa el programa
 
 ```
-pypic memory programa.py                      # el informe en texto
-pypic memory programa.bas --details           # y el detalle por función y por variable
-pypic memory --format json                    # un solo documento JSON versionado
-pypic memory --project pypic.toml --target x  # con un proyecto, igual que build
+pyxpic memory programa.py                      # el informe en texto
+pyxpic memory programa.bas --details           # y el detalle por función y por variable
+pyxpic memory --format json                    # un solo documento JSON versionado
+pyxpic memory --project pyxpic.toml --target x  # con un proyecto, igual que build
 ```
 
-Compila el programa como `pypic build` (mismas opciones, el mismo perfil de proyecto, los mismos errores) pero **no escribe ningún `.hex`** y no necesita XC8 ni gpasm. Sirve en Python y en BASIC. Si el programa no compila, sale el error de siempre y ningún informe (código 1); sin dispositivo en el programa ni en el perfil no hay capacidades que informar.
+Compila el programa como `pyxpic build` (mismas opciones, el mismo perfil de proyecto, los mismos errores) pero **no escribe ningún `.hex`** y no necesita XC8 ni gpasm. Sirve en Python y en BASIC. Si el programa no compila, sale el error de siempre y ningún informe (código 1); sin dispositivo en el programa ni en el perfil no hay capacidades que informar.
 
 ```
 Memoria de PIC16F887 (examples/python/gpio/blink.py)
@@ -24,7 +24,7 @@ Memoria de PIC16F887 (examples/python/gpio/blink.py)
 | Dato | De dónde sale |
 |---|---|
 | **Capacidad** de programa, bits por palabra y niveles de pila | `memory.json` del Device Pack (PIC16F887: 8192 palabras de 14 bits, 8 niveles) |
-| **Palabras usadas** | las palabras **realmente presentes** en la imagen que el compilador genera y que están dentro de la flash: los huecos (la alineación de las tablas, el salto al vector) no cuentan como ocupados. Coincide con las palabras del `.hex` que escribe `pypic build` (una prueba lo comprueba) |
+| **Palabras usadas** | las palabras **realmente presentes** en la imagen que el compilador genera y que están dentro de la flash: los huecos (la alineación de las tablas, el salto al vector) no cuentan como ocupados. Coincide con las palabras del `.hex` que escribe `pyxpic build` (una prueba lo comprueba) |
 | **Configuración** | las palabras de configuración y de identificación (`0x2000` en adelante) se informan aparte y **no** cuentan como programa |
 | **Dirección más alta usada** | la última palabra ocupada de la flash + 1: con huecos, es mayor que las palabras usadas |
 | **Por función** (`--details`) | las palabras ocupadas desde el punto de entrada de cada función hasta el de la siguiente; lo anterior a la primera es el arranque y los vectores. Las tablas y rutinas de apoyo que el compilador coloca al final se suman a la última función |
@@ -40,7 +40,7 @@ Si el programa tiene funciones en **ensamblador** (`@asm_function` o un bloque `
 
 ```json
 {
-  "version": 1, "tool": "pypic memory", "file": "...", "device": "PIC16F887",
+  "version": 1, "tool": "pyxpic memory", "file": "...", "device": "PIC16F887",
   "complete": true, "notes": [],
   "program": { "unit": "words", "word_bits": 14, "capacity": 8192, "used": 27, "free": 8165, "used_percent": 0.33,
                "highest_address_used": 30, "startup_and_vectors": 7, "config_words": 2 },
@@ -61,4 +61,4 @@ Si el programa tiene funciones en **ensamblador** (`@asm_function` o un bloque `
 
 - No estima el tamaño de lo que no compiló ni predice el de otro dispositivo: cada informe es de **un** dispositivo y de lo que el compilador generó para él.
 - No reparte la RAM por banco más allá del banco 0 mientras el compilador no use los otros (#26); no modela el *overlay* de variables (también #26).
-- La memoria de programa que se reserva con `CONFIG`/`IDLOC` en un `.s` o un `ORG` lejano de un programa en ensamblador (`pypic asm`) no pasa por este comando: es para programas de Python y de BASIC.
+- La memoria de programa que se reserva con `CONFIG`/`IDLOC` en un `.s` o un `ORG` lejano de un programa en ensamblador (`pyxpic asm`) no pasa por este comando: es para programas de Python y de BASIC.

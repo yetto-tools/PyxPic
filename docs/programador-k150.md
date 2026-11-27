@@ -1,6 +1,6 @@
 # Grabar el PIC16F887 con un programador K150 (MicroBrn)
 
-**Estado:** el 2026-11-25 el usuario confirmó en hardware real que un HEX generado por `pypic build` con `MCLRE=ON`,
+**Estado:** el 2026-11-25 el usuario confirmó en hardware real que un HEX generado por `pyxpic build` con `MCLRE=ON`,
 grabado con un K150 y MicroBrn, hace parpadear un LED en el PIC16F887. **No se midieron voltajes** y los tiempos solo
 se midieron a mano (ver abajo).
 Es un resultado de un solo programador y un solo montaje: no garantiza que funcione con otros K150.
@@ -9,18 +9,18 @@ Es un resultado de un solo programador y un solo montaje: no garantiza que funci
 > 16F88x**, por la segunda palabra de configuración y un juego de comandos de programación distinto. Lo que sigue es lo
 > que funcionó en la práctica. Para un soporte oficial hace falta un programador que liste el PIC16F887.
 
-PyPIC no depende de MicroBrn ni incluye sus archivos. El programador y su software son de terceros: no se añaden al
+PyxPic no depende de MicroBrn ni incluye sus archivos. El programador y su software son de terceros: no se añaden al
 repositorio.
 
 ## Qué está probado
 
 | Caso | Resultado en hardware |
 |---|---|
-| `pypic build` + `--config MCLRE=ON`, salida directa (finales `LF`), LED en RD0 | Funciona |
+| `pyxpic build` + `--config MCLRE=ON`, salida directa (finales `LF`), LED en RD0 | Funciona |
 | El mismo HEX con finales `CR+LF` | Funciona |
-| HEX de PyPIC sin la línea de CONFIG2, LED en RD0 y en RB0 | Funciona |
+| HEX de PyxPic sin la línea de CONFIG2, LED en RD0 y en RB0 | Funciona |
 | HEX de XC8 con `MCLRE=ON`, LED en RB0 | Funciona |
-| `MCLRE=OFF` (valor por defecto de PyPIC) | **Sin probar** |
+| `MCLRE=OFF` (valor por defecto de PyxPic) | **Sin probar** |
 | CONFIG2 distinta de `0x3FFF` (`WRT`, `BOR4V`) | **Sin probar** |
 | Datos iniciales de EEPROM en el HEX, grabados por el K150 | Funciona (`0x07` en la dirección 0, leído por el programa) |
 | `EEPROM.write` desde el programa: el valor sobrevive al apagado | Funciona (contador 9, 10, 11 en encendidos sucesivos) |
@@ -51,7 +51,7 @@ Todos se compilan con `--config MCLRE=ON`.
 | `serial_eeprom.py` | Envía cada segundo el byte 0 de la EEPROM por RC6/TX y cambia RD0 |
 | `serial_comandos.py` | Comandos `1`, `0`, `t`, `?` y eco por la UART |
 
-PyPIC todavía no declara datos iniciales de EEPROM desde el `.py`. Para la prueba se añadió al HEX, antes del registro
+PyxPic todavía no declara datos iniciales de EEPROM desde el `.py`. Para la prueba se añadió al HEX, antes del registro
 final, `:024200000700B5` (valor `0x07` en la dirección 0).
 
 **Criterio de aceptación** de cada programa en hardware: se compila sin errores, MicroBrn termina **Program** y
@@ -95,7 +95,7 @@ Para ver datos sin contar parpadeos: `UART.start(baud=9600)` y un adaptador TTL-
 1. Compilar desde la raíz del repositorio:
 
    ```
-   cargo run -p pypic-cli -- build examples/python/gpio/blink.py --config MCLRE=ON -o blink.hex
+   cargo run -p pyxpic-cli -- build examples/python/gpio/blink.py --config MCLRE=ON -o blink.hex
    ```
 
    Sin `-o` o sin revisar la ruta se puede cargar por error un HEX antiguo.
@@ -157,7 +157,7 @@ palabra de fusibles (`FUSEblank=3FFF`): CONFIG2 no se puede ver ni editar desde 
 ### Secuencia de encendido y `MCLRE=OFF`
 
 La especificación de programación **DS41287D, sección 3.0**, exige entrar en modo programación con **VPP antes que VDD**
-cuando se usa INTOSC con `MCLRE=0`, que es la configuración por defecto de PyPIC (`CONFIG1=0x20D4`). `VccVpp1` aplica
+cuando se usa INTOSC con `MCLRE=0`, que es la configuración por defecto de PyxPic (`CONFIG1=0x20D4`). `VccVpp1` aplica
 VDD primero. Por eso, mientras no se pruebe otra cosa, compila con `--config MCLRE=ON`: con `MCLRE=OFF` el chip podría
 no dejarse volver a grabar o borrar con este programador.
 
@@ -169,7 +169,7 @@ no dejarse volver a grabar o borrar con este programador.
 
 - Los `epk*.hex` son firmware del **propio programador** (su PIC16F628A). `epk150.hex` es el del K150. No se graban en el
   PIC16F887.
-- MicroBrn no lee registros Intel HEX con un número impar de bytes (según su readme). La salida de PyPIC escribe palabras
+- MicroBrn no lee registros Intel HEX con un número impar de bytes (según su readme). La salida de PyxPic escribe palabras
   completas.
 - Según el mismo readme, MicroBrn no guarda bien los fusibles, el ID ni la EEPROM al usar **Save**: no tomes la
   configuración de un archivo guardado como lectura fiable del chip.

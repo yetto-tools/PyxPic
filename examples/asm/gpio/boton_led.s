@@ -1,7 +1,7 @@
 ; Un pulsador en RB0 enciende el LED de RD0 (sin esperas: solo lee y escribe pines) - PIC16F887, oscilador interno de 4 MHz.
 ; Equivale a examples/python/gpio/button_led.py y a examples/basic/gpio/boton_led.bas. Se ensambla con:
 ;
-;   pypic asm boton_led.s -Wl,-presetVec=0h,-pintentry=4h -o boton_led.hex
+;   pyxpic asm boton_led.s -Wl,-presetVec=0h,-pintentry=4h -o boton_led.hex
 
 PROCESSOR 16F887
 #include <xc.inc>

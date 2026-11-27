@@ -10,9 +10,9 @@ Politica (se contesta con un byte de estado):
   * Byte correcto: se devuelve tal cual.
 FERR se consulta antes de leer porque pertenece al caracter que esta a punto de salir del FIFO (DS40001291H, 12.1.2.4).
 """
-from pypic.device import PIC16F887
-from pypic.periph.uart import UART
-from pypic.system.time import pause
+from pyxpic.device import PIC16F887
+from pyxpic.periph.uart import UART
+from pyxpic.system.time import pause
 
 CLOCK: Internal[4 * MHz]
 

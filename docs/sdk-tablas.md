@@ -57,5 +57,5 @@ anterior para que la tabla caiga a ambos lados de `0x100` y comprueba que ningun
 
 ## Verificación
 
-`crates/pypic-pic14/tests/tables.rs`: prueba diferencial intérprete de la IR ↔ simulador del núcleo (suma y XOR de la tabla, índice fuera de rango, tabla de 256 entradas, varias tablas
+`crates/pyxpic-pic14/tests/tables.rs`: prueba diferencial intérprete de la IR ↔ simulador del núcleo (suma y XOR de la tabla, índice fuera de rango, tabla de 256 entradas, varias tablas
 dentro de funciones con parámetros), costo idéntico con siete índices, barrido del límite de 256 y todas las reglas del lenguaje. Ejemplo: `examples/python/tablas/table.py`.

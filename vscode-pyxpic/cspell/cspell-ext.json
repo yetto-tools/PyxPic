@@ -1,0 +1,8 @@
+{
+  "version": "0.2",
+  "id": "pyxpic",
+  "name": "PyxPic",
+  "description": "Diccionarios de Python y de la API de PyxPic para el modo de lenguaje pyxpic.",
+  "dictionaryDefinitions": [{ "name": "pyxpic", "path": "./pyxpic-words.txt", "description": "API de PyxPic y nombres del PIC" }],
+  "languageSettings": [{ "languageId": "pyxpic", "dictionaries": ["python", "python-common", "pyxpic"] }]
+}

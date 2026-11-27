@@ -1,8 +1,8 @@
 """Muestra el byte 0 de la EEPROM en RD0: tantos parpadeos como su valor, pausa de 2 s y repite. Solo lee."""
-from pypic.device import PIC16F887
-from pypic.periph.eeprom import EEPROM
-from pypic.periph.gpio import RD0
-from pypic.system.time import pause
+from pyxpic.device import PIC16F887
+from pyxpic.periph.eeprom import EEPROM
+from pyxpic.periph.gpio import RD0
+from pyxpic.system.time import pause
 
 CLOCK: Internal[4 * MHz]
 

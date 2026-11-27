@@ -1,7 +1,7 @@
 """Comandos por la UART (9600 8N1): 1 enciende RD0, 0 lo apaga, t lo cambia, ? informa; otro byte vuelve como eco."""
-from pypic.device import PIC16F887
-from pypic.periph.gpio import RD0
-from pypic.periph.uart import UART
+from pyxpic.device import PIC16F887
+from pyxpic.periph.gpio import RD0
+from pyxpic.periph.uart import UART
 
 CLOCK: Internal[4 * MHz]
 

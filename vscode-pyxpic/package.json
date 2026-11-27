@@ -1,0 +1,75 @@
+{
+  "name": "pyxpic-ide",
+  "displayName": "PyxPic IDE",
+  "description": "v0.1.27 · Comprueba y compila programas PyxPic desde VS Code.",
+  "version": "0.1.27",
+  "publisher": "pyxpic",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "repository": { "type": "git", "url": "https://github.com/yetto-tools/PyxPic.git" },
+  "files": ["extension.js", "language.js", "pinout.js", "resources.js", "serial.js", "project.js", "projectmode.js", "sidebar.js", "welcome.js", "spelling.js", "cspell", "README.md", "LICENSE", "media", "syntaxes", "language-configuration-basic.json"],
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Programming Languages"],
+  "main": "./extension.js",
+  "scripts": { "test": "node --test test/commands.test.js test/projectmode.test.js test/pinout.test.js test/resources.test.js test/serial.test.js test/spelling.test.js" },
+  "activationEvents": ["onView:pyxpic.actions", "onView:pyxpic.resources", "onView:pyxpic.pinout", "onView:pyxpic.serial", "onLanguage:python", "onLanguage:pyxpic", "onLanguage:pyxpic-basic", "workspaceContains:pyxpic.toml"],
+  "capabilities": { "untrustedWorkspaces": { "supported": false } },
+  "contributes": {
+    "languages": [
+      { "id": "pyxpic", "aliases": ["PyxPic"] },
+      { "id": "pyxpic-basic", "aliases": ["PyxPic BASIC"], "extensions": [".bas"], "configuration": "./language-configuration-basic.json" }
+    ],
+    "grammars": [
+      { "language": "pyxpic", "scopeName": "source.pyxpic", "path": "./syntaxes/pyxpic.tmLanguage.json" },
+      { "language": "pyxpic-basic", "scopeName": "source.pyxpic-basic", "path": "./syntaxes/pyxpic-basic.tmLanguage.json" }
+    ],
+    "viewsContainers": { "activitybar": [
+      { "id": "pyxpic", "title": "PyxPic", "icon": "media/pyxpic.svg" }
+    ] },
+    "views": { "pyxpic": [
+      { "id": "pyxpic.actions", "name": "Acciones" },
+      { "id": "pyxpic.resources", "name": "Recursos", "type": "webview" },
+      { "id": "pyxpic.pinout", "name": "Pinout", "type": "webview" },
+      { "id": "pyxpic.serial", "name": "Terminal serial", "type": "webview" }
+    ] },
+    "commands": [
+      { "command": "pyxpic.check", "title": "PyxPic: Verificar código", "icon": "$(check)" },
+      { "command": "pyxpic.build", "title": "PyxPic: Compilar archivo a HEX", "icon": "$(tools)" },
+      { "command": "pyxpic.clean", "title": "PyxPic: Limpiar compilación", "icon": "$(trash)" },
+      { "command": "pyxpic.refreshResources", "title": "PyxPic: Medir recursos del programa", "icon": "$(refresh)" },
+      { "command": "pyxpic.examples", "title": "PyxPic: Abrir ejemplo" },
+      { "command": "pyxpic.welcome", "title": "PyxPic: Abrir inicio" },
+      { "command": "pyxpic.newProject", "title": "PyxPic: Crear proyecto" },
+      { "command": "pyxpic.openProject", "title": "PyxPic: Abrir proyecto" },
+      { "command": "pyxpic.openFile", "title": "PyxPic: Abrir archivo" },
+      { "command": "pyxpic.pinout", "title": "PyxPic: Ver pinout" },
+      { "command": "pyxpic.selectTarget", "title": "PyxPic: Perfil de destino" },
+      { "command": "pyxpic.projectCheck", "title": "PyxPic: Revisar proyecto" },
+      { "command": "pyxpic.mode", "title": "PyxPic: Archivo suelto o proyecto" },
+      { "command": "pyxpic.status", "title": "PyxPic: Estado y ayuda" },
+      { "command": "pyxpic.selectCompiler", "title": "PyxPic: Seleccionar compilador" },
+      { "command": "pyxpic.selectDevices", "title": "PyxPic: Seleccionar Device Packs" },
+      { "command": "pyxpic.selectPicAs", "title": "PyxPic: Seleccionar PIC-AS (opcional)" }
+    ],
+    "menus": { "editor/title": [
+      { "command": "pyxpic.check", "when": "resourceLangId == python || resourceLangId == pyxpic || resourceLangId == pyxpic-basic", "group": "navigation" },
+      { "command": "pyxpic.build", "when": "resourceLangId == python || resourceLangId == pyxpic || resourceLangId == pyxpic-basic", "group": "navigation" },
+      { "command": "pyxpic.clean", "when": "resourceLangId == python || resourceLangId == pyxpic || resourceLangId == pyxpic-basic", "group": "navigation" }
+    ],
+    "view/title": [
+      { "command": "pyxpic.check", "when": "view == pyxpic.actions", "group": "navigation@1" },
+      { "command": "pyxpic.build", "when": "view == pyxpic.actions", "group": "navigation@2" },
+      { "command": "pyxpic.clean", "when": "view == pyxpic.actions", "group": "navigation@3" },
+      { "command": "pyxpic.refreshResources", "when": "view == pyxpic.resources", "group": "navigation" }
+    ] },
+    "configuration": {
+      "title": "PyxPic",
+      "properties": {
+        "pyxpic.executable": { "type": "string", "default": "pyxpic", "description": "Ruta al ejecutable de PyxPic." },
+        "pyxpic.devicesDir": { "type": "string", "default": "", "description": "Directorio de Device Packs; vacío usa la búsqueda de PyxPic." },
+        "pyxpic.picAsPath": { "type": "string", "default": "", "description": "Ruta opcional a PIC-AS. Informativa: la extensión todavía no ejecuta PIC-AS." },
+        "pyxpic.checkOnSave": { "type": "boolean", "default": true, "description": "Comprueba archivos PyxPic guardados y actualiza Problemas." }
+      }
+    }
+  }
+}

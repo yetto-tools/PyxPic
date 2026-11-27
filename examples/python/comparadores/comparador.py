@@ -1,8 +1,8 @@
 """Comparador 1 contra CVREF: enciende RD0 cuando la tension en RA0 supera la mitad de VDD (un comparador a secas, sin histeresis)."""
-from pypic.device import PIC16F887
-from pypic.periph.comparator import CMP1, C12IN0, REF_CVREF
-from pypic.periph.gpio import RD0
-from pypic.periph.vref import CVREF
+from pyxpic.device import PIC16F887
+from pyxpic.periph.comparator import CMP1, C12IN0, REF_CVREF
+from pyxpic.periph.gpio import RD0
+from pyxpic.periph.vref import CVREF
 
 CLOCK: Internal[4 * MHz]
 

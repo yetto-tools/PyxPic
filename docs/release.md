@@ -15,7 +15,7 @@ En cada `push` a `main` o `release` y en cada pull request: `cargo fmt --check` 
 
 ## Publicar una versión
 
-1. En `main`, sube la versión del espacio de trabajo (`[workspace.package] version` en `Cargo.toml`) y, si cambió la extensión, la de `vscode-pypic/package.json` (con su descripción y README: una prueba lo exige). Espera el CI en verde.
+1. En `main`, sube la versión del espacio de trabajo (`[workspace.package] version` en `Cargo.toml`) y, si cambió la extensión, la de `vscode-pyxpic/package.json` (con su descripción y README: una prueba lo exige). Espera el CI en verde.
 2. Mezcla `main` en `release`:
    ```
    git switch release
@@ -24,12 +24,12 @@ En cada `push` a `main` o `release` y en cada pull request: `cargo fmt --check` 
    ```
 3. Etiqueta y sube la etiqueta:
    ```
-   git tag -a v0.1.0 -m "PyPIC 0.1.0"
+   git tag -a v0.1.0 -m "PyxPic 0.1.0"
    git push origin v0.1.0
    ```
 4. El workflow `release.yml` (`.github/workflows/release.yml`) hace el resto: comprueba que la etiqueta está en `release` y que su versión coincide con `Cargo.toml`, vuelve a pasar las pruebas, compila la CLI en Linux y Windows, empaqueta la extensión (`.vsix`) y crea la Release de GitHub con los archivos y `SHA256SUMS.txt`. Una etiqueta con sufijo (`v0.1.0-rc1`) sale como *pre-release*.
 
-Cada archivo `pypic-vX.Y.Z-<sistema>` lleva la CLI, los Device Packs (`devices/`), los ejemplos, `LICENSE` y `README.md`. Si algo falla antes de publicar, no se crea la Release: se corrige en `main`, se vuelve a mezclar en `release` y se mueve o se rehace la etiqueta.
+Cada archivo `pyxpic-vX.Y.Z-<sistema>` lleva la CLI, los Device Packs (`devices/`), los ejemplos, `LICENSE` y `README.md`. Si algo falla antes de publicar, no se crea la Release: se corrige en `main`, se vuelve a mezclar en `release` y se mueve o se rehace la etiqueta.
 
 ## Estado
 

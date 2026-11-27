@@ -1,0 +1,13 @@
+[package]
+name = "pyxpic-pic14"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PyxPic PIC14 (PIC16 classic) backend: instruction set model, encoder/decoder and disassembler"
+
+[dependencies]
+pyxpic-ir = { path = "../pyxpic-ir" }
+pyxpic-device = { path = "../pyxpic-device" }
+pyxpic-frontend = { path = "../pyxpic-frontend" }
+
+[dev-dependencies]

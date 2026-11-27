@@ -8,7 +8,7 @@ CLOCK: Crystal[20 * MHz]           # cristal en OSC1/OSC2
 CLOCK: ExternalClock[20 * MHz]     # señal de reloj en CLKIN (RA7)
 ```
 
-`Internal`, `Crystal`, `ExternalClock`, `MHz`, `kHz` y `Hz` están predeclarados (como `uint8` o `Const`); `from pypic.clock import ...` es válido y no hace nada. La frecuencia es una **constante** (`20 * MHz`, `32768 * Hz`, `125 * kHz`). `CLOCK_HZ: Const[uint32] = 4_000_000` es la **forma manual**: solo declara la frecuencia y **no configura el oscilador** (quien la usa elige `FOSC` con `--config`); sigue valiendo, pero la recomendada es `CLOCK`. No se pueden usar las dos a la vez (`PYP2192`).
+`Internal`, `Crystal`, `ExternalClock`, `MHz`, `kHz` y `Hz` están predeclarados (como `uint8` o `Const`); `from pyxpic.clock import ...` es válido y no hace nada. La frecuencia es una **constante** (`20 * MHz`, `32768 * Hz`, `125 * kHz`). `CLOCK_HZ: Const[uint32] = 4_000_000` es la **forma manual**: solo declara la frecuencia y **no configura el oscilador** (quien la usa elige `FOSC` con `--config`); sigue valiendo, pero la recomendada es `CLOCK`. No se pueden usar las dos a la vez (`PYP2192`).
 
 Se eligió la sintaxis `Nombre[frecuencia]` porque es Python válido: `CLOCK_HZ: 4MHz internal` no lo es (`4MHz` no se lee como número).
 
@@ -20,7 +20,7 @@ Se eligió la sintaxis `Nombre[frecuencia]` porque es Python válido: `CLOCK_HZ:
 | `Crystal[f]` | `LP`, `XT` o `HS` según `f` (ver abajo) | Reserva RA7 (OSC1) y RA6 (OSC2) |
 | `ExternalClock[f]` | `EC` (CLKIN en RA7, E/S en RA6) | Reserva RA7 |
 
-También fija la frecuencia de `pause`, `delay_us`, la UART, el ADC y los temporizadores, igual que `CLOCK_HZ`, y `pypic build` imprime el resultado: `Oscilador: Crystal 20 MHz (FOSC = HS)` y `Configuracion: CONFIG1=0x20D2 ... (FOSC = HS por CLOCK)`.
+También fija la frecuencia de `pause`, `delay_us`, la UART, el ADC y los temporizadores, igual que `CLOCK_HZ`, y `pyxpic build` imprime el resultado: `Oscilador: Crystal 20 MHz (FOSC = HS)` y `Configuracion: CONFIG1=0x20D2 ... (FOSC = HS por CLOCK)`.
 
 ### Límites (DS40001291H, tabla 17-1, p.249, y registro 4-1, p.64)
 
@@ -42,7 +42,7 @@ Son dos montajes distintos y no se pueden confundir:
 | `ExternalClock[f]` | Una **señal** de reloj ya generada, conectada a `CLKIN` | **RA7** (`OSC1`/`CLKIN`) | **RA6** (como E/S) |
 | `Internal[f]` | Nada: el oscilador está dentro del chip | ninguno | RA6 y RA7 |
 
-Con `Crystal` o `ExternalClock` el compilador **avisa** (`PYP3016`) de los pines que toma: dejan de estar disponibles **para cualquier otro uso** del programa, e importarlos como E/S (`from pypic.periph.gpio import RA6`) es el error `PYP2150`. El aviso de `Crystal` dice además que, si lo que llega a RA7 es una señal y no un cristal, se use `ExternalClock`, que deja libre RA6. `Internal` no avisa de nada: no ocupa pines.
+Con `Crystal` o `ExternalClock` el compilador **avisa** (`PYP3016`) de los pines que toma: dejan de estar disponibles **para cualquier otro uso** del programa, e importarlos como E/S (`from pyxpic.periph.gpio import RA6`) es el error `PYP2150`. El aviso de `Crystal` dice además que, si lo que llega a RA7 es una señal y no un cristal, se use `ExternalClock`, que deja libre RA6. `Internal` no avisa de nada: no ocupa pines.
 
 ## `--config FOSC` y `CLOCK`
 
@@ -52,7 +52,7 @@ Con `Crystal` o `ExternalClock` el compilador **avisa** (`PYP3016`) de los pines
 
 | Código | Regla |
 |---|---|
-| `PYP2190` | `CLOCK` mal declarado: no está a nivel de módulo, no se llama `CLOCK`, lleva `= valor` o `pypic.clock` no exporta ese nombre |
+| `PYP2190` | `CLOCK` mal declarado: no está a nivel de módulo, no se llama `CLOCK`, lleva `= valor` o `pyxpic.clock` no exporta ese nombre |
 | `PYP2192` | `CLOCK` y `CLOCK_HZ` a la vez, o `CLOCK` dos veces |
 | `PYP2193` | La frecuencia no es una constante mayor que 0 |
 | `PYP2194` | La fuente no admite esa frecuencia (con los valores válidos en el mensaje) |
@@ -67,4 +67,4 @@ Con `Crystal` o `ExternalClock` el compilador **avisa** (`PYP3016`) de los pines
 
 ## Verificación
 
-`crates/pypic-pic14/tests/clock.rs`: una línea sin imports; el modo `FOSC` elegido para cada frecuencia (incluidos los bordes 100 kHz, 4 MHz, 4 000 001 Hz y 20 MHz); las ocho frecuencias del oscilador interno con su `IRCF`; los rechazos con los límites en el mensaje; los errores de declaración; la reserva de pines (`RA6`, `RA7` con cristal, `RA7` con EC, nada con el interno); el número exacto de ciclos de una `pause` con cada frecuencia (4, 8, 20, 1 y 2 MHz); que el oscilador interno a 4 MHz **no escribe** `OSCCON` y los demás sí, esperando la bandera de estabilidad; y que el simulador sigue a `OSCCON` para que la UART use el reloj real. En `crates/pypic-cli/tests/cli.rs`: `FOSC = HS` en la palabra de configuración y el rechazo de `--config FOSC`. Con `Internal[4 * MHz]` el `.hex` de `examples/python/uart/adc_serial.py` sale **idéntico** al que ya funcionó en Proteus. Ejemplo: `examples/python/reloj/reloj_cristal.py`. **No probado en hardware:** el simulador modela `OSCCON` y su estabilidad de forma mínima (12 ciclos), no los tiempos reales del oscilador.
+`crates/pyxpic-pic14/tests/clock.rs`: una línea sin imports; el modo `FOSC` elegido para cada frecuencia (incluidos los bordes 100 kHz, 4 MHz, 4 000 001 Hz y 20 MHz); las ocho frecuencias del oscilador interno con su `IRCF`; los rechazos con los límites en el mensaje; los errores de declaración; la reserva de pines (`RA6`, `RA7` con cristal, `RA7` con EC, nada con el interno); el número exacto de ciclos de una `pause` con cada frecuencia (4, 8, 20, 1 y 2 MHz); que el oscilador interno a 4 MHz **no escribe** `OSCCON` y los demás sí, esperando la bandera de estabilidad; y que el simulador sigue a `OSCCON` para que la UART use el reloj real. En `crates/pyxpic-cli/tests/cli.rs`: `FOSC = HS` en la palabra de configuración y el rechazo de `--config FOSC`. Con `Internal[4 * MHz]` el `.hex` de `examples/python/uart/adc_serial.py` sale **idéntico** al que ya funcionó en Proteus. Ejemplo: `examples/python/reloj/reloj_cristal.py`. **No probado en hardware:** el simulador modela `OSCCON` y su estabilidad de forma mínima (12 ciclos), no los tiempos reales del oscilador.

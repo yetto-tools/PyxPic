@@ -1,12 +1,12 @@
-# PyPIC BASIC (estilo PICAXE, `.bas`)
+# PyxPic BASIC (estilo PICAXE, `.bas`)
 
-**Estado: primera entrega.** Es el segundo lenguaje de PyPIC. Los tres caminos para escribir un programa de PIC quedan así:
+**Estado: primera entrega.** Es el segundo lenguaje de PyxPic. Los tres caminos para escribir un programa de PIC quedan así:
 
 | Lenguaje | Extensión | Qué es |
 |---|---|---|
 | **Python** | `.py` | El lenguaje principal: sintaxis Python estática y tipada, SDK de periféricos, ensamblador en línea (`@asm_function`) |
-| **PyPIC BASIC** | `.bas` | BASIC al estilo del que ofrece PICAXE (`HIGH`, `PAUSE`, `READADC`, `GOTO`, `GOSUB`, `b0`/`w0`), **compilado a código nativo** |
-| **Ensamblador** | `.s` | PIC-AS de XC8 (`pypic asm`, docs/asm-pic14.md) |
+| **PyxPic BASIC** | `.bas` | BASIC al estilo del que ofrece PICAXE (`HIGH`, `PAUSE`, `READADC`, `GOTO`, `GOSUB`, `b0`/`w0`), **compilado a código nativo** |
+| **Ensamblador** | `.s` | PIC-AS de XC8 (`pyxpic asm`, docs/asm-pic14.md) |
 
 BASIC **no tiene intérprete ni VM**: el archivo `.bas` se traduce al mismo árbol (AST) que produce el parser de Python y de ahí pasa por el mismo verificador, el mismo IR, el mismo backend PIC14 y el mismo simulador. Todo lo que Python sabe hacer con el SDK (ADC, UART, EEPROM, comparadores, PWM, temporizadores) está disponible desde BASIC con las mismas reglas, los mismos costos en ciclos y los mismos diagnósticos de tipos y de periféricos, ubicados en la línea del `.bas`.
 
@@ -26,17 +26,17 @@ main:
 ```
 
 ```
-pypic check parpadeo.bas
-pypic build parpadeo.bas -o parpadeo.hex
+pyxpic check parpadeo.bas
+pyxpic build parpadeo.bas -o parpadeo.hex
 ```
 
-La CLI elige el lenguaje **por la extensión**: `.bas` es BASIC y cualquier otra cosa, Python. Un `pypic.toml` acepta `main = "main.bas"`; `pypic project check`, `pypic build` y `pypic clean` funcionan igual.
+La CLI elige el lenguaje **por la extensión**: `.bas` es BASIC y cualquier otra cosa, Python. Un `pyxpic.toml` acepta `main = "main.bas"`; `pyxpic project check`, `pyxpic build` y `pyxpic clean` funcionan igual.
 
 ## Qué es igual y qué es distinto que en PICAXE
 
-PyPIC BASIC parte del BASIC de PICAXE para que sus programas se reconozcan, pero es un lenguaje compilado y tipado, y por eso **no es una copia**:
+PyxPic BASIC parte del BASIC de PICAXE para que sus programas se reconozcan, pero es un lenguaje compilado y tipado, y por eso **no es una copia**:
 
-| | PICAXE | PyPIC BASIC |
+| | PICAXE | PyxPic BASIC |
 |---|---|---|
 | Dispositivo | el que elige el editor (`#picaxe 40X2`) | **`DEVICE PIC16F887`**, siempre en el código |
 | Pines | `B.0`, `pinB.0`, números de pin | `B.0` (salida) y `pinB.0` (entrada) son el mismo pin RB0; también `SYMBOL led = B.0` |
@@ -56,7 +56,7 @@ CLOCK INTERNAL 4 MHZ        ' INTERNAL, CRYSTAL o EXTERNAL; MHZ, KHZ o HZ (como 
 BAUD 9600                   ' velocidad de la UART (8N1): la de SERTXD, SERRXD y UART.write; sin esta línea son 9600
 ```
 
-**No hay importaciones.** Los periféricos del SDK (`ADC`, `UART`, `EEPROM`, `PWM1`, `CMP1`, `CVREF`, `TMR2`...) y sus constantes (`AN0`, `FOSC_8`, `C12IN0`, `REF_PIN`...) se importan solos cuando el programa los usa, y no distinguen mayúsculas (`adc`, `an0`). Los pines y las pausas también. Solo los módulos que no son periféricos (`pypic.regs`) se importan con `FROM pypic.regs IMPORT STATUS`; hacerlo con un periférico sigue funcionando.
+**No hay importaciones.** Los periféricos del SDK (`ADC`, `UART`, `EEPROM`, `PWM1`, `CMP1`, `CVREF`, `TMR2`...) y sus constantes (`AN0`, `FOSC_8`, `C12IN0`, `REF_PIN`...) se importan solos cuando el programa los usa, y no distinguen mayúsculas (`adc`, `an0`). Los pines y las pausas también. Solo los módulos que no son periféricos (`pyxpic.regs`) se importan con `FROM pyxpic.regs IMPORT STATUS`; hacerlo con un periférico sigue funcionando.
 
 ## Variables
 
@@ -72,7 +72,7 @@ SYMBOL led = D.0            ' un pin
 
 Todas las variables son **globales** y empiezan en 0. Los nombres no distinguen mayúsculas de minúsculas.
 
-**`w0` y `b0`/`b1` no se solapan.** En PICAXE `w0` es `b0:b1`, `w1` es `b2:b3`, y así. El IR de PyPIC no tiene lugares que se pisen, así que BASIC los trata como variables **independientes** y, en vez de dejar que un programa dependa del solapamiento sin saberlo, **da un error (`PYB0074`) si el programa usa a la vez `wN` y `b(2N)` o `b(2N+1)`**. Usa solo una de las dos formas, o `DIM` con nombres.
+**`w0` y `b0`/`b1` no se solapan.** En PICAXE `w0` es `b0:b1`, `w1` es `b2:b3`, y así. El IR de PyxPic no tiene lugares que se pisen, así que BASIC los trata como variables **independientes** y, en vez de dejar que un programa dependa del solapamiento sin saberlo, **da un error (`PYB0074`) si el programa usa a la vez `wN` y `b(2N)` o `b(2N+1)`**. Usa solo una de las dos formas, o `DIM` con nombres.
 
 ### El ancho de una expresión
 

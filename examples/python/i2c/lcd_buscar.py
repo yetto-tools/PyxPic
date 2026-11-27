@@ -6,10 +6,10 @@ Se repite cada 3 segundos. Una mochila PCF8574 contesta ACK a su direccion; el m
 P1 = RW, P2 = E, P3 = luz, P4 a P7 = D4 a D7, como lcd_i2c.py) mostrara el texto.
 Conexion: RC3/SCL y RC4/SDA con pull-ups de 4,7 kohm a VDD; RC6/TX a un terminal serie si quieres la lista. Entrada: ninguna.
 """
-from pypic.device import PIC16F887
-from pypic.periph.uart import UART
-from pypic.regs import SSPADD, SSPBUF, SSPCON, SSPCON2, SSPSTAT, TRISC
-from pypic.system.time import delay_us, pause
+from pyxpic.device import PIC16F887
+from pyxpic.periph.uart import UART
+from pyxpic.regs import SSPADD, SSPBUF, SSPCON, SSPCON2, SSPSTAT, TRISC
+from pyxpic.system.time import delay_us, pause
 
 CLOCK: Internal[4 * MHz]
 

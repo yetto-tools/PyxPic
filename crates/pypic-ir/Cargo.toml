@@ -1,9 +1,0 @@
-[package]
-name = "pypic-ir"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-description = "PyPIC typed, target-independent IR and lowering from the checked frontend program"
-
-[dependencies]
-pypic-frontend = { path = "../pypic-frontend" }

@@ -1,4 +1,4 @@
-# PyPIC IDE Design System
+# PyxPic IDE Design System
 
 ## 0. Research Log
 
@@ -8,7 +8,7 @@
 
 ## 1. Atmosphere & Identity
 
-PyPIC IDE is a calm workbench for firmware: clear about what is configured, explicit about what can happen next, and quiet when no project exists. Its signature is a practical start page that pairs one primary project action with the actual state of the compiler and Device Packs.
+PyxPic IDE is a calm workbench for firmware: clear about what is configured, explicit about what can happen next, and quiet when no project exists. Its signature is a practical start page that pairs one primary project action with the actual state of the compiler and Device Packs.
 
 ## 2. Color
 

@@ -25,7 +25,7 @@
     "timers_8bit": 2,
     "timers_16bit": 1
   },
-  "pypic": {
+  "pyxpic": {
     "support_level": "experimental",
     "max_int_bits": 32
   },

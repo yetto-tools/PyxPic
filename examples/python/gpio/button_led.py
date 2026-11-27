@@ -1,7 +1,7 @@
 """Un pulsador en RB0 enciende el LED de RD0 (sin retardos: solo lee y escribe pines)."""
-from pypic.device import PIC16F887
-from pypic import Const, init_device, uint32
-from pypic.periph.gpio import RB0, RD0
+from pyxpic.device import PIC16F887
+from pyxpic import Const, init_device, uint32
+from pyxpic.periph.gpio import RB0, RD0
 
 CLOCK: Internal[4 * MHz]
 

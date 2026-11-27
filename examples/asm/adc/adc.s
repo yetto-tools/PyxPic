@@ -1,7 +1,7 @@
 ; Lee un potenciometro en AN0 (RA0) y enciende RD0 cuando pasa de la mitad de la escala (511) - PIC16F887, 4 MHz.
 ; Equivale a examples/python/adc/adc.py y a examples/basic/adc/adc.bas. Se ensambla con:
 ;
-;   pypic asm adc.s -Wl,-presetVec=0h,-pintentry=4h -o adc.hex
+;   pyxpic asm adc.s -Wl,-presetVec=0h,-pintentry=4h -o adc.hex
 ;
 ; ADCON1: resultado a la derecha (ADFM = 1), referencias VDD y VSS. ADCON0: reloj FOSC/8 (TAD = 2 us a 4 MHz, dentro de 1,6 a 6 us),
 ; canal AN0 y ADC encendido. Antes de cada conversion se espera la adquisicion (~12 us; el valor tipico del datasheet es 11,5 us).

@@ -7,9 +7,9 @@ Politica ante lo inesperado:
   * Error de trama (FERR): el byte se trata como cualquier otro (si es 'A' o 'B' actua).
   * Desbordamiento (OERR): se borra con clear_overrun() para seguir recibiendo; lo perdido no se recupera.
 """
-from pypic.device import PIC16F887
-from pypic.periph.gpio import RD0
-from pypic.periph.uart import UART
+from pyxpic.device import PIC16F887
+from pyxpic.periph.gpio import RD0
+from pyxpic.periph.uart import UART
 
 CLOCK: Internal[4 * MHz]
 

@@ -1,11 +1,11 @@
 # Operadores con rutina nativa: `*`, `//`, `%` y desplazamientos variables
 
-**Estado: implementado (#27).** El PIC16 no tiene instrucciones de multiplicar, dividir ni desplazar por una cantidad variable. PyPIC las ofrece como **operadores** (`a * b`, `a // b`, `a % b`, `x << n`, `x >> n`)
+**Estado: implementado (#27).** El PIC16 no tiene instrucciones de multiplicar, dividir ni desplazar por una cantidad variable. PyxPic las ofrece como **operadores** (`a * b`, `a // b`, `a % b`, `x << n`, `x >> n`)
 que se compilan a **rutinas nativas estáticas** (nunca un intérprete), con el costo a la vista:
 
 - Un aviso **`PYP3011`** por rutina y programa dice cuál se usa (`mul8`, `divmod16`...), cuántos niveles de pila gasta y remite a esta página.
 - `--listing` muestra la rutina (`rt.mul8:`) y sus instrucciones.
-- Los costos de abajo los **mide el simulador** en las pruebas (`crates/pypic-pic14/tests/runtime.rs`): si cambian, la prueba falla.
+- Los costos de abajo los **mide el simulador** en las pruebas (`crates/pyxpic-pic14/tests/runtime.rs`): si cambian, la prueba falla.
 
 ## Qué rutina usa cada operación
 
@@ -48,5 +48,5 @@ Los desplazamientos variables y las operaciones por potencia de 2 no usan pila.
 
 ## Verificación
 
-`crates/pypic-pic14/tests/runtime.rs` (todo contra el intérprete de la IR): **todos los pares** de `uint8` e `int8` (65 536) para `*`, `//` y `%` incluido el divisor 0; 24 valores de borde de 16 bits (576 pares) con y sin signo;
+`crates/pyxpic-pic14/tests/runtime.rs` (todo contra el intérprete de la IR): **todos los pares** de `uint8` e `int8` (65 536) para `*`, `//` y `%` incluido el divisor 0; 24 valores de borde de 16 bits (576 pares) con y sin signo;
 todos los desplazamientos de 0 a 39 en `uint8`, `int8`, `uint16` e `int16`; resultados conocidos; potencias de 2 sin rutina; una copia por contexto con interrupciones inyectadas; pila; y los costos de esta tabla.

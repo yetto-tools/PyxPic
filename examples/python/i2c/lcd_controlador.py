@@ -1,15 +1,15 @@
-"""Pantalla LCD 16x2 con controlador I2C propio (tipo ST7032 o AiP31068, direccion 0x3E): escribe "Hola PyPIC" e "I2C 100 kHz".
+"""Pantalla LCD 16x2 con controlador I2C propio (tipo ST7032 o AiP31068, direccion 0x3E): escribe "Hola PyxPic" e "I2C 100 kHz".
 
 Distinta de la mochila PCF8574 de lcd_i2c.py: esta pantalla no usa nibbles ni el pulso de E. Cada transaccion es START, direccion 0x3E con R/W en 0 (se escribe
 0x7C), un byte de control y un dato: control 0x00 = el dato es una orden, control 0x40 = el dato es un caracter. Las ordenes son las del HD44780 en 8 bits.
 En Proteus es el modelo JHD-2X16-I2C con Device Address = $7C (Row 1 = 80-8F, Row 2 = C0-CF). Si tu pantalla real es una ST7032, necesita ademas las ordenes de la
 tabla extendida (contraste e interno de alimentacion): este ejemplo no las manda.
 
-Conexion: RC3/SCL y RC4/SDA con pull-ups de 4,7 kohm a VDD. Entrada: ninguna. Verificado solo en el simulador de PyPIC (sin pruebas en Proteus ni en hardware).
+Conexion: RC3/SCL y RC4/SDA con pull-ups de 4,7 kohm a VDD. Entrada: ninguna. Verificado solo en el simulador de PyxPic (sin pruebas en Proteus ni en hardware).
 """
-from pypic.device import PIC16F887
-from pypic.regs import SSPADD, SSPBUF, SSPCON, SSPCON2, SSPSTAT, TRISC
-from pypic.system.time import delay_us, pause
+from pyxpic.device import PIC16F887
+from pyxpic.regs import SSPADD, SSPBUF, SSPCON, SSPCON2, SSPSTAT, TRISC
+from pyxpic.system.time import delay_us, pause
 
 CLOCK: Internal[4 * MHz]
 
@@ -17,7 +17,7 @@ DIRECCION: uint8 = 0x7C        # 0x3E << 1
 CONTROL_ORDEN: uint8 = 0x00
 CONTROL_DATO: uint8 = 0x40
 
-LINEA1: Rom[uint8] = [72, 111, 108, 97, 32, 80, 121, 80, 73, 67]              # "Hola PyPIC"
+LINEA1: Rom[uint8] = [72, 111, 108, 97, 32, 80, 121, 120, 80, 105, 99]              # "Hola PyxPic"
 LINEA2: Rom[uint8] = [73, 50, 67, 32, 49, 48, 48, 32, 107, 72, 122]           # "I2C 100 kHz"
 
 
@@ -54,7 +54,7 @@ def main() -> None:
     pause(2)                              # el borrado tarda 1,52 ms
     escribir(CONTROL_ORDEN, 0x06)         # el cursor avanza a la derecha
     escribir(CONTROL_ORDEN, 0x80)         # primera linea
-    for i in range(10):
+    for i in range(11):
         escribir(CONTROL_DATO, LINEA1[i])
     escribir(CONTROL_ORDEN, 0xC0)         # segunda linea
     for i in range(11):

@@ -8,10 +8,10 @@ bufer de texto en RAM. {valor:04} rellena con ceros a 4 cifras; {valor:04X} mues
 Entrada: ninguna. Este ejemplo solo transmite, asi que no hay datos inesperados, errores de trama ni desbordamiento que tratar.
 Hardware: NO probado, solo en simulador (uart_examples.rs).
 """
-from pypic.device import PIC16F887
-from pypic.periph.adc import ADC, AN0
-from pypic.periph.uart import UART
-from pypic.system.time import pause
+from pyxpic.device import PIC16F887
+from pyxpic.periph.adc import ADC, AN0
+from pyxpic.periph.uart import UART
+from pyxpic.system.time import pause
 
 CLOCK: Internal[4 * MHz]
 

@@ -1,29 +1,29 @@
-# Ensamblador PIC14 (`pypic asm`): sintaxis de MPLAB XC8 PIC Assembler
+# Ensamblador PIC14 (`pyxpic asm`): sintaxis de MPLAB XC8 PIC Assembler
 
 ## Desensamblado como fuente
 
-En PIC16F887, `CONFIG IDLOC0 = 0x41` hasta `IDLOC3` emiten identificadores opcionales en `0x2000..0x2003`. El datasheet DS40001291H §14.8 indica que solo se usan sus siete bits menos significativos. Como PIC-AS, PyPIC trunca valores positivos fuera de la máscara `0x7F` y emite `ASMW001`; rechaza identificadores repetidos y nombres desconocidos. No emite IDLOC si no se solicitan. Son independientes de CONFIG1/CONFIG2 y no son registros de identificación del dispositivo.
+En PIC16F887, `CONFIG IDLOC0 = 0x41` hasta `IDLOC3` emiten identificadores opcionales en `0x2000..0x2003`. El datasheet DS40001291H §14.8 indica que solo se usan sus siete bits menos significativos. Como PIC-AS, PyxPic trunca valores positivos fuera de la máscara `0x7F` y emite `ASMW001`; rechaza identificadores repetidos y nombres desconocidos. No emite IDLOC si no se solicitan. Son independientes de CONFIG1/CONFIG2 y no son registros de identificación del dispositivo.
 
-`pypic disasm firmware.hex --pic-as -mcpu=16F887` escribe en la salida estándar instrucciones en sintaxis PIC-AS, con `PROCESSOR`, `PSECT` absoluto y `ORG` para conservar direcciones. El Device Pack permite identificar los vectores y emitir las palabras de configuración conocidas como `CONFIG CONFIGn = valor`. Las palabras no reconocidas o con codificaciones alternativas se conservan como `DW`; otras direcciones fuera de la memoria de programa se muestran como datos de zona especial. `--devices-dir` permite localizar Device Packs. Sin `-mcpu`, no se presupone un dispositivo y las zonas especiales se representan con `DW`. El formato sin `--pic-as` conserva el listado anterior.
+`pyxpic disasm firmware.hex --pic-as -mcpu=16F887` escribe en la salida estándar instrucciones en sintaxis PIC-AS, con `PROCESSOR`, `PSECT` absoluto y `ORG` para conservar direcciones. El Device Pack permite identificar los vectores y emitir las palabras de configuración conocidas como `CONFIG CONFIGn = valor`. Las palabras no reconocidas o con codificaciones alternativas se conservan como `DW`; otras direcciones fuera de la memoria de programa se muestran como datos de zona especial. `--devices-dir` permite localizar Device Packs. Sin `-mcpu`, no se presupone un dispositivo y las zonas especiales se representan con `DW`. El formato sin `--pic-as` conserva el listado anterior.
 
-El HEX no contiene nombres, tipos ni una separación fiable entre código y datos: la salida numérica no recupera el programa original. Se rotulan los vectores conocidos, pero los saltos y registros se mantienen numéricos porque la página y el banco dependen del estado en ejecución. `pypic asm` emite únicamente las palabras CONFIG mencionadas; compare las regiones relevantes al reensamblar con otros toolchains.
+El HEX no contiene nombres, tipos ni una separación fiable entre código y datos: la salida numérica no recupera el programa original. Se rotulan los vectores conocidos, pero los saltos y registros se mantienen numéricos porque la página y el banco dependen del estado en ejecución. `pyxpic asm` emite únicamente las palabras CONFIG mencionadas; compare las regiones relevantes al reensamblar con otros toolchains.
 
-La prueba automatizada reensambla con `pypic asm` una imagen con direcciones dispersas y CONFIG. Además, se contrastó una imagen pequeña con vectores y ambas palabras CONFIG mediante PIC-AS 4.00 y el DFP oficial PIC16Fxxx 1.9.176: el HEX coincidió. Esta prueba no demuestra compatibilidad de todas las instrucciones, datos o zonas especiales. PIC-AS emitió un aviso sobre bits reservados de CONFIG2. Para ejecutar el ensamblador oficial se necesita el DFP correspondiente mediante `-mdfp`; no es una dependencia de PyPIC.
+La prueba automatizada reensambla con `pyxpic asm` una imagen con direcciones dispersas y CONFIG. Además, se contrastó una imagen pequeña con vectores y ambas palabras CONFIG mediante PIC-AS 4.00 y el DFP oficial PIC16Fxxx 1.9.176: el HEX coincidió. Esta prueba no demuestra compatibilidad de todas las instrucciones, datos o zonas especiales. PIC-AS emitió un aviso sobre bits reservados de CONFIG2. Para ejecutar el ensamblador oficial se necesita el DFP correspondiente mediante `-mdfp`; no es una dependencia de PyxPic.
 
 Para PIC16F887 se reconoce `CONFIG WRT = 256`, nombre del DFP que protege las primeras 256 palabras. No debe confundirse con el literal hexadecimal `0x100`: al no ser un nombre, se trata como número y se conservan solamente los bits del ancho del campo, igual que PIC-AS en las pruebas con WRT. Por ejemplo, `256` produce CONFIG2 `0x3DFF`, pero `0x100` produce `0x39FF`. Los números negativos se rechazan. Un número que exceda el campo o la palabra completa se trunca y genera `warning[ASMW001]` con el valor aplicado.
 
-En las pruebas con PIC-AS 4.00, declarar una palabra CONFIG hace que el enlazador también emita la otra con su valor predeterminado; sin ninguna declaración CONFIG no emite ninguna. PyPIC emite solo las palabras declaradas. Esta diferencia puede cambiar el contenido del HEX y debe tenerse en cuenta al programar fusibles.
+En las pruebas con PIC-AS 4.00, declarar una palabra CONFIG hace que el enlazador también emita la otra con su valor predeterminado; sin ninguna declaración CONFIG no emite ninguna. PyxPic emite solo las palabras declaradas. Esta diferencia puede cambiar el contenido del HEX y debe tenerse en cuenta al programar fusibles.
 
-**Estado: implementación parcial.** `pypic asm` ensambla un subconjunto de la sintaxis de `pic-as` para PIC16 clásico (MPLAB XC8 PIC Assembler, guía DS50002974F, cap. 4 y 5). No se garantiza compatibilidad completa: las directivas pendientes y las diferencias deben comprobarse con PIC-AS real. Es la base del ensamblador en línea ([asm-inline.md](asm-inline.md)).
+**Estado: implementación parcial.** `pyxpic asm` ensambla un subconjunto de la sintaxis de `pic-as` para PIC16 clásico (MPLAB XC8 PIC Assembler, guía DS50002974F, cap. 4 y 5). No se garantiza compatibilidad completa: las directivas pendientes y las diferencias deben comprobarse con PIC-AS real. Es la base del ensamblador en línea ([asm-inline.md](asm-inline.md)).
 Verificado: el blink escrito en PIC-AS (`examples/asm/gpio/blink_rd0.s`) produce **byte por byte** el mismo `.hex` que se probó en Proteus,
 y las 16 008 instrucciones válidas sobreviven a desensamblar y volver a ensamblar.
 
 ### Comparación con XC8 PIC-AS
 
-Se comparó `examples/asm/gpio/blink_rd0.s` con PIC-AS 4.00 y el DFP oficial PIC16Fxxx 1.9.176: ambos ensambladores produjeron la misma imagen, incluidas CONFIG1 y CONFIG2. Para repetir la prueba automatizada, indicar `PYPIC_TEST_PIC_AS` con la ruta de `pic-as.exe` y `PYPIC_TEST_XC8_DFP` con la carpeta `xc8` del DFP; ejecutar `cargo test -p pypic-cli --test cli pic_as_blink_matches_native_assembler_when_xc8_and_dfp_are_configured -- --nocapture`. Si faltan ambas variables la comparación se omite. Para un archivo `.s` con `#include`, el comando oficial necesita `-xassembler-with-cpp`; el DFP se indica con `-mdfp`. Esta prueba no certifica todas las directivas ni todos los valores de configuración.
+Se comparó `examples/asm/gpio/blink_rd0.s` con PIC-AS 4.00 y el DFP oficial PIC16Fxxx 1.9.176: ambos ensambladores produjeron la misma imagen, incluidas CONFIG1 y CONFIG2. Para repetir la prueba automatizada, indicar `PYXPIC_TEST_PIC_AS` con la ruta de `pic-as.exe` y `PYXPIC_TEST_XC8_DFP` con la carpeta `xc8` del DFP; ejecutar `cargo test -p pyxpic-cli --test cli pic_as_blink_matches_native_assembler_when_xc8_and_dfp_are_configured -- --nocapture`. Si faltan ambas variables la comparación se omite. Para un archivo `.s` con `#include`, el comando oficial necesita `-xassembler-with-cpp`; el DFP se indica con `-mdfp`. Esta prueba no certifica todas las directivas ni todos los valores de configuración.
 
 ```
-pypic asm blink_rd0.s -Wl,-presetVec=0h,-pintentry=4h -o blink_rd0.hex [--listing]
+pyxpic asm blink_rd0.s -Wl,-presetVec=0h,-pintentry=4h -o blink_rd0.hex [--listing]
 ```
 
 | Opción | Significado |
@@ -128,7 +128,7 @@ RADIX hex                        ; dec, hex u oct: base de los numeros sin sufij
 
 ### `PSECT` y el mini-enlazador
 
-pic-as no pone el código donde se escribe: cada `PSECT` lo coloca el enlazador. PyPIC lleva un enlazador mínimo con las mismas reglas:
+pic-as no pone el código donde se escribe: cada `PSECT` lo coloca el enlazador. PyxPic lleva un enlazador mínimo con las mismas reglas:
 
 1. **`abs`**: el psect empieza en la dirección 0 y `ORG` es una dirección absoluta (el uso clásico para vectores).
 2. **`-pNOMBRE=dir[,sig...]`** lo fija en `dir`. Sin esa opción el psect `reset_vec` va en 0, seguido de `intentry`, `init` y `end_init`

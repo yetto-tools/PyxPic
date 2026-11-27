@@ -1,4 +1,4 @@
-' Parpadeo en PyPIC BASIC (estilo PICAXE): RD0 cambia cada 500 ms.
+' Parpadeo en PyxPic BASIC (estilo PICAXE): RD0 cambia cada 500 ms.
 DEVICE PIC16F887
 CLOCK INTERNAL 4 MHZ
 

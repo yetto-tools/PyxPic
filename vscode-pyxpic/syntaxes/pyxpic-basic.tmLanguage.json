@@ -1,0 +1,24 @@
+{
+  "scopeName": "source.pyxpic-basic",
+  "name": "PyxPic BASIC",
+  "patterns": [
+    { "name": "comment.line.apostrophe.pyxpic-basic", "match": "'.*$" },
+    { "name": "comment.line.semicolon.pyxpic-basic", "match": ";.*$" },
+    { "name": "string.quoted.double.pyxpic-basic", "begin": "\"", "end": "\"|$", "patterns": [{ "name": "constant.character.escape.pyxpic-basic", "match": "\\\\[nrt0\\\\\"']" }] },
+    { "name": "constant.numeric.hex.pyxpic-basic", "match": "(?i)(\\$|0x)[0-9a-f_]+\\b" },
+    { "name": "constant.numeric.binary.pyxpic-basic", "match": "%[01_]+\\b" },
+    { "name": "constant.numeric.decimal.pyxpic-basic", "match": "\\b[0-9][0-9_]*\\b" },
+    { "name": "entity.name.label.pyxpic-basic", "match": "^\\s*[A-Za-z_][A-Za-z0-9_]*(?=\\s*:)" },
+    { "name": "keyword.control.pyxpic-basic", "match": "(?i)\\b(if|then|else|elseif|endif|end\\s+if|for|to|step|next|do|loop|while|wend|until|select|case|end\\s+select|goto|gosub|return|exit|end|on|interrupt|interrupts|asm|enable|disable)\\b" },
+    { "name": "keyword.declaration.pyxpic-basic", "match": "(?i)\\b(device|clock|baud|symbol|dim|as|let|from|import)\\b" },
+    { "name": "storage.type.pyxpic-basic", "match": "(?i)\\b(byte|word|bit)\\b" },
+    { "name": "support.function.command.pyxpic-basic", "match": "(?i)\\b(high|low|toggle|output|input|pause|pauseus|readadc|readadc10|read|write|pwmout|sertxd|serrxd)\\b" },
+    { "name": "keyword.operator.word.pyxpic-basic", "match": "(?i)\\b(and|or|xor|not|mod)\\b" },
+    { "name": "constant.language.clock.pyxpic-basic", "match": "(?i)\\b(internal|crystal|external|mhz|khz|hz)\\b" },
+    { "name": "constant.language.pin.pyxpic-basic", "match": "(?i)\\b(pin)?[a-e]\\.[0-7]\\b" },
+    { "name": "support.variable.pyxpic-basic", "match": "(?i)\\b[bw][0-9]{1,2}\\b" },
+    { "name": "support.class.sdk.pyxpic-basic", "match": "(?i)\\b(adc|uart|eeprom|pwm[12]|cmp[12]|cvref|tmr[012])\\b" },
+    { "name": "support.constant.sdk.pyxpic-basic", "match": "\\b(AN[0-9]+|FOSC_[0-9]+|FRC|C12IN[0-3]|REF_(PIN|CVREF|FIXED))\\b" },
+    { "name": "keyword.operator.pyxpic-basic", "match": "<<|>>|<>|<=|>=|[-+*/%&|^~=<>#]" }
+  ]
+}

@@ -1,9 +1,9 @@
 """Envia por la UART (9600 8N1, RC6/TX) el byte 0 de la EEPROM, una linea por segundo; RD0 cambia con cada linea."""
-from pypic.device import PIC16F887
-from pypic.periph.eeprom import EEPROM
-from pypic.periph.gpio import RD0
-from pypic.periph.uart import UART
-from pypic.system.time import pause
+from pyxpic.device import PIC16F887
+from pyxpic.periph.eeprom import EEPROM
+from pyxpic.periph.gpio import RD0
+from pyxpic.periph.uart import UART
+from pyxpic.system.time import pause
 
 CLOCK: Internal[4 * MHz]
 

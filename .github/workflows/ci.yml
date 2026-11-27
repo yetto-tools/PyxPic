@@ -1,4 +1,4 @@
-# Integracion continua de PyPIC (#17): formato, clippy, pruebas y Device Packs en Linux y Windows, y la extension de VS Code.
+# Integracion continua de PyxPic (#17): formato, clippy, pruebas y Device Packs en Linux y Windows, y la extension de VS Code.
 #
 # La version de Rust esta fijada (la misma con la que se limpio clippy) para que un aviso nuevo de una version posterior no ponga el CI en
 # rojo sin que cambie nada. Se sube a proposito: cambia RUST_VERSION, corre `cargo clippy --workspace --all-targets -- -D warnings` y
@@ -40,7 +40,7 @@ jobs:
         shell: bash
         run: |
           for pack in devices/*/; do
-            cargo run -q -p pypic-cli -- device validate "$pack"
+            cargo run -q -p pyxpic-cli -- device validate "$pack"
           done
 
   extension:
@@ -54,10 +54,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # las pruebas de la extension ejecutan la CLI real
       - name: Compilar la CLI
-        run: cargo build -p pypic-cli
+        run: cargo build -p pyxpic-cli
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: Pruebas de la extension
-        working-directory: vscode-pypic
+        working-directory: vscode-pyxpic
         run: npm test

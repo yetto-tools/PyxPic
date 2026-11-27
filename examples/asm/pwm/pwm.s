@@ -1,7 +1,7 @@
 ; Regula el brillo de un LED en RC2 (PWM1) con un potenciometro en AN0: el ADC da 0 a 1023 y el PWM toma 0 a 1023 - PIC16F887, 4 MHz.
 ; Equivale a examples/python/pwm/pwm.py y a examples/basic/pwm/pwm.bas. Se ensambla con:
 ;
-;   pypic asm pwm.s -Wl,-presetVec=0h,-pintentry=4h -o pwm.hex
+;   pyxpic asm pwm.s -Wl,-presetVec=0h,-pintentry=4h -o pwm.hex
 ;
 ; PR2 = 255 con prescaler 1: periodo de 256 ciclos y 1024 cuentas de ciclo de trabajo. El resultado del ADC va justificado a la izquierda
 ; (ADFM = 0): ADRESH son los 8 bits altos (CCPR1L) y ADRESL<7:6> los 2 bajos (DC1B, CCP1CON<5:4>). Orden de arranque de DS40001291H 11.5.7:

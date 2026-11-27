@@ -18,8 +18,8 @@ examples/
     reloj/                     fuentes de reloj (cristal, interno)
     asm-en-linea/              @asm_function
     hardware/                  programas de prueba en hardware real (K150, docs/programador-k150.md)
-    proyecto/                  un proyecto con pypic.toml y dos perfiles
-  basic/                     PyPIC BASIC (.bas, estilo PICAXE; docs/basic-picaxe.md)
+    proyecto/                  un proyecto con pyxpic.toml y dos perfiles
+  basic/                     PyxPic BASIC (.bas, estilo PICAXE; docs/basic-picaxe.md)
     gpio/
     adc/
   asm/                       ensamblador PIC-AS (.s, docs/asm-pic14.md)
@@ -27,7 +27,7 @@ examples/
   hex/                       HEX ya compilados (los verificados en Proteus: docs/proteus-blink.md)
 ```
 
-Se compilan con `pypic build <ruta> -o salida.hex` (la extensión del archivo elige el lenguaje; `.s` va con `pypic asm`). Las pruebas del repositorio compilan y simulan estos ejemplos: al agregar uno, ponlo en la carpeta de su lenguaje y su funcionalidad, y si es un programa de Python, que declare su dispositivo (`from pypic.device import PIC16F887`).
+Se compilan con `pyxpic build <ruta> -o salida.hex` (la extensión del archivo elige el lenguaje; `.s` va con `pyxpic asm`). Las pruebas del repositorio compilan y simulan estos ejemplos: al agregar uno, ponlo en la carpeta de su lenguaje y su funcionalidad, y si es un programa de Python, que declare su dispositivo (`from pyxpic.device import PIC16F887`).
 
 ## Los mismos programas en los tres lenguajes
 
@@ -44,9 +44,9 @@ Varios ejemplos existen en los tres lenguajes y hacen lo mismo (cada uno nombra 
 | Pantalla LCD 16x2 por I2C | `python/i2c/lcd_i2c.py` | — | — |
 | LCD 16x2 con controlador I2C propio (0x3E) | `python/i2c/lcd_controlador.py` | — | — |
 | Busqueda de direcciones I2C (informa por la UART) | `python/i2c/lcd_buscar.py` | — | — |
-| Escaner I2C con `pypic.periph.i2c` (informa por la UART) | `python/i2c/escaner.py` | — | — |
+| Escaner I2C con `pyxpic.periph.i2c` (informa por la UART) | `python/i2c/escaner.py` | — | — |
 | Lectura I2C: entradas de un PCF8574 en PORTD | `python/i2c/leer_pcf8574.py` | — | — |
-| SPI en lazo con `pypic.periph.spi` | `python/spi/lazo.py` | — | — |
+| SPI en lazo con `pyxpic.periph.spi` | `python/spi/lazo.py` | — | — |
 | Saludo con un contador por la UART | `python/uart/saludo_texto.py` | `basic/uart/saludo.bas` | — |
 | Media móvil del ADC | `python/adc/media_movil.py` | `basic/adc/media_movil.bas` | — |
 | Comparador contra CVREF | `python/comparadores/comparador.py` | `basic/comparadores/comparador.bas` | — |

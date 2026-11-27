@@ -1,5 +1,5 @@
-from pypic.device import PIC16F887
-from pypic import uint8, uint16, Const, interrupt
+from pyxpic.device import PIC16F887
+from pyxpic import uint8, uint16, Const, interrupt
 
 LIMIT: Const[uint8] = 200
 ticks: uint16 = 0

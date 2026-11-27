@@ -1,4 +1,4 @@
-# Publicacion de PyPIC: al subir una etiqueta vX.Y.Z que esta en la rama `release`, compila la CLI en Linux y Windows, empaqueta la extension de
+# Publicacion de PyxPic: al subir una etiqueta vX.Y.Z que esta en la rama `release`, compila la CLI en Linux y Windows, empaqueta la extension de
 # VS Code y crea una Release de GitHub con los archivos y sus sumas SHA-256. Ver docs/release.md.
 #
 # Una etiqueta que no este en `release`, o cuya version no coincida con la del espacio de trabajo (Cargo.toml), detiene el proceso antes de compilar.
@@ -66,13 +66,13 @@ jobs:
       - name: Pruebas
         run: cargo test --workspace
       - name: Compilar la CLI
-        run: cargo build --release -p pypic-cli
+        run: cargo build --release -p pyxpic-cli
       - name: Empaquetar
         shell: bash
         run: |
-          dir="pypic-${TAG}-${{ matrix.name }}"
+          dir="pyxpic-${TAG}-${{ matrix.name }}"
           mkdir "$dir"
-          cp target/release/pypic* "$dir/" 2>/dev/null || true
+          cp target/release/pyxpic* "$dir/" 2>/dev/null || true
           rm -f "$dir"/*.d "$dir"/*.pdb
           cp -r devices examples LICENSE README.md "$dir/"
           if [ "${{ matrix.ext }}" = "zip" ]; then
@@ -83,7 +83,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: cli-${{ matrix.name }}
-          path: pypic-${{ env.TAG }}-${{ matrix.name }}.${{ matrix.ext }}
+          path: pyxpic-${{ env.TAG }}-${{ matrix.name }}.${{ matrix.ext }}
 
   extension:
     name: Extension de VS Code
@@ -97,20 +97,20 @@ jobs:
         with:
           toolchain: ${{ env.RUST_VERSION }}
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build -p pypic-cli
+      - run: cargo build -p pyxpic-cli
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: Pruebas
-        working-directory: vscode-pypic
+        working-directory: vscode-pyxpic
         run: npm test
       - name: Empaquetar el .vsix
-        working-directory: vscode-pypic
+        working-directory: vscode-pyxpic
         run: npx --yes @vscode/vsce package --allow-missing-repository --skip-license
       - uses: actions/upload-artifact@v4
         with:
           name: vsix
-          path: vscode-pypic/*.vsix
+          path: vscode-pyxpic/*.vsix
 
   publish:
     name: Crear la Release
@@ -130,4 +130,4 @@ jobs:
         run: |
           prerelease=""
           case "$TAG" in *-*) prerelease="--prerelease" ;; esac
-          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "PyPIC $TAG" --generate-notes $prerelease
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "PyxPic $TAG" --generate-notes $prerelease

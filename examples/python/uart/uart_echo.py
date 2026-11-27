@@ -1,6 +1,6 @@
 """Eco por el puerto serie: devuelve cada byte recibido incrementado en uno, a 9600 baudios (8N1) por RC6 (TX) y RC7 (RX)."""
-from pypic.device import PIC16F887
-from pypic.periph.uart import UART
+from pyxpic.device import PIC16F887
+from pyxpic.periph.uart import UART
 
 CLOCK: Internal[4 * MHz]   # a 4 MHz el compilador usa BRGH = 1 y SPBRG = 25: 9615 baudios (+0,16 %)
 

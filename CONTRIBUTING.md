@@ -1,6 +1,6 @@
-# Cómo contribuir a PyPIC
+# Cómo contribuir a PyxPic
 
-PyPIC compila programas con sintaxis Python a **código nativo** para PIC. Gracias por querer ayudar. Esta guía dice cómo se trabaja aquí y qué se espera de cada cambio.
+PyxPic compila programas con sintaxis Python a **código nativo** para PIC. Gracias por querer ayudar. Esta guía dice cómo se trabaja aquí y qué se espera de cada cambio.
 
 ## Antes de empezar
 
@@ -16,7 +16,7 @@ PyPIC compila programas con sintaxis Python a **código nativo** para PIC. Graci
 ```
 cargo build --workspace
 cargo test --workspace        # tests unitarios y diferenciales (intérprete de la IR contra el simulador del PIC)
-cd vscode-pypic && npm test   # extensión de VS Code (necesita la CLI compilada)
+cd vscode-pyxpic && npm test   # extensión de VS Code (necesita la CLI compilada)
 ```
 
 Todo cambio debe dejar **`cargo test --workspace` en verde**, y pasar el formato y `clippy` (lo mismo que comprueba el CI):
@@ -29,7 +29,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 ## Qué se espera de cada cambio
 
 1. **Pruebas.** Un comportamiento nuevo trae pruebas, y si genera código, **pruebas diferenciales**: el intérprete de la IR y el simulador del núcleo deben dar el mismo resultado. Incluye los casos límite y los de error, no solo el feliz.
-2. **Verificar contra el datasheet.** Registros, bits, tiempos y límites se leen del datasheet (mejor la imagen de la página que el texto extraído, que rompe las tablas) y el código cita la sección. Lo que es decisión de PyPIC y no del datasheet (por ejemplo, una tolerancia) se dice así.
+2. **Verificar contra el datasheet.** Registros, bits, tiempos y límites se leen del datasheet (mejor la imagen de la página que el texto extraído, que rompe las tablas) y el código cita la sección. Lo que es decisión de PyxPic y no del datasheet (por ejemplo, una tolerancia) se dice así.
 3. **No afirmar lo que no se probó.** Distingue **simulador**, **Proteus** y **hardware real**. Una prueba en simulador no es una prueba en placa.
 4. **Documentar.** Cada módulo del SDK tiene su `docs/sdk-*.md` con el contrato, los costos medidos, los diagnósticos y lo que **no** está. Un ejemplo ejecutable en `examples/`.
 5. **Diagnósticos con ubicación**, código (`PYPnnnn`) y una solución sugerida.
@@ -39,14 +39,14 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 | Módulo | Dónde | Qué debe cumplir una contribución |
 |---|---|---|
-| Frontend (lexer, parser, verificador) | `crates/pypic-frontend` | Tests con el código de diagnóstico esperado; no aceptar sintaxis que el resto no soporte |
-| IR e intérprete de referencia | `crates/pypic-ir` | `verify()` pasa; el intérprete es el oráculo de las pruebas diferenciales |
-| Backend PIC14 y simulador | `crates/pypic-pic14` | Pruebas diferenciales; costos medidos en el simulador; el simulador modela el hardware según el datasheet |
-| Device Packs | `devices/` y `crates/pypic-device` | `pypic device validate` pasa; datos con su fuente |
+| Frontend (lexer, parser, verificador) | `crates/pyxpic-frontend` | Tests con el código de diagnóstico esperado; no aceptar sintaxis que el resto no soporte |
+| IR e intérprete de referencia | `crates/pyxpic-ir` | `verify()` pasa; el intérprete es el oráculo de las pruebas diferenciales |
+| Backend PIC14 y simulador | `crates/pyxpic-pic14` | Pruebas diferenciales; costos medidos en el simulador; el simulador modela el hardware según el datasheet |
+| Device Packs | `devices/` y `crates/pyxpic-device` | `pyxpic device validate` pasa; datos con su fuente |
 | Periféricos del SDK | `docs/sdk-*.md` | Sigue el patrón de ADC y UART: tipos del frontend, verificador, instrucción de IR, generación de código con nombres del Device Pack, modelo en el simulador, pruebas, documentación y ejemplo |
-| CLI y proyecto (`pypic.toml`) | `crates/pypic-cli` | Salida estable (JSON versionado para herramientas); nunca sobrescribir archivos del usuario sin avisar |
-| Ensamblador (PIC-AS) | `crates/pypic-pic14/src/asm.rs` | Comparar con PIC-AS cuando esté disponible; documentar las diferencias |
-| Extensión de VS Code | `vscode-pypic/` | `npm test`; la lógica sin VS Code va en módulos propios para poder probarla |
+| CLI y proyecto (`pyxpic.toml`) | `crates/pyxpic-cli` | Salida estable (JSON versionado para herramientas); nunca sobrescribir archivos del usuario sin avisar |
+| Ensamblador (PIC-AS) | `crates/pyxpic-pic14/src/asm.rs` | Comparar con PIC-AS cuando esté disponible; documentar las diferencias |
+| Extensión de VS Code | `vscode-pyxpic/` | `npm test`; la lógica sin VS Code va en módulos propios para poder probarla |
 | Documentación | `docs/`, `README.md` | Estado real: lo propuesto se marca como propuesta |
 
 ## Commits y revisión
@@ -58,6 +58,6 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 ## Licencia
 
-PyPIC se distribuye bajo la **licencia MIT** (ver `LICENSE`). Al enviar una contribución aceptas que se publique bajo esa licencia.
+PyxPic se distribuye bajo la **licencia MIT** (ver `LICENSE`). Al enviar una contribución aceptas que se publique bajo esa licencia.
 
 Los **datasheets de Microchip** de `docs/` (los PDF) son de Microchip y **no** están bajo esta licencia: se incluyen como referencia de consulta.

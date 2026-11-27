@@ -1,11 +1,11 @@
-# SDK: temporizadores (`pypic.periph.timer`)
+# SDK: temporizadores (`pyxpic.periph.timer`)
 
 Timer0, Timer1 y Timer2 son **periféricos**: se importan como nombres, igual que los pines, y el compilador los valida contra el Device Pack
 (`peripherals.json`). Importar uno que el dispositivo no trae es el error `PYP2120`. Todo se resuelve al compilar; el MCU ejecuta solo instrucciones nativas.
 
 ```python
-from pypic.device import PIC16F887
-from pypic.periph.timer import TMR0, TMR1, TMR2, INTERNAL, T1OSC
+from pyxpic.device import PIC16F887
+from pyxpic.periph.timer import TMR0, TMR1, TMR2, INTERNAL, T1OSC
 ```
 
 Los parámetros de `start(...)` son los de los registros (`OPTION_REG`, `T1CON`, `T2CON`, `PR2`), todos constantes: el principio es el del ensamblador,
@@ -51,8 +51,8 @@ TMR2.every_ms(20)          # 20 000 ciclos a 4 MHz: prescaler 16, PR2 = 124, pos
 
 ## Verificación
 
-El simulador (`pypic-pic14::sim`) modela Timer0/1/2 con reloj interno y registra el ciclo exacto de cada bandera (`Sim::timer_events`).
-`crates/pypic-pic14/tests/timer.rs` comprueba que cada periodo es exacto: Timer2 con prescaler/PR2/postscaler, Timer0 con sus 9 preescaladores,
+El simulador (`pyxpic-pic14::sim`) modela Timer0/1/2 con reloj interno y registra el ciclo exacto de cada bandera (`Sim::timer_events`).
+`crates/pyxpic-pic14/tests/timer.rs` comprueba que cada periodo es exacto: Timer2 con prescaler/PR2/postscaler, Timer0 con sus 9 preescaladores,
 Timer1 con sus 4, `every_ms`/`every_us` a 4 y 20 MHz, la precarga y `stop`.
 
 **Límites del modelo:** no simula relojes externos (`T0CKI`, `T1CKI`, `T1OSC`), la compuerta de Timer1 ni el modo asíncrono; esas rutas solo se

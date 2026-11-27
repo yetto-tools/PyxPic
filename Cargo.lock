@@ -131,13 +131,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "pypic-cli"
+name = "pyxpic-cli"
 version = "0.0.1"
 dependencies = [
- "pypic-device",
- "pypic-frontend",
- "pypic-ir",
- "pypic-pic14",
+ "pyxpic-device",
+ "pyxpic-frontend",
+ "pyxpic-ir",
+ "pyxpic-pic14",
  "regex",
  "serde_json",
  "serialport",
@@ -146,32 +146,32 @@ dependencies = [
 ]
 
 [[package]]
-name = "pypic-device"
+name = "pyxpic-device"
 version = "0.0.1"
 dependencies = [
- "pypic-frontend",
+ "pyxpic-frontend",
  "serde",
  "serde_json",
 ]
 
 [[package]]
-name = "pypic-frontend"
+name = "pyxpic-frontend"
 version = "0.0.1"
 
 [[package]]
-name = "pypic-ir"
+name = "pyxpic-ir"
 version = "0.0.1"
 dependencies = [
- "pypic-frontend",
+ "pyxpic-frontend",
 ]
 
 [[package]]
-name = "pypic-pic14"
+name = "pyxpic-pic14"
 version = "0.0.1"
 dependencies = [
- "pypic-device",
- "pypic-frontend",
- "pypic-ir",
+ "pyxpic-device",
+ "pyxpic-frontend",
+ "pyxpic-ir",
 ]
 
 [[package]]

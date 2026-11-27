@@ -1,5 +1,5 @@
-from pypic.device import PIC16F887
-from pypic import uint8, asm_function
+from pyxpic.device import PIC16F887
+from pyxpic import uint8, asm_function
 
 swapped: uint8 = 0
 

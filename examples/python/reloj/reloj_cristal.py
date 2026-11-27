@@ -10,9 +10,9 @@ frecuencia de las esperas. Otras formas:
 Con cristal, RA6 (OSC2) y RA7 (OSC1) son del oscilador: usarlos como E/S es el error PYP2150. El circuito (el cristal y sus dos
 capacitores a tierra) es del montaje: el compilador no puede comprobarlo. NO probado en hardware, solo en simulador.
 """
-from pypic.device import PIC16F887
-from pypic.periph.gpio import RD0
-from pypic.system.time import pause
+from pyxpic.device import PIC16F887
+from pyxpic.periph.gpio import RD0
+from pyxpic.system.time import pause
 
 CLOCK: Crystal[20 * MHz]
 

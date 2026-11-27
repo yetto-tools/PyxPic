@@ -27,7 +27,7 @@ def main() -> None:
 
 Un índice variable **mayor o igual que la capacidad se satura a la última posición** (`buf[9]` en un `uint8[4]` es `buf[3]`), tanto al leer como al escribir; el comportamiento está definido y **ninguna escritura llega a otra variable ni a un registro**. Es la misma regla que las tablas `Rom`.
 
-Es una elección de PyPIC, no la única posible: no avisa en el PIC (no hay forma barata de hacerlo) y puede **ocultar un error del programa**. Por eso el **intérprete de referencia anota cada acceso fuera de rango** (`Machine::array_oob`), para que una prueba lo vea; el simulador del PIC no.
+Es una elección de PyxPic, no la única posible: no avisa en el PIC (no hay forma barata de hacerlo) y puede **ocultar un error del programa**. Por eso el **intérprete de referencia anota cada acceso fuera de rango** (`Machine::array_oob`), para que una prueba lo vea; el simulador del PIC no.
 
 ## Costo (fijo, medido en el simulador)
 
@@ -71,4 +71,4 @@ El acceso indirecto usa `FSR`, que **una interrupción podría pisar** a mitad d
 
 ## Verificación
 
-`crates/pypic-pic14/tests/arrays.rs`: PIC14 contra el intérprete de la IR en lectura, escritura, asignación compuesta y `len`; dos arreglos sin solaparse; **la RAM completa idéntica** entre un índice saturado y uno en rango; el arranque en cero con la RAM llena de `FF`; la interrupción en cada instrucción; los diagnósticos; RAM agotada; y los costos de arriba. Ejemplo: `examples/python/adc/media_movil.py` (media móvil de 8 lecturas del ADC, probada en simulador con tres entradas). **No probado en hardware.**
+`crates/pyxpic-pic14/tests/arrays.rs`: PIC14 contra el intérprete de la IR en lectura, escritura, asignación compuesta y `len`; dos arreglos sin solaparse; **la RAM completa idéntica** entre un índice saturado y uno en rango; el arranque en cero con la RAM llena de `FF`; la interrupción en cada instrucción; los diagnósticos; RAM agotada; y los costos de arriba. Ejemplo: `examples/python/adc/media_movil.py` (media móvil de 8 lecturas del ADC, probada en simulador con tres entradas). **No probado en hardware.**

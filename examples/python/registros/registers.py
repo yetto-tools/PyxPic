@@ -1,7 +1,7 @@
 """Acceso directo a registros, al estilo ensamblador: PORTB con pull-ups débiles en RB0 y RB1 y lectura de un bit."""
-from pypic.device import PIC16F887
-from pypic.periph.gpio import RD0
-from pypic.regs import OPTION_REG, WPUB, PORTB
+from pyxpic.device import PIC16F887
+from pyxpic.periph.gpio import RD0
+from pyxpic.regs import OPTION_REG, WPUB, PORTB
 
 CLOCK: Internal[4 * MHz]
 

@@ -1,6 +1,6 @@
 # Ejemplos del puerto serie (EUSART del PIC16F887)
 
-Todos usan la API real `pypic.periph.uart` (`docs/sdk-uart.md`), en modo asíncrono 8N1 a 9600 baudios con `CLOCK: Internal[4 * MHz]` (el compilador elige `BRGH` = 1 y `SPBRG` = 25: 9615 baudios, +0,16 %).
+Todos usan la API real `pyxpic.periph.uart` (`docs/sdk-uart.md`), en modo asíncrono 8N1 a 9600 baudios con `CLOCK: Internal[4 * MHz]` (el compilador elige `BRGH` = 1 y `SPBRG` = 25: 9615 baudios, +0,16 %).
 
 ## Conexión mínima
 
@@ -17,16 +17,16 @@ Todos usan la API real `pypic.periph.uart` (`docs/sdk-uart.md`), en modo asíncr
 ## Compilar y probar
 
 ```
-pypic build examples/python/uart/eco.py -o eco.hex --timing    # --timing imprime la velocidad real y su error
+pyxpic build examples/python/uart/eco.py -o eco.hex --timing    # --timing imprime la velocidad real y su error
 ```
-Los `.hex` ya generados están en `examples/hex/uart_*.hex`. Para verlos funcionar sin hardware, las pruebas del simulador están en `crates/pypic-pic14/tests/uart_examples.rs` (`cargo test -p pypic-pic14 --test uart_examples`).
+Los `.hex` ya generados están en `examples/hex/uart_*.hex`. Para verlos funcionar sin hardware, las pruebas del simulador están en `crates/pyxpic-pic14/tests/uart_examples.rs` (`cargo test -p pyxpic-pic14 --test uart_examples`).
 
 ## Ejemplos
 
 | Archivo | Qué hace | Ante lo inesperado |
 |---|---|---|
-| `saludo.py` | Envía `Hola PyPIC` + CR LF cada segundo (solo transmite) | No recibe, nada que tratar |
-| `saludo_texto.py` | Lo mismo con `UART.write_text("Hola PyPIC")` | No recibe, nada que tratar |
+| `saludo.py` | Envía `Hola PyxPic` + CR LF cada segundo (solo transmite) | No recibe, nada que tratar |
+| `saludo_texto.py` | Lo mismo con `UART.write_text("Hola PyxPic")` | No recibe, nada que tratar |
 | `adc_serial.py` | Lee AN0 y envía `ADC: 0512 (0x0200)` cada 500 ms con `f"..."` | Solo transmite; nada que tratar |
 | `linea_comandos.py` | Lee líneas con `UART.read_line`: `ON`, `OFF`, y `ERR n` si no entiende | Línea vacía se ignora; larga se trunca; no trata `OERR` (ver el ejemplo) |
 | `convertidor.py` | Convierte decimal ↔ hexadecimal: recibe `31` o `0x1F` y contesta `31 = 0x001F`; `ERR` si no es un número | Línea vacía se ignora; larga se trunca; `ERR` ante texto inválido o mayor que 65535 |
@@ -49,4 +49,4 @@ Los `.hex` ya generados están en `examples/hex/uart_*.hex`. Para verlos funcion
 
 ## Lo que falta (todavía no está implementado)
 
-Interrupciones con ayudas propias, `ADDEN` (filtro de direcciones por hardware), autobaudios y ruptura (LIN), y modo síncrono: ver `docs/sdk-uart.md`. Los ejemplos de protocolos y dispositivos (HC-05, RS-485/Modbus RTU, RS-232, SIM800L, DFPlayer, Nextion, LIN) y una UART por software (`pypic.soft`) dependen de eso y **no se han escrito**; no se presentan como disponibles.
+Interrupciones con ayudas propias, `ADDEN` (filtro de direcciones por hardware), autobaudios y ruptura (LIN), y modo síncrono: ver `docs/sdk-uart.md`. Los ejemplos de protocolos y dispositivos (HC-05, RS-485/Modbus RTU, RS-232, SIM800L, DFPlayer, Nextion, LIN) y una UART por software (`pyxpic.soft`) dependen de eso y **no se han escrito**; no se presentan como disponibles.

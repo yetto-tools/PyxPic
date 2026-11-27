@@ -1,7 +1,7 @@
-from pypic.device import PIC16F887
-from pypic import uint8, uint16, uint32, Const, interrupt
-from pypic.periph.uart import UART
-from pypic.system.time import pause
+from pyxpic.device import PIC16F887
+from pyxpic import uint8, uint16, uint32, Const, interrupt
+from pyxpic.periph.uart import UART
+from pyxpic.system.time import pause
 
 CLOCK: Internal[4 * MHz]
 LIMIT: Const[uint8] = 200
@@ -27,7 +27,7 @@ def isr() -> None:
 def main() -> None:
     UART.start(baud=9600)
 
-    UART.write_text("Iniciando PyPIC\r\n")
+    UART.write_text("Iniciando PyxPic\r\n")
 
     level: uint8 = 0
 

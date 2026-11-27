@@ -6,9 +6,9 @@ envia byte a byte con UART.write, esperando TXIF entre cada uno. Los escapes val
 Entrada: ninguna, asi que no hay datos inesperados, errores de trama ni desbordamiento que tratar.
 Hardware: NO probado, solo en simulador (uart_text.rs).
 """
-from pypic.device import PIC16F887
-from pypic.periph.uart import UART
-from pypic.system.time import pause
+from pyxpic.device import PIC16F887
+from pyxpic.periph.uart import UART
+from pyxpic.system.time import pause
 
 CLOCK: Internal[4 * MHz]
 
@@ -16,7 +16,7 @@ CLOCK: Internal[4 * MHz]
 def main() -> None:
     UART.start(baud=9600)
     while True:
-        UART.write_text("Hola PyPIC\r\n")
+        UART.write_text("Hola PyxPic\r\n")
         while UART.sending():          # espera a que salga el ultimo bit antes de dormir
             pass
         pause(1000)
