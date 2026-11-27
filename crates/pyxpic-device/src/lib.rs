@@ -69,6 +69,11 @@ pub struct Cpu {
     pub clocks_per_instruction: u32,
     /// Reloj tras el reset con la configuracion por defecto (PIC16F887: OSCCON<IRCF> = 110 = 4 MHz, DS40001291H p.64).
     pub default_clock_hz: u32,
+    /// Tension de alimentacion minima y maxima, en microvoltios (PIC16F887: 2,0 V a 5,5 V, DS40001291H p.1).
+    #[serde(default)]
+    pub vdd_min_uv: Option<u32>,
+    #[serde(default)]
+    pub vdd_max_uv: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -667,6 +672,7 @@ impl DevicePack {
             .with_clocks_per_cycle(self.device.cpu.clocks_per_instruction)
             .with_default_clock(self.device.cpu.default_clock_hz)
             .with_oscillator(self.oscillator.as_ref().map(|o| o.profile()))
+            .with_supply(self.device.cpu.vdd_min_uv.zip(self.device.cpu.vdd_max_uv))
             .with_device(self.device.name.clone(), self.device.cpu.max_clock_hz.min(u32::MAX as u64) as u32)
     }
 

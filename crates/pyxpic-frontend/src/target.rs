@@ -70,6 +70,8 @@ pub struct TargetProfile {
     pub project_clock: Option<crate::clock::ClockSource>,
     /// Osciladores que admite el dispositivo (`oscillator.json`). `None` = la tabla del PIC16F887.
     pub oscillator: Option<crate::clock::OscillatorProfile>,
+    /// Tension de alimentacion (minima, maxima) en microvoltios. `None` = sin validar.
+    pub supply_uv: Option<(u32, u32)>,
 }
 
 impl TargetProfile {
@@ -89,6 +91,7 @@ impl TargetProfile {
             pin_claims: None,
             project_clock: None,
             oscillator: None,
+            supply_uv: None,
         }
     }
 
@@ -115,6 +118,11 @@ impl TargetProfile {
 
     pub fn with_clocks_per_cycle(mut self, n: u32) -> Self {
         self.clocks_per_cycle = Some(n);
+        self
+    }
+
+    pub fn with_supply(mut self, s: Option<(u32, u32)>) -> Self {
+        self.supply_uv = s;
         self
     }
 

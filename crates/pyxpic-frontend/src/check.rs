@@ -516,6 +516,8 @@ struct PwmStart {
     pwm: PwmId,
     spec: Option<PwmSpec>,
     duty: u16,
+    /// `duty=50pct`, en milesimas de punto porcentual: se convierte en cuentas con el periodo (PR2).
+    duty_pct: Option<i128>,
     func: Option<usize>,
 }
 
@@ -970,6 +972,18 @@ impl<'a> Checker<'a> {
         }
         let a = &args[0];
         let t = self.expr(a);
+        if self.dim(a).is_some() {
+            match unit {
+                DelayUnit::Cycles => {
+                    self.consume_quantities(a);
+                    self.dims[a.id as usize] = None;
+                    self.d.error("PYP2240", a.span, format!("{func}() recibe ciclos de instruccion (un numero); para un tiempo usa delay_us, pause o wait"));
+                }
+                DelayUnit::Us => self.unit_arg(a, Dim::Time, 1_000, "us", func),
+                DelayUnit::Ms => self.unit_arg(a, Dim::Time, 1_000_000, "ms", func),
+                DelayUnit::S => self.unit_arg(a, Dim::Time, 1_000_000_000, "s", func),
+            }
+        }
         let konst = self.konst(a);
         match unit {
             DelayUnit::Cycles | DelayUnit::Us => match (t, konst) {
@@ -1298,6 +1312,51 @@ impl<'a> Checker<'a> {
             true
         };
         match method {
+            "every" => {
+                for a in args {
+                    self.expr(a);
+                }
+                if tid != TimerId::T2 {
+                    self.d.error("PYP2122", e.span, format!("{name}.every no existe: solo Timer2 tiene un periodo automatico (PR2); usa {name}.start(prescaler=...)"));
+                    return void(self);
+                }
+                if args.len() != 1 {
+                    self.d.error("PYP2055", e.span, "'TMR2.every' recibe un tiempo: TMR2.every(20ms)");
+                    return void(self);
+                }
+                let a = &args[0];
+                if self.dim(a) != Some(Dim::Time) {
+                    self.consume_quantities(a);
+                    self.d.error("PYP2240", a.span, "TMR2.every recibe un tiempo con unidad: TMR2.every(20ms)");
+                    return void(self);
+                }
+                self.consume_quantities(a);
+                self.dims[a.id as usize] = None;
+                let (Some(ns), Some(hz)) = (self.konst(a), self.clock_hz.or(self.target.default_clock_hz)) else {
+                    self.d.error("PYP2243", e.span, "TMR2.every necesita el reloj para convertir el tiempo en ciclos: declara 'CLOCK: Internal' y 'FREQUENCY: 4MHz'");
+                    return void(self);
+                };
+                // ciclos = tiempo * FOSC / (relojes por ciclo * 1e9), exacto o error
+                let per = self.target.clocks_per_cycle.unwrap_or(4) as i128;
+                let (num, den) = (ns * hz as i128, per * 1_000_000_000);
+                if num % den != 0 {
+                    self.d.error("PYP2243", a.span, format!("TMR2.every: ese tiempo no cae en un numero entero de ciclos de instruccion a {} (un ciclo dura {} ns); el periodo de Timer2 es un multiplo exacto del ciclo", clock::fmt_hz(hz), per as f64 * 1e9 / hz as f64));
+                    return void(self);
+                }
+                let cycles = (num / den) as u64;
+                match timer::solve_t2(cycles) {
+                    Some(st) => {
+                        self.timer_calls.insert(e.id, TimerCall { timer: tid, op: TimerOp::Start(st) });
+                        note(self, true);
+                    }
+                    None => {
+                        let (below, above) = timer::nearest_t2(cycles);
+                        let near: Vec<String> = [below, above].iter().flatten().map(|c| format!("{c} ciclos")).collect();
+                        self.d.error("PYP2243", a.span, format!("TMR2.every: {cycles} ciclos no se pueden formar con prescaler (1, 4, 16) x PR2+1 (1 a 256) x postscaler (1 a 16); los mas cercanos: {}", near.join(" y ")));
+                    }
+                }
+                void(self)
+            }
             "start" => {
                 if !args.is_empty() {
                     self.d.error("PYP2127", args[0].span, format!("{name}.start se escribe con argumentos con nombre, p. ej. {name}.start(prescaler=...)"));
@@ -1659,6 +1718,7 @@ impl<'a> Checker<'a> {
                     self.d.error("PYP2127", args[0].span, "ADC.start se escribe con argumentos con nombre: ADC.start(), ADC.start(clock=FOSC_8, acquisition_us=20, low_voltage=True)");
                 }
                 let (mut clock, mut cfg) = (None, adc::AdcConfig::default());
+                let mut reference_uv: Option<i128> = None;
                 for k in kwargs {
                     match (k.name.as_str(), &k.value.kind) {
                         ("clock", ExprKind::Name(n)) if self.adc_consts.contains(n) && adc::CLOCKS.iter().any(|(c, _)| c == n) => {
@@ -1671,6 +1731,7 @@ impl<'a> Checker<'a> {
                         }
                         ("acquisition_us", _) => {
                             self.expr(&k.value);
+                            self.unit_arg(&k.value, Dim::Time, 1_000, "us", "ADC.start: acquisition_us");
                             match self.konst(&k.value) {
                                 Some(us) if (1..=1000).contains(&us) && self.ty(&k.value) != Type::Bool => cfg.acq_ns = (us * 1000) as u32,
                                 _ => self.d.error("PYP2172", k.value.span, "ADC.start: acquisition_us es una constante de 1 a 1000 (microsegundos de adquisicion tras cambiar de canal)"),
@@ -1683,10 +1744,33 @@ impl<'a> Checker<'a> {
                                 _ => self.d.error("PYP2172", k.value.span, "ADC.start: low_voltage es True o False (VDD menor de 3,0 V)"),
                             }
                         }
+                        ("reference", _) => {
+                            // la tension de alimentacion (VDD) que sirve de referencia: no la genera el PIC, solo decide low_voltage
+                            self.expr(&k.value);
+                            if self.dim(&k.value).is_none() {
+                                self.d.error("PYP2240", k.value.span, "ADC.start: reference lleva una tension con unidad: reference=5V");
+                            } else {
+                                self.unit_arg(&k.value, Dim::Voltage, 1, "uV", "ADC.start: reference");
+                                if let Some(uv) = self.konst(&k.value) {
+                                    match self.target.supply_uv {
+                                        Some((lo, hi)) if uv < lo as i128 || uv > hi as i128 => self.d.error("PYP2242", k.value.span, format!("ADC.start: reference={} V esta fuera de la alimentacion de {} ({} V a {} V)", uv as f64 / 1e6, self.target.name, lo as f64 / 1e6, hi as f64 / 1e6)),
+                                        _ => reference_uv = Some(uv),
+                                    }
+                                }
+                            }
+                        }
                         _ => {
                             self.expr(&k.value);
-                            self.d.error("PYP2172", k.name_span, format!("ADC.start no tiene el argumento '{}' (admite: clock, acquisition_us, low_voltage)", k.name));
+                            self.d.error("PYP2172", k.name_span, format!("ADC.start no tiene el argumento '{}' (admite: clock, acquisition_us, low_voltage, reference)", k.name));
                         }
+                    }
+                }
+                if let Some(uv) = reference_uv {
+                    // VDD menor de 3,0 V: el mismo criterio de low_voltage
+                    let low = uv < 3_000_000;
+                    match kwargs.iter().find(|k| k.name == "low_voltage") {
+                        Some(k) if cfg.low_voltage != low => self.d.error("PYP2172", k.name_span, format!("low_voltage={} contradice reference: con {} V la alimentacion {} menor de 3,0 V", if cfg.low_voltage { "True" } else { "False" }, uv as f64 / 1e6, if low { "es" } else { "no es" })),
+                        _ => cfg.low_voltage = low,
                     }
                 }
                 self.adc_started = true;
@@ -1779,6 +1863,7 @@ impl<'a> Checker<'a> {
                         continue;
                     }
                     self.expr(&k.value);
+                    self.unit_arg(&k.value, Dim::Baud, 1, "baud", "UART.start: baud");
                     match self.konst(&k.value) {
                         Some(b) if (50..=3_000_000).contains(&b) && self.ty(&k.value) != Type::Bool => baud = Some(b as u32),
                         _ => self.d.error("PYP2182", k.value.span, "UART.start: baud es una constante de 50 a 3000000 (baudios): se calcula al compilar"),
@@ -2386,8 +2471,11 @@ impl<'a> Checker<'a> {
             let mut freq = None;
             for k in kwargs {
                 self.expr(&k.value);
-                if k.name != "freq" {
-                    self.d.error("PYP2226", k.name_span, format!("I2C.start no tiene el argumento '{}' (admite: freq)", k.name));
+                if matches!(k.name.as_str(), "freq" | "frequency") {
+                    self.unit_arg(&k.value, Dim::Frequency, 1, "Hz", "I2C.start: frequency");
+                }
+                if !matches!(k.name.as_str(), "freq" | "frequency") {
+                    self.d.error("PYP2226", k.name_span, format!("I2C.start no tiene el argumento '{}' (admite: frequency)", k.name));
                     continue;
                 }
                 match self.konst(&k.value) {
@@ -2396,8 +2484,8 @@ impl<'a> Checker<'a> {
                 }
             }
             let Some(freq) = freq else {
-                if kwargs.iter().all(|k| k.name != "freq") {
-                    self.d.error("PYP2226", e.span, "I2C.start necesita freq=...: I2C.start(freq=100000)");
+                if kwargs.iter().all(|k| !matches!(k.name.as_str(), "freq" | "frequency")) {
+                    self.d.error("PYP2226", e.span, "I2C.start necesita frequency=...: I2C.start(frequency=100kHz)");
                 }
                 return self.set(e, Type::Void, None);
             };
@@ -2514,9 +2602,12 @@ impl<'a> Checker<'a> {
             let (mut freq, mut mode) = (None, Some(0u8));
             for k in kwargs {
                 self.expr(&k.value);
+                if matches!(k.name.as_str(), "freq" | "frequency") {
+                    self.unit_arg(&k.value, Dim::Frequency, 1, "Hz", "SPI.start: frequency");
+                }
                 let value = self.konst(&k.value).filter(|_| self.ty(&k.value) != Type::Bool);
                 match k.name.as_str() {
-                    "freq" => match value {
+                    "freq" | "frequency" => match value {
                         Some(f) if (1..=20_000_000).contains(&f) => freq = Some(f as u32),
                         _ => self.d.error("PYP2234", k.value.span, "SPI.start: freq es una constante de 1 a 20000000 (Hz), la maxima que admite el dispositivo conectado"),
                     },
@@ -2527,12 +2618,12 @@ impl<'a> Checker<'a> {
                             mode = None;
                         }
                     },
-                    other => self.d.error("PYP2234", k.name_span, format!("SPI.start no tiene el argumento '{other}' (admite: freq, mode)")),
+                    other => self.d.error("PYP2234", k.name_span, format!("SPI.start no tiene el argumento '{other}' (admite: frequency, mode)")),
                 }
             }
             let (Some(freq), Some(mode)) = (freq, mode) else {
-                if kwargs.iter().all(|k| k.name != "freq") {
-                    self.d.error("PYP2234", e.span, "SPI.start necesita freq=...: SPI.start(freq=1000000)");
+                if kwargs.iter().all(|k| !matches!(k.name.as_str(), "freq" | "frequency")) {
+                    self.d.error("PYP2234", e.span, "SPI.start necesita frequency=...: SPI.start(frequency=1MHz)");
                 }
                 return self.set(e, Type::Void, None);
             };
@@ -2656,8 +2747,12 @@ impl<'a> Checker<'a> {
                     );
                 }
                 let (mut freq, mut pre, mut period, mut duty) = (None, None, None, 0u16);
+                let mut duty_pct: Option<i128> = None;
                 let int_arg = |this: &mut Self, k: &Kwarg, lo: i128, hi: i128, what: &str| -> Option<i128> {
                     this.expr(&k.value);
+                    if k.name == "frequency" {
+                        this.unit_arg(&k.value, Dim::Frequency, 1, "Hz", &format!("{name}.start: frequency"));
+                    }
                     match this.konst(&k.value) {
                         Some(v) if (lo..=hi).contains(&v) && this.ty(&k.value) != Type::Bool => Some(v),
                         _ => {
@@ -2677,7 +2772,24 @@ impl<'a> Checker<'a> {
                             }
                         }
                         "period" => period = int_arg(self, k, 0, 255, "de 0 a 255 (el valor de PR2)").map(|v| v as u8),
-                        "duty" => duty = int_arg(self, k, 0, 1023, "de 0 a 1023 (10 bits: CCPRxL y DCxB)").map_or(0, |v| v as u16),
+                        "duty" => {
+                            self.expr(&k.value);
+                            match self.dim(&k.value) {
+                                // un porcentaje es del periodo: se resuelve con PR2 al conocer el reloj
+                                Some(Dim::Percent) => {
+                                    self.consume_quantities(&k.value);
+                                    match self.konst(&k.value).filter(|v| (0..=100_000).contains(v)) {
+                                        Some(v) => duty_pct = Some(v),
+                                        None => self.d.error("PYP2241", k.value.span, format!("{name}.start: duty va de 0pct a 100pct")),
+                                    }
+                                }
+                                Some(d) => {
+                                    self.consume_quantities(&k.value);
+                                    self.d.error("PYP2240", k.value.span, format!("{name}.start: duty es un porcentaje (50pct) o un numero de 0 a 1023, y esto es {d}"));
+                                }
+                                None => duty = int_arg(self, k, 0, 1023, "de 0 a 1023 (10 bits: CCPRxL y DCxB)").map_or(0, |v| v as u16),
+                            }
+                        }
                         other => {
                             self.expr(&k.value);
                             self.d.error("PYP2201", k.name_span, format!("{name}.start no tiene el argumento '{other}' (admite: frequency, prescaler, period, duty)"));
@@ -2701,8 +2813,8 @@ impl<'a> Checker<'a> {
                     }
                     _ => None,
                 };
-                self.pwm_uses.push(PwmUse { pwm: id, span: e.span, duty: Some(duty as i128) });
-                self.pwm_pending.push(PwmStart { id: e.id, span: e.span, pwm: id, spec, duty, func: self.cur });
+                self.pwm_uses.push(PwmUse { pwm: id, span: e.span, duty: if duty_pct.is_some() { None } else { Some(duty as i128) } });
+                self.pwm_pending.push(PwmStart { id: e.id, span: e.span, pwm: id, spec, duty, duty_pct, func: self.cur });
                 self.claims.push(Claim { pin: id.pin().into(), function: id.function().into(), peripheral: name.into(), span: e.span, via_timer: false });
                 void(self)
             }
@@ -2794,7 +2906,12 @@ impl<'a> Checker<'a> {
             };
             let Some(t) = timing else { continue };
             resolved.push((p.span, t));
-            self.pwm_calls.insert(p.id, PwmCall { pwm: p.pwm, op: PwmOp::Start(Some(t), p.duty) });
+            // el porcentaje es del periodo (4 x (PR2 + 1) cuentas), redondeado a la cuenta mas cercana
+            let duty = match p.duty_pct {
+                Some(m) => ((t.full_scale() as i128 * m + 50_000) / 100_000).min(1023) as u16,
+                None => p.duty,
+            };
+            self.pwm_calls.insert(p.id, PwmCall { pwm: p.pwm, op: PwmOp::Start(Some(t), duty) });
         }
         if let Some((_, first)) = resolved.first().copied() {
             if let Some((sp, other)) = resolved.iter().find(|(_, t)| *t != first) {
@@ -3003,6 +3120,27 @@ impl<'a> Checker<'a> {
         self.info[e.id as usize] = ExprInfo { ty, konst };
         ty
     }
+    /// Un parametro con unidad (`UART.start(baud=9600baud)`, `pause(500ms)`): convierte el literal a la unidad del parametro
+    /// (`per_unit` unidades base por unidad del parametro). Un numero sin unidad se deja como esta (la forma de siempre). Una magnitud
+    /// distinta de `want` es `PYP2240`; un valor que no es entero en la unidad del parametro, `PYP2241`.
+    fn unit_arg(&mut self, e: &Expr, want: Dim, per_unit: i128, unit: &str, what: &str) {
+        self.consume_quantities(e);
+        let Some(d) = self.dim(e) else { return };
+        self.dims[e.id as usize] = None;
+        if d != want {
+            self.d.error("PYP2240", e.span, format!("{what} espera {want} ({unit}) y esto es {d}"));
+            self.info[e.id as usize].konst = None;
+            return;
+        }
+        let Some(v) = self.konst(e) else { return };
+        if v % per_unit != 0 {
+            self.d.error("PYP2241", e.span, format!("{what}: ese valor no es un numero entero de {unit}, la unidad de este parametro; usa otra funcion o parametro con una unidad menor"));
+            self.info[e.id as usize].konst = None;
+            return;
+        }
+        self.info[e.id as usize].konst = Some(v / per_unit);
+    }
+
     /// La magnitud de una expresion, si la tiene.
     fn dim(&self, e: &Expr) -> Option<Dim> {
         self.dims[e.id as usize]
