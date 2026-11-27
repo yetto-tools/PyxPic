@@ -510,3 +510,43 @@ fn pin_names_ignore_case_like_the_rest_of_basic() {
     let (ok, t) = diagnostics(&format!("{HEAD}main:\n  rE3 = 1\n  GOTO main\n"));
     assert!(!ok && t.contains("RE3 es solo entrada"), "{t}");
 }
+
+// ---- un caracter entre comillas es su codigo ASCII ("a" = 97) ----------------------------------------------------------------
+
+fn words_of(src: &str) -> Vec<(u32, u16)> {
+    build(src).1.image.iter().collect()
+}
+
+#[test]
+fn a_one_character_string_is_its_ascii_code_in_an_expression() {
+    // el mismo firmware con el caracter y con su codigo; en SERTXD sigue siendo texto
+    let with = |cond: &str| format!("{HEAD}main:\n  SERRXD(b0)\n  IF b0 = {cond} THEN\n    RB0 = 1\n  ENDIF\n  GOTO main\n");
+    assert_eq!(words_of(&with("\"a\"")), words_of(&with("97")));
+    assert_eq!(words_of(&with("\"A\"")), words_of(&with("65")));
+    assert_eq!(words_of(&with("\" \"")), words_of(&with("32")));
+    // tambien en una asignacion, una constante y una comparacion distinta de la igualdad
+    let a = format!("{HEAD}SYMBOL k = \"z\"\nmain:\n  b0 = \"0\"\n  IF b1 >= \"a\" THEN\n    b0 = k\n  ENDIF\n  GOTO main\n");
+    let b = format!("{HEAD}SYMBOL k = 122\nmain:\n  b0 = 48\n  IF b1 >= 97 THEN\n    b0 = k\n  ENDIF\n  GOTO main\n");
+    assert_eq!(words_of(&a), words_of(&b));
+    // un texto de mas de un caracter en una expresion sigue siendo el error de siempre
+    let (ok, t) = diagnostics(&format!("{HEAD}main:\n  SERRXD(b0)\n  IF b0 = \"ab\" THEN\n    RB0 = 1\n  ENDIF\n  GOTO main\n"));
+    assert!(!ok && t.contains("PYB0090"), "{t}");
+}
+
+#[test]
+fn the_uart_command_example_answers_each_key_and_drives_the_pin() {
+    let src = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/basic/uart/uart_led_command.bas")).unwrap();
+    let (_, c) = build(&src);
+    let mut s = Sim::new(&c.image);
+    s.run_until(2_000_000, |_| false);
+    let text = |s: &Sim, from: usize| String::from_utf8_lossy(&s.uart_tx.iter().skip(from).map(|t| t.0).collect::<Vec<_>>()).to_string();
+    assert_eq!(text(&s, 0), "Hola PyxPic 0\r\n");
+    for (key, pin, answer) in [(b'a', true, "Boton A presionado. Valor: 0\r\n"), (b'b', false, "Boton B presionado. Valor: 1\r\n"), (b'c', false, "Boton C presionado. Valor: 0\r\n")] {
+        let before = s.uart_tx.len();
+        let now = s.cycles;
+        s.uart_feed(key, now + 100, true);
+        s.run_until(s.cycles + 3_000_000, |_| false);
+        assert!(text(&s, before).starts_with(answer), "{}: {:?}", key as char, text(&s, before));
+        assert_eq!(s.pin('B', 0), Some(pin), "RB0 despues de {}", key as char);
+    }
+}

@@ -344,6 +344,7 @@ impl<'a> Lw<'a> {
     fn const_eval(&mut self, e: &BExpr) -> Option<i128> {
         match &e.kind {
             BExprKind::Int(v) => Some(*v),
+            BExprKind::Str(s) if char_code(s).is_some() => char_code(s),
             BExprKind::Quantity(v, d) if d.is_plain_integer() => Some(*v),
             BExprKind::Name(n) => match self.resolve(n, e.span) {
                 Res::Const(v) => Some(v),
@@ -412,6 +413,7 @@ impl<'a> Lw<'a> {
     fn arg(&mut self, a: &BArg) -> Option<Expr> {
         match &a.value.kind {
             BExprKind::Int(v) => Some(self.int(a.value.span, *v)),
+            BExprKind::Str(s) if char_code(s).is_some() => Some(self.int(a.value.span, char_code(s).unwrap())),
             BExprKind::Quantity(v, d) => Some(self.ex(a.value.span, ExprKind::Quantity(*v, *d))),
             BExprKind::Name(n) if matches!(self.resolve(n, a.value.span), Res::Other) => {
                 let canon = self.note_sdk(n).unwrap_or_else(|| n.clone());
@@ -458,6 +460,8 @@ impl<'a> Lw<'a> {
         let sp = e.span;
         match &e.kind {
             BExprKind::Int(v) => Some(self.int(sp, *v)),
+            // un caracter entre comillas ("a") es su codigo ASCII; un texto mas largo solo se usa en SERTXD
+            BExprKind::Str(s) if char_code(s).is_some() => Some(self.int(sp, char_code(s).unwrap())),
             BExprKind::Quantity(v, d) => Some(self.ex(sp, ExprKind::Quantity(*v, *d))),
             BExprKind::Name(n) => match self.resolve(n, sp) {
                 Res::Var(v) => {
@@ -1541,5 +1545,15 @@ fn collect_gosubs(s: &BStmt, out: &mut BTreeSet<String>) {
             default.iter().for_each(|x| collect_gosubs(x, out));
         }
         _ => {}
+    }
+}
+
+/// El codigo ASCII de un texto de un solo caracter (`"a"` es 97): vale como numero en una expresion, como en PICAXE. `None` si no es un
+/// solo caracter ASCII (un texto mas largo solo se usa en SERTXD).
+fn char_code(s: &str) -> Option<i128> {
+    let mut it = s.chars();
+    match (it.next(), it.next()) {
+        (Some(c), None) if c.is_ascii() => Some(c as i128),
+        _ => None,
     }
 }

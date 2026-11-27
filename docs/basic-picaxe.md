@@ -167,6 +167,7 @@ El `FOR` suma o resta una constante y **no puede desbordar**: `FOR b0 = 0 TO 255
 | `PWMOUT C.2, periodo, ciclo` | PWM por el pin del módulo CCP (`C.2` es PWM1 y `C.1` es PWM2); `periodo` es PR2 (constante de 0 a 255, prescaler 1: periodo de PR2 + 1 ciclos de instrucción) y `ciclo` el ciclo de trabajo de 10 bits (0 a 1023). Los dos módulos comparten Timer2: un solo periodo por programa |
 | `SERTXD("x = ", #b0, CR, LF, b1)` | envía por la UART (`BAUD`, 9600 por defecto, 8N1, RC6/TX; se inicia sola): textos, `#valor` en decimal, `CR`, `LF`, `TAB`, un byte constante y un valor de 8 bits suelto (se envía tal cual) |
 | `SERRXD(b0)` | espera un byte por la UART (RC7/RX) y lo guarda en una variable BYTE |
+| `IF b0 = "a" THEN` | un texto de **un solo carácter** entre comillas vale como su código ASCII (`"a"` es 97, `" "` es 32) en cualquier expresión, como en PICAXE; se resuelve al compilar (sin costo en el PIC). Un texto más largo solo se usa en `SERTXD` (`PYB0090`). `SERIN` como valor no existe: se lee con `SERRXD` y se compara la variable (ver `examples/basic/uart/uart_led_command.bas`) |
 | `pinB.0`, `B.0` | en una condición o expresión lee el pin (0 o 1): `IF pinB.0 = 1 THEN ...` |
 
 `p` es un pin (`B.0`, `D.5`) o un nombre definido con `SYMBOL`. **No hay números de pin al estilo PICAXE** (el número cambia con el chip): el pin se nombra por su puerto y bit.
