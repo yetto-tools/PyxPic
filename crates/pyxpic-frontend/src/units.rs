@@ -289,4 +289,13 @@ mod tests {
         assert_eq!(Decimal::parse("1.2.3"), None);
         assert!(matches!(v("1000000000000000000000000000000", "GHz"), Err(UnitError::TooBig)));
     }
+    #[test]
+    fn the_xc8_comparison_table_converts_exactly() {
+        // 32768UL, 500000UL, 500000UL, 4000000UL, 7372800UL, 11059200UL, 20000000UL
+        for (n, u, hz) in [("32.768", "kHz", 32_768), ("500", "kHz", 500_000), ("0.5", "MHz", 500_000), ("4", "MHz", 4_000_000), ("7.3728", "MHz", 7_372_800), ("11.0592", "MHz", 11_059_200), ("20", "MHz", 20_000_000)] {
+            assert_eq!(v(n, u), Ok((hz, Dim::Frequency)), "{n}{u}");
+        }
+        // FCY de 11,0592 MHz con 4 relojes por ciclo
+        assert_eq!(11_059_200 / 4, 2_764_800);
+    }
 }
