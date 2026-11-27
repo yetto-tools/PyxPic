@@ -90,6 +90,8 @@ pub enum ExprKind {
     Quantity(i128, crate::units::Dim),
     /// `0.5`, `2.54`, `1.5e-3`: un decimal exacto `num/den` (normalizado); solo existe al compilar.
     Decimal(i128, i128),
+    /// `Fixed[int16, 2](x)`: convierte un entero, un decimal constante o otro punto fijo al tipo indicado.
+    FixedCast(Box<TypeExpr>, Box<Expr>),
     Bool(bool),
     Name(String),
     Unary(UnOp, Box<Expr>),
@@ -161,6 +163,8 @@ pub enum TypeExprKind {
     Name(String),
     /// `Const[T]`
     Const(Box<TypeExpr>),
+    /// `Fixed[int16, 2]` (escala decimal 10^n) o `QFixed[int16, 8]` (escala binaria 2^n): punto fijo sobre el entero `base`.
+    Fixed { binary: bool, base: String, scale: i128 },
     /// `Const` sin tipo (`FACTOR: Const = 0.5`): el valor es una constante de compilacion y el tipo lo da el valor.
     ConstAuto,
     /// `uint8[16]`: arreglo de capacidad fija en RAM (solo a nivel de modulo).

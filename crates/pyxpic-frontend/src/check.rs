@@ -182,6 +182,8 @@ pub struct Program {
     pub uart_calls: BTreeMap<u32, UartCall>,
     /// Las partes de cada `UART.write_text(f"...")`, por id de expresion.
     pub uart_fmt: BTreeMap<u32, Vec<FmtPart>>,
+    /// Operaciones de punto fijo que la IR expande, por id de expresion.
+    pub fixed_ops: BTreeMap<u32, FixedOp>,
 }
 
 pub struct Checked {
@@ -218,6 +220,7 @@ pub struct Checked {
     pub stack_use: Option<(u32, u32)>,
     pub uart_calls: BTreeMap<u32, UartCall>,
     pub uart_fmt: BTreeMap<u32, Vec<FmtPart>>,
+    pub fixed_ops: BTreeMap<u32, FixedOp>,
 }
 
 pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Checked {
@@ -299,6 +302,7 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         uart_name: false,
         uart_calls: BTreeMap::new(),
         uart_fmt: BTreeMap::new(),
+        fixed_ops: BTreeMap::new(),
         uart_started: false,
         uart_needs: None,
         uart_pending: Vec::new(),
@@ -320,6 +324,19 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
     };
     c.run(module);
     c.flush_quantities();
+    // el punto fijo es un entero para la IR y el PIC: los tipos se llevan a su entero (las operaciones que lo exigen estan en `fixed_ops`)
+    for i in c.info.iter_mut() {
+        i.ty = i.ty.to_ir();
+    }
+    for g in c.globals.values_mut() {
+        g.ty = g.ty.to_ir();
+    }
+    for f in c.functions.iter_mut() {
+        f.ret = f.ret.to_ir();
+        for p in f.params.iter_mut() {
+            p.1 = p.1.to_ir();
+        }
+    }
     Checked {
         info: c.info,
         globals: c.globals,
@@ -348,7 +365,35 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         stack_use: c.stack_use,
         uart_calls: c.uart_calls,
         uart_fmt: c.uart_fmt,
+        fixed_ops: c.fixed_ops,
     }
+}
+
+/// Una operacion de punto fijo que la IR expande con un intermedio de 16 bits (`docs/punto-fijo.md`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FixedOp {
+    /// `a * b` del mismo tipo: producto de 32 bits y reescala (`Fixed` divide entre 10^scale; `QFixed` desplaza `scale` bits).
+    Mul { binary: bool, scale: u8, signed: bool },
+    /// `raw * num / den` (conversiones y multiplicar o dividir por una constante); `child` es el operando que se escala: 0 = el izquierdo
+    /// (o el unico), 1 = el derecho. La division por una potencia de dos sin signo es un desplazamiento.
+    Scale { num: i128, den: i128, child: u8, signed: bool },
+}
+
+/// ¿`valor * num` cabe en el intermedio de 16 bits (con signo si `signed`) para todo valor del tipo `src`? El backend PIC14 llega a 16 bits
+/// (#32: sin 32 bits todavia), asi que una operacion cuyo intermedio no cabe se rechaza al compilar.
+fn fits_wide(src: Type, num: i128, signed: bool) -> bool {
+    let m = src.max().max(-src.min());
+    let lim = if signed { 32_768 } else { 65_535 };
+    m.checked_mul(num.abs()).is_some_and(|p| p <= lim)
+}
+
+const WIDE_MSG: &str = "el intermedio pasa de 16 bits y el backend PIC14 todavia no tiene 32 bits (#32)";
+
+/// `num/den` como decimal legible (solo para los mensajes).
+fn show_ratio(num: i128, den: i128) -> String {
+    let v = num as f64 / den as f64;
+    let s = format!("{v:.6}");
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
 fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
@@ -474,6 +519,7 @@ struct Checker<'a> {
     uart_name: bool,
     uart_calls: BTreeMap<u32, UartCall>,
     uart_fmt: BTreeMap<u32, Vec<FmtPart>>,
+    fixed_ops: BTreeMap<u32, FixedOp>,
     uart_started: bool,
     uart_needs: Option<Span>,
     uart_pending: Vec<UartPending>,
@@ -3102,6 +3148,26 @@ impl<'a> Checker<'a> {
                     Type::Error
                 }
             },
+            TypeExprKind::Fixed { binary, base, scale } => {
+                let kind = if *binary { "QFixed" } else { "Fixed" };
+                let Some(b) = Type::from_name(base).filter(|t| t.is_int()) else {
+                    self.d.error("PYP2252", te.span, format!("{kind}[T, n]: T es un entero (uint8, int8, uint16, int16, uint32, int32), no '{base}'"));
+                    return Type::Error;
+                };
+                if !self.target.supports(b) {
+                    self.d.error("PYP2030", te.span, format!("el tipo '{b}' no esta soportado por el destino '{}'", self.target.name));
+                    return Type::Error;
+                }
+                let (bits, signed) = (b.bits() as i128, b.is_signed());
+                // QFixed: n bits fraccionarios; Fixed: el mayor n con 10^n <= el maximo del entero (que quepa al menos 1.0)
+                let max_scale = if *binary { bits - signed as i128 } else { (0..=9).filter(|n| 10i128.pow(*n as u32) <= b.max()).max().unwrap_or(0) };
+                if !(0..=max_scale).contains(scale) {
+                    self.d.error("PYP2252", te.span, format!("{kind}[{b}, {scale}]: la escala de {b} va de 0 a {max_scale}"));
+                    return Type::Error;
+                }
+                self.note_emulated(b, te.span);
+                Type::Fixed { bits: bits as u8, signed, scale: *scale as u8, binary: *binary }
+            }
             _ => {
                 self.d.error("PYP2001", te.span, "tipo no valido en este contexto");
                 Type::Error
@@ -3146,6 +3212,220 @@ impl<'a> Checker<'a> {
             return;
         }
         self.info[e.id as usize].konst = Some(v / per_unit);
+    }
+
+    // ------------------------------------------------------------ punto fijo (docs/punto-fijo.md)
+
+    /// El valor racional exacto de una constante (`Literal`, entero constante o `Decimal`) como `raw` de `f`: `Fixed` exige que sea exacto;
+    /// `QFixed` redondea al valor mas cercano y avisa. Deja la expresion con el tipo `f` y el `raw` como constante.
+    fn fixed_coerce(&mut self, e: &Expr, f: Type) -> bool {
+        let Some((n, d)) = self.rational_of(e) else {
+            self.d.error("PYP2254", e.span, format!("un valor {f} se escribe como constante (0.5, 25.37) o se convierte con {f}(x): '{}' no es una constante", self.ty(e)));
+            return false;
+        };
+        let Some(num) = n.checked_mul(f.factor()) else {
+            self.d.error("PYP2253", e.span, format!("la constante no cabe en {f}"));
+            return false;
+        };
+        let (raw, exact) = if num % d == 0 {
+            (num / d, true)
+        } else if matches!(f, Type::Fixed { binary: true, .. }) {
+            (if num >= 0 { (num + d / 2) / d } else { -((-num + d / 2) / d) }, false)
+        } else {
+            let Type::Fixed { scale, .. } = f else { unreachable!() };
+            self.d.error("PYP2252", e.span, format!("{} no es exacto con {scale} decimales: {f} guarda multiplos de 1/10^{scale}; usa mas decimales o un valor que lo sea", show_ratio(n, d)));
+            return false;
+        };
+        if !f.contains(raw) {
+            self.d.error("PYP2253", e.span, format!("{} no cabe en {f} (va de {} a {})", show_ratio(n, d), show_ratio(f.min(), f.factor()), show_ratio(f.max(), f.factor())));
+            return false;
+        }
+        if !exact {
+            self.d.warning("PYP3024", e.span, format!("{} no es exacto en {f}: se guarda {} (el multiplo de 1/{} mas cercano)", show_ratio(n, d), show_ratio(raw, f.factor()), f.factor()));
+        }
+        self.set(e, f, Some(raw));
+        true
+    }
+
+    /// Los dos lados de `+ - ==...` con punto fijo: el mismo tipo, o un lado constante que se convierte al tipo del otro.
+    fn fixed_unify(&mut self, l: &Expr, r: &Expr, lt: Type, rt: Type, op: &str) -> Option<Type> {
+        match (lt.is_fixed(), rt.is_fixed()) {
+            (true, true) if lt == rt => Some(lt),
+            (true, true) => {
+                self.d.error("PYP2254", l.span.to(r.span), format!("tipos de punto fijo distintos para '{op}': {lt} y {rt}; convierte uno: {lt}(...)"));
+                None
+            }
+            (true, false) if matches!(rt, Type::Literal | Type::Decimal) => self.fixed_coerce(r, lt).then_some(lt),
+            (false, true) if matches!(lt, Type::Literal | Type::Decimal) => self.fixed_coerce(l, rt).then_some(rt),
+            _ => {
+                let f = if lt.is_fixed() { lt } else { rt };
+                self.d.error("PYP2254", l.span.to(r.span), format!("no se mezcla {lt} con {rt} en '{op}': convierte el entero con {f}(x)"));
+                None
+            }
+        }
+    }
+
+    fn fixed_addsub(&mut self, e: &Expr, op: BinOp, l: &Expr, r: &Expr, lt: Type, rt: Type) -> Type {
+        let Some(t) = self.fixed_unify(l, r, lt, rt, op.symbol()) else { return self.set(e, Type::Error, None) };
+        if let (Some(a), Some(b)) = (self.konst(l), self.konst(r)) {
+            return match fold(op, a, b) {
+                Some(v) if t.contains(v) => self.set(e, t, Some(v)),
+                _ => {
+                    self.d.error("PYP2253", e.span, format!("la constante no cabe en {t}"));
+                    self.set(e, Type::Error, None)
+                }
+            };
+        }
+        self.set(e, t, None)
+    }
+
+    /// `*` y `/` con punto fijo: dos del mismo tipo (producto con intermedio de 32 bits y reescala), o uno por una constante (un entero
+    /// escala sin reescalar; un decimal o una division se hacen con una fraccion exacta).
+    fn fixed_muldiv(&mut self, e: &Expr, op: BinOp, l: &Expr, r: &Expr, lt: Type, rt: Type) -> Type {
+        let err = |this: &mut Self| this.set(e, Type::Error, None);
+        match (lt.is_fixed(), rt.is_fixed()) {
+            (true, true) => {
+                if op != BinOp::Mul {
+                    self.d.error("PYP2253", e.span, "no se divide un punto fijo entre otro punto fijo: divide por una constante (x / 2, x / 2.5)");
+                    return err(self);
+                }
+                if lt != rt {
+                    self.d.error("PYP2254", e.span, format!("tipos de punto fijo distintos para '*': {lt} y {rt}; convierte uno: {lt}(...)"));
+                    return err(self);
+                }
+                let Type::Fixed { bits, signed, scale, binary } = lt else { unreachable!() };
+                if let (Some(a), Some(b)) = (self.konst(l), self.konst(r)) {
+                    let p = a * b;
+                    let v = if binary { p >> scale } else { p / lt.factor() };
+                    if !lt.contains(v) {
+                        self.d.error("PYP2253", e.span, format!("el producto constante no cabe en {lt}"));
+                        return err(self);
+                    }
+                    return self.set(e, lt, Some(v));
+                }
+                if bits > 8 {
+                    self.d.error("PYP2255", e.span, format!("el producto de dos {lt} necesita un intermedio de {} bits: {WIDE_MSG}; con una base de 8 bits (Fixed[uint8, n]) si cabe", 2 * bits));
+                    return err(self);
+                }
+                self.fixed_ops.insert(e.id, FixedOp::Mul { binary, scale, signed });
+                self.set(e, lt, None)
+            }
+            _ => {
+                let fixed_left = lt.is_fixed();
+                let (fx, oe, ot) = if fixed_left { (lt, r, rt) } else { (rt, l, lt) };
+                if !fixed_left && op != BinOp::Mul {
+                    self.d.error("PYP2253", e.span, "no se divide una constante entre un punto fijo");
+                    return err(self);
+                }
+                let signed = fx.is_signed();
+                let fixed_e = if fixed_left { l } else { r };
+                let child = if fixed_left { 0 } else { 1 };
+                let (num, den, neutral) = match ot {
+                    // un entero multiplica el valor sin reescalar: 2 * x
+                    Type::Literal if op == BinOp::Mul => (0, 1, true),
+                    Type::Literal => {
+                        let k = self.konst(oe).unwrap_or(0);
+                        if k == 0 {
+                            self.d.error("PYP2050", oe.span, "division por cero");
+                            return err(self);
+                        }
+                        (1, k, false)
+                    }
+                    Type::Decimal => {
+                        let (p, q) = self.rats[oe.id as usize].unwrap();
+                        if op == BinOp::Mul {
+                            (p, q, false)
+                        } else {
+                            if p == 0 {
+                                self.d.error("PYP2050", oe.span, "division por cero");
+                                return err(self);
+                            }
+                            (q, p, false)
+                        }
+                    }
+                    other => {
+                        self.d.error("PYP2254", e.span, format!("un {fx} se multiplica por otro {fx} o por una constante, no por {other}: convierte el entero con {fx}(x)"));
+                        return err(self);
+                    }
+                };
+                if neutral {
+                    let k = self.konst(oe).unwrap_or(0);
+                    if !fx.to_ir().contains(k) {
+                        self.d.error("PYP2253", oe.span, format!("el multiplicador {k} no cabe en la base de {fx}"));
+                        return err(self);
+                    }
+                    self.set(oe, fx.to_ir(), Some(k));
+                    return match self.konst(fixed_e) {
+                        Some(a) if fx.contains(a * k) => self.set(e, fx, Some(a * k)),
+                        Some(_) => {
+                            self.d.error("PYP2253", e.span, format!("el producto constante no cabe en {fx}"));
+                            err(self)
+                        }
+                        None => self.set(e, fx, None),
+                    };
+                }
+                let Some((num, den)) = crate::units::ratio(num, den) else { return err(self) };
+                if num.abs() > 32_767 || den > 32_767 {
+                    self.d.error("PYP2256", oe.span, format!("la fraccion {num}/{den} es demasiado grande: el numerador y el denominador llegan a 32767"));
+                    return err(self);
+                }
+                if let Some(a) = self.konst(fixed_e) {
+                    let v = a * num / den;
+                    if !fx.contains(v) {
+                        self.d.error("PYP2253", e.span, format!("el resultado constante no cabe en {fx}"));
+                        return err(self);
+                    }
+                    return self.set(e, fx, Some(v));
+                }
+                if !fits_wide(fx, num, signed) {
+                    self.d.error("PYP2255", e.span, format!("{fx} por {num}/{den} necesita un intermedio de mas de 16 bits: {WIDE_MSG}; divide (el numerador 1) o usa una base de 8 bits"));
+                    return err(self);
+                }
+                self.fixed_ops.insert(e.id, FixedOp::Scale { num, den, child, signed });
+                self.set(e, fx, None)
+            }
+        }
+    }
+
+    /// `Fixed[int16, 2](x)`: un entero (x * factor), una constante decimal o otro punto fijo (reescala exacta con intermedio de 32 bits).
+    fn fixed_cast(&mut self, e: &Expr, te: &TypeExpr, arg: &Expr) -> Type {
+        let target = self.resolve_type(te, false);
+        let at = self.expr(arg);
+        if target == Type::Error || at == Type::Error {
+            return self.set(e, Type::Error, None);
+        }
+        let signed_any = |a: Type| a.is_signed() || target.is_signed();
+        match at {
+            Type::Literal | Type::Decimal => {
+                if !self.fixed_coerce(arg, target) {
+                    return self.set(e, Type::Error, None);
+                }
+                let k = self.konst(arg);
+                self.set(e, target, k)
+            }
+            Type::Int { .. } | Type::Fixed { .. } => {
+                // raw_dst = raw_src * factor_dst / factor_src
+                let (num, den) = crate::units::ratio(target.factor(), at.factor()).unwrap_or((1, 1));
+                if let Some(c) = self.konst(arg) {
+                    let v = c * num / den;
+                    if !target.contains(v) {
+                        self.d.error("PYP2253", e.span, format!("la constante no cabe en {target}"));
+                        return self.set(e, Type::Error, None);
+                    }
+                    return self.set(e, target, Some(v));
+                }
+                if !fits_wide(at, num, signed_any(at)) {
+                    self.d.error("PYP2255", e.span, format!("convertir {at} a {target} necesita un intermedio de mas de 16 bits: {WIDE_MSG}"));
+                    return self.set(e, Type::Error, None);
+                }
+                self.fixed_ops.insert(e.id, FixedOp::Scale { num, den, child: 0, signed: signed_any(at) });
+                self.set(e, target, None)
+            }
+            other => {
+                self.d.error("PYP2053", e.span, format!("no se puede convertir {other} a {target}"));
+                self.set(e, Type::Error, None)
+            }
+        }
     }
 
     /// Una constante racional exacta: siempre un `decimal` (`1.0 / 4` es 0.25, no la division entera 0). Un decimal con valor entero
@@ -4126,6 +4406,14 @@ impl<'a> Checker<'a> {
                             self.expect(value, sym.ty, None);
                         }
                     }
+                    Some(sym) if sym.ty.is_fixed() => {
+                        if matches!(op, BinOp::Add | BinOp::Sub) {
+                            self.expect(value, sym.ty, None);
+                        } else {
+                            self.d.error("PYP2253", s.span, format!("'{}=' no se aplica al punto fijo: escribe x = x {} y (solo += y -= son directos)", op.symbol(), op.symbol()));
+                            self.expr(value);
+                        }
+                    }
                     Some(sym) => {
                         if sym.ty != Type::Error {
                             self.d.error("PYP2024", s.span, format!("el operador '{}=' requiere un entero, no {}", op.symbol(), sym.ty));
@@ -4258,6 +4546,17 @@ impl<'a> Checker<'a> {
     /// Comprueba que `e` tenga tipo `target` (los literales se adaptan).
     fn expect(&mut self, e: &Expr, target: Type, msg: Option<&str>) {
         let mut t = self.expr(e);
+        if target.is_fixed() && t != Type::Error {
+            match t {
+                _ if t == target => {}
+                Type::Literal | Type::Decimal => {
+                    self.fixed_coerce(e, target);
+                }
+                Type::Fixed { .. } => self.d.error("PYP2254", e.span, msg.map(String::from).unwrap_or_else(|| format!("se esperaba {target}, se encontro {t}; convierte con {target}(...)"))),
+                _ => self.d.error("PYP2254", e.span, msg.map(String::from).unwrap_or_else(|| format!("se esperaba {target}, se encontro {t}; convierte el entero con {target}(x)"))),
+            }
+            return;
+        }
         // un decimal de valor entero (100 * 0.5 = 50) vale como entero donde se pide uno
         if t == Type::Decimal && target.is_int() {
             if let Some((n, 1)) = self.rats[e.id as usize] {
@@ -4291,6 +4590,7 @@ impl<'a> Checker<'a> {
         match &e.kind {
             ExprKind::Int(v) => self.set(e, Type::Literal, Some(*v)),
             ExprKind::Decimal(n, d) => self.set_rational(e, (*n, *d)),
+            ExprKind::FixedCast(te, arg) => self.fixed_cast(e, te, arg),
             ExprKind::Quantity(v, dim) => {
                 self.dims[e.id as usize] = Some(*dim);
                 if !dim.is_plain_integer() {
@@ -4402,6 +4702,18 @@ impl<'a> Checker<'a> {
         if t == Type::Error {
             return self.set(e, Type::Error, None);
         }
+        if t.is_fixed() {
+            if op == UnOp::Neg && t.is_signed() {
+                let k = self.konst(inner).map(|c| -c).filter(|c| t.contains(*c));
+                return self.set(e, t, k);
+            }
+            if op == UnOp::Pos {
+                let k = self.konst(inner);
+                return self.set(e, t, k);
+            }
+            self.d.error("PYP2044", e.span, format!("operador unario no aplicable a {t}"));
+            return self.set(e, Type::Error, None);
+        }
         if t == Type::Decimal && matches!(op, UnOp::Neg | UnOp::Pos) {
             let (n, d) = self.rats[inner.id as usize].unwrap();
             return self.set_rational(e, if op == UnOp::Neg { (-n, d) } else { (n, d) });
@@ -4440,6 +4752,9 @@ impl<'a> Checker<'a> {
 
     /// Tipo comun de dos operandos enteros; `None` si hay error (ya reportado).
     fn unify(&mut self, l: &Expr, r: &Expr, lt: Type, rt: Type, op: &str) -> Option<Type> {
+        if lt.is_fixed() || rt.is_fixed() {
+            return self.fixed_unify(l, r, lt, rt, op);
+        }
         for (t, n) in [(lt, l), (rt, r)] {
             if !matches!(t, Type::Int { .. } | Type::Literal) {
                 self.d.error("PYP2046", n.span, format!("el operador '{op}' requiere enteros, no {t}"));
@@ -4523,6 +4838,16 @@ impl<'a> Checker<'a> {
         let rt = self.expr(r);
         if lt == Type::Error || rt == Type::Error {
             return self.set(e, Type::Error, None);
+        }
+        if lt.is_fixed() || rt.is_fixed() {
+            return match op {
+                BinOp::Mul | BinOp::Div | BinOp::TrueDiv => self.fixed_muldiv(e, op, l, r, lt, rt),
+                BinOp::Add | BinOp::Sub => self.fixed_addsub(e, op, l, r, lt, rt),
+                _ => {
+                    self.d.error("PYP2253", e.span, format!("el operador '{sym}' no se aplica al punto fijo (admite + - * / y las comparaciones)"));
+                    self.set(e, Type::Error, None)
+                }
+            };
         }
         if op == BinOp::TrueDiv && lt != Type::Decimal && rt != Type::Decimal {
             self.d.error("PYP1022", e.span, "'/' solo divide decimales al compilar (1.0 / 3); para enteros usa '//' (division entera)");
@@ -4859,6 +5184,20 @@ impl<'a> Checker<'a> {
                 }
                 let k = self.konst(a);
                 self.set(e, target, k)
+            }
+            t if t.is_fixed() => {
+                // la parte entera (hacia cero con Fixed, hacia abajo con QFixed): uint8(temperatura)
+                if let Some(c) = self.konst(a) {
+                    let v = if matches!(t, Type::Fixed { binary: true, .. }) && !t.is_signed() { c / t.factor() } else { c / t.factor() };
+                    return self.set(e, target, Some(target.wrap(v)));
+                }
+                let signed = t.is_signed() || target.is_signed();
+                if !fits_wide(t, 1, signed) {
+                    self.d.error("PYP2255", e.span, format!("convertir {t} a {target} no cabe en el intermedio de 16 bits: {WIDE_MSG}"));
+                    return self.set(e, Type::Error, None);
+                }
+                self.fixed_ops.insert(e.id, FixedOp::Scale { num: 1, den: t.factor(), child: 0, signed });
+                self.set(e, target, None)
             }
             Type::Int { .. } | Type::Bool => {
                 // cast explicito: el truncamiento es intencional

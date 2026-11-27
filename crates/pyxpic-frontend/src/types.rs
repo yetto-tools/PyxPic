@@ -18,6 +18,9 @@ pub enum Type {
     Literal,
     /// Constante decimal no entera (`0.5`, `2.54`): un racional exacto que solo existe al compilar.
     Decimal,
+    /// Punto fijo: un entero de `bits` bits (con o sin signo) que representa `raw / factor`; `factor` es 10^scale (`Fixed`) o 2^scale
+    /// (`QFixed`, `binary`). Solo existe en el verificador: la IR y el PIC ven el entero (`to_ir`).
+    Fixed { bits: u8, signed: bool, scale: u8, binary: bool },
     /// Marcador para suprimir errores en cascada.
     Error,
 }
@@ -50,26 +53,47 @@ impl Type {
         matches!(self, Type::Int { .. })
     }
 
-    pub fn bits(self) -> u32 {
+    pub fn is_fixed(self) -> bool {
+        matches!(self, Type::Fixed { .. })
+    }
+
+    /// El entero que guarda el tipo: el mismo para un entero y el `raw` de un punto fijo; otro tipo, sin cambio.
+    pub fn to_ir(self) -> Type {
         match self {
+            Type::Fixed { bits, signed, .. } => Type::Int { bits, signed },
+            t => t,
+        }
+    }
+
+    /// El factor de escala de un punto fijo: 10^scale o 2^scale; 1 para los demas.
+    pub fn factor(self) -> i128 {
+        match self {
+            Type::Fixed { scale, binary: true, .. } => 1i128 << scale,
+            Type::Fixed { scale, binary: false, .. } => 10i128.pow(scale as u32),
+            _ => 1,
+        }
+    }
+
+    pub fn bits(self) -> u32 {
+        match self.to_ir() {
             Type::Int { bits, .. } => bits as u32,
             _ => 0,
         }
     }
 
     pub fn is_signed(self) -> bool {
-        matches!(self, Type::Int { signed: true, .. })
+        matches!(self.to_ir(), Type::Int { signed: true, .. })
     }
 
     pub fn min(self) -> i128 {
-        match self {
+        match self.to_ir() {
             Type::Int { bits, signed: true } => -(1i128 << (bits - 1)),
             _ => 0,
         }
     }
 
     pub fn max(self) -> i128 {
-        match self {
+        match self.to_ir() {
             Type::Int { bits, signed: true } => (1i128 << (bits - 1)) - 1,
             Type::Int { bits, signed: false } => (1i128 << bits) - 1,
             _ => 0,
@@ -77,7 +101,7 @@ impl Type {
     }
 
     pub fn contains(self, v: i128) -> bool {
-        self.is_int() && self.min() <= v && v <= self.max()
+        (self.is_int() || self.is_fixed()) && self.min() <= v && v <= self.max()
     }
 
     /// Reduce `v` al rango del tipo (aritmetica modular, como el hardware).
@@ -104,6 +128,7 @@ impl fmt::Display for Type {
             Type::Void => f.write_str("None"),
             Type::Literal => f.write_str("int literal"),
             Type::Decimal => f.write_str("decimal"),
+            Type::Fixed { bits, signed, scale, binary } => write!(f, "{}[{}{}, {}]", if *binary { "QFixed" } else { "Fixed" }, if *signed { "int" } else { "uint" }, bits, scale),
             Type::Error => f.write_str("<error>"),
         }
     }

@@ -333,6 +333,21 @@ impl<'a> Parser<'a> {
                 let end = self.expect(Tok::RBracket, "']'")?;
                 Ok(TypeExpr { span: sp.to(end), kind: TypeExprKind::Const(Box::new(inner)) })
             }
+            Tok::Ident(s) if (s == "Fixed" || s == "QFixed") && matches!(self.peek_at(1), Tok::LBracket) => {
+                self.bump();
+                self.bump();
+                let base = self.ident("el tipo entero del punto fijo (Fixed[int16, 2])")?;
+                self.expect(Tok::Comma, "',' (Fixed[tipo, decimales])")?;
+                let scale = match self.peek().clone() {
+                    Tok::Int(n) => {
+                        self.bump();
+                        n
+                    }
+                    _ => return self.unexpected("el numero de decimales (Fixed[int16, 2])"),
+                };
+                let end = self.expect(Tok::RBracket, "']'")?;
+                Ok(TypeExpr { span: sp.to(end), kind: TypeExprKind::Fixed { binary: s == "QFixed", base: base.name, scale } })
+            }
             Tok::Ident(s) if s == "Rom" => {
                 self.bump();
                 self.expect(Tok::LBracket, "'[' (Rom[tipo])")?;
@@ -881,6 +896,14 @@ impl<'a> Parser<'a> {
             Tok::Decimal(n, d) => {
                 self.bump();
                 self.mk(sp, ExprKind::Decimal(n, d))
+            }
+            // `Fixed[int16, 2](x)`: la conversion al tipo de punto fijo
+            Tok::Ident(s) if (s == "Fixed" || s == "QFixed") && matches!(self.peek_at(1), Tok::LBracket) => {
+                let ty = self.type_expr(false)?;
+                self.expect(Tok::LParen, "'(' (Fixed[int16, 2](valor))")?;
+                let arg = self.expr()?;
+                let end = self.expect(Tok::RParen, "')'")?;
+                self.mk(sp.to(end), ExprKind::FixedCast(Box::new(ty), Box::new(arg)))
             }
             Tok::LParen => {
                 self.bump();

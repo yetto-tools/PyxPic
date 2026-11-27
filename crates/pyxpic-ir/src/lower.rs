@@ -7,6 +7,7 @@ use pyxpic_frontend::Program;
 
 use crate::ir::{AsmBlock, Function, Global, Local, Module, Pin, RegOp, TimerOp, Type};
 use crate::ir::{Block, BlockId, Inst, Operand, Place, Terminator, UnaryOp};
+use pyxpic_frontend::check::FixedOp;
 use pyxpic_frontend::BitsOp;
 
 /// El programa tipado a IR, **con las optimizaciones** de `opt` (docs/ir-optimizaciones.md). Es lo que usa el compilador.
@@ -103,6 +104,8 @@ struct FnLower<'a> {
 fn ann_type(te: &TypeExpr) -> Type {
     match &te.kind {
         TypeExprKind::Name(n) => Type::from_name(n).unwrap_or(Type::Error),
+        // el punto fijo es el entero que lo guarda
+        TypeExprKind::Fixed { base, .. } => Type::from_name(base).unwrap_or(Type::Error),
         TypeExprKind::Const(inner) => ann_type(inner),
         TypeExprKind::None => Type::Void,
         TypeExprKind::Rom(_) | TypeExprKind::Array(..) | TypeExprKind::Clock(..) | TypeExprKind::Frequency(..) | TypeExprKind::OscMode(..) | TypeExprKind::Setting(..) | TypeExprKind::ConstAuto => Type::Error,
@@ -201,7 +204,70 @@ impl<'a> FnLower<'a> {
         }
     }
 
+    /// Una operacion de punto fijo (`FixedOp`): producto o escala por una fraccion exacta con un intermedio de 16 bits. Todo son
+    /// instrucciones enteras de la IR (Cast, Mul, Div, Shr): el PIC no sabe de punto fijo.
+    fn fixed_op(&mut self, e: &Expr, op: FixedOp, dst: Place) {
+        let child = |this: &mut Self, idx: u8| -> Operand {
+            let c: &Expr = match (&e.kind, idx) {
+                (ExprKind::Binary(_, l, _), 0) => l,
+                (ExprKind::Binary(_, _, r), _) => r,
+                (ExprKind::Call { args, .. }, _) => &args[0],
+                (ExprKind::FixedCast(_, a), _) => a,
+                _ => unreachable!("una operacion de punto fijo solo cuelga de un binario, una llamada o una conversion"),
+            };
+            this.value(c)
+        };
+        let widen = |this: &mut Self, v: Operand, w: Type| -> Operand {
+            let t = this.new_temp(w);
+            this.emit(Inst::Cast { dst: t, src: v });
+            Operand::Place(t)
+        };
+        match op {
+            FixedOp::Mul { binary, scale, signed } => {
+                let w = Type::Int { bits: 16, signed };
+                let (a, b) = (child(self, 0), child(self, 1));
+                let (wa, wb) = (widen(self, a, w), widen(self, b, w));
+                let p = self.new_temp(w);
+                self.emit(Inst::Binary { dst: p, op: BinOp::Mul, lhs: wa, rhs: wb });
+                let q = self.new_temp(w);
+                if binary {
+                    self.emit(Inst::Binary { dst: q, op: BinOp::Shr, lhs: Operand::Place(p), rhs: Operand::Const { value: scale as i128, ty: Type::Int { bits: 8, signed: false } } });
+                } else {
+                    self.emit(Inst::Binary { dst: q, op: BinOp::Div, lhs: Operand::Place(p), rhs: Operand::Const { value: 10i128.pow(scale as u32), ty: w } });
+                }
+                self.emit(Inst::Cast { dst, src: Operand::Place(q) });
+            }
+            FixedOp::Scale { num, den, child: idx, signed } => {
+                let w = Type::Int { bits: 16, signed };
+                let v = child(self, idx);
+                let mut cur = widen(self, v, w);
+                if num != 1 {
+                    let m = self.new_temp(w);
+                    self.emit(Inst::Binary { dst: m, op: BinOp::Mul, lhs: cur, rhs: Operand::Const { value: num, ty: w } });
+                    cur = Operand::Place(m);
+                }
+                if den != 1 {
+                    let q = self.new_temp(w);
+                    // un desplazamiento solo cuando es identico a la division (sin signo y potencia de dos)
+                    if !signed && den > 0 && (den & (den - 1)) == 0 {
+                        self.emit(Inst::Binary { dst: q, op: BinOp::Shr, lhs: cur, rhs: Operand::Const { value: den.trailing_zeros() as i128, ty: Type::Int { bits: 8, signed: false } } });
+                    } else {
+                        self.emit(Inst::Binary { dst: q, op: BinOp::Div, lhs: cur, rhs: Operand::Const { value: den, ty: w } });
+                    }
+                    cur = Operand::Place(q);
+                }
+                self.emit(Inst::Cast { dst, src: cur });
+            }
+        }
+    }
+
     fn compute(&mut self, e: &Expr, dst: Option<Place>) {
+        if let Some(op) = self.prog.fixed_ops.get(&e.id).copied() {
+            if let Some(dst) = dst {
+                self.fixed_op(e, op, dst);
+            }
+            return;
+        }
         match &e.kind {
             ExprKind::Binary(op, l, r) => {
                 let (lhs, rhs) = (self.value(l), self.value(r));
@@ -418,7 +484,7 @@ impl<'a> FnLower<'a> {
                     },
                 }
             }
-            ExprKind::Int(_) | ExprKind::Quantity(..) | ExprKind::Decimal(..) | ExprKind::Bool(_) | ExprKind::Name(_) => {
+            ExprKind::Int(_) | ExprKind::Quantity(..) | ExprKind::Decimal(..) | ExprKind::FixedCast(..) | ExprKind::Bool(_) | ExprKind::Name(_) => {
                 let src = self.value(e);
                 self.emit(Inst::Copy { dst: dst.unwrap(), src });
             }

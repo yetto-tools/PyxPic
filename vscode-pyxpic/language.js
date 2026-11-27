@@ -34,6 +34,8 @@ const info = {
   uint32: "Entero sin signo de 32 bits. Puede utilizarse como constante; consulta los límites del backend para variables.",
   int8: "Entero con signo de 8 bits: -128 a 127.",
   int16: "Entero con signo de 16 bits: -32768 a 32767.",
+  Fixed: "Punto fijo decimal: `Fixed[int16, 2]` guarda 25.37 como el entero 2537 (escala 10^n). Suma y resta son enteras; el producto usa un intermedio de 16 bits (base de 8 bits por ahora, #32). Sin float, sin RAM extra.",
+  QFixed: "Punto fijo binario: `QFixed[int8, 4]` guarda 1.5 como 24 (escala 2^n). Reescalar al multiplicar es un desplazamiento: para PID, filtros y control de motores.",
   Const: "Constante resuelta en compilación, por ejemplo `LIMITE: Const[uint8] = 10`.",
   CLOCK_HZ: "Forma manual de declarar la frecuencia del sistema en Hz para los cálculos de tiempo: no configura el oscilador. Prefiere `Clock: Internal 4MHz`.",
   CLOCK: "Fuente del reloj del sistema: `CLOCK: Internal` (oscilador interno, 4 MHz si no hay FREQUENCY) o `CLOCK: Crystal`, `External`, `Resonator`, `RC`. La frecuencia va en `FREQUENCY: 8MHz`. Con un oscilador externo, RA7 y RA6 dejan de estar disponibles como E/S. No combinar con CLOCK_HZ.",
@@ -130,7 +132,7 @@ function completions(prefix) {
   const match = /\b(ADC|UART|EEPROM|PWM[12]|SPI|I2C)\.\w*$/.exec(prefix);
   if (match) return members[match[1]];
   if (/\.\w*$/.test(prefix)) return [];
-  return ["uint8", "uint16", "uint32", "int8", "int16", "int32", "Const", "CLOCK", "FREQUENCY", "OSC_MODE", "PLL", "CLOCK_DIVIDER", "CLOCK_OUTPUT", "FAIL_SAFE_CLOCK", "CLOCK_SWITCHING", "Internal", "Crystal", "External", "Resonator", "RC", "Secondary", "SOURCE_FREQ", "FOSC", "FCY", "MHz", "kHz", "Hz", "CLOCK_HZ", "ord"];
+  return ["uint8", "uint16", "uint32", "int8", "int16", "int32", "Fixed", "QFixed", "Const", "CLOCK", "FREQUENCY", "OSC_MODE", "PLL", "CLOCK_DIVIDER", "CLOCK_OUTPUT", "FAIL_SAFE_CLOCK", "CLOCK_SWITCHING", "Internal", "Crystal", "External", "Resonator", "RC", "Secondary", "SOURCE_FREQ", "FOSC", "FCY", "MHz", "kHz", "Hz", "CLOCK_HZ", "ord"];
 }
 
 function isPyxPic(text) {

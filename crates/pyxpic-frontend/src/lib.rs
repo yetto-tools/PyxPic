@@ -193,6 +193,7 @@ fn analyze_parsed(source: &str, mut module: ast::Module, mut d: Diagnostics, tar
         stack_use: c.stack_use,
         uart_calls: c.uart_calls,
         uart_fmt: c.uart_fmt,
+        fixed_ops: c.fixed_ops,
         text_calls: c.text_calls,
     });
     Analysis { program, diagnostics: d }
