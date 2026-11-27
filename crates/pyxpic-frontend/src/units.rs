@@ -110,6 +110,7 @@ const UNITS: &[Unit] = &[
     u("s", Dim::Time, 1_000_000_000),
     u("min", Dim::Time, 60_000_000_000),
     u("h", Dim::Time, 3_600_000_000_000),
+    u("H", Dim::Time, 3_600_000_000_000), // hora, con h o H (el henrio se escribe `henry`)
     u("B", Dim::Memory, 1),
     u("KB", Dim::Memory, 1_000),
     u("MB", Dim::Memory, 1_000_000),
@@ -138,7 +139,7 @@ const UNITS: &[Unit] = &[
     u("nH", Dim::Inductance, 1),
     u("uH", Dim::Inductance, 1_000),
     u("mH", Dim::Inductance, 1_000_000),
-    u("H", Dim::Inductance, 1_000_000_000),
+    u("henry", Dim::Inductance, 1_000_000_000),
     u("uW", Dim::Power, 1),
     u("mW", Dim::Power, 1_000),
     u("W", Dim::Power, 1_000_000),
@@ -389,9 +390,12 @@ mod tests {
         assert_eq!(v("3.3v"), Some((3_300_000, Dim::Voltage)));
         assert_eq!(v("50PCT"), Some((50_000, Dim::Percent)));
         assert_eq!(v("1kib"), Some((1_024, Dim::Memory)));
-        // h (hora) y H (henrio) solo se distinguen por la mayuscula: la forma exacta manda y no hay otra lectura
+        // h y H son horas (el henrio es `henry`): no hay ambiguedad aunque no se distinga el caso
         assert_eq!(v("2h"), Some((7_200_000_000_000, Dim::Time)));
-        assert_eq!(v("2H"), Some((2_000_000_000, Dim::Inductance)));
+        assert_eq!(v("2H"), Some((7_200_000_000_000, Dim::Time)));
+        assert_eq!(v("3henry"), Some((3_000_000_000, Dim::Inductance)));
+        assert_eq!(v("3HENRY"), Some((3_000_000_000, Dim::Inductance)));
+        assert_eq!(v("5mh"), Some((5_000_000, Dim::Inductance)));
         // en Python (estricto) sigue distinguiendo
         assert!(scan("500MS", 0, false).is_none());
     }

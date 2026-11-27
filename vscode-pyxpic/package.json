@@ -1,7 +1,7 @@
 {
   "name": "pyxpic-ide",
   "displayName": "PyxPic IDE",
-  "description": "v0.1.27 · Comprueba y compila programas PyxPic desde VS Code.",
+  "description": "v0.1.28 · Comprueba y compila programas PyxPic desde VS Code.",
   "version": "0.1.28",
   "publisher": "pyxpic",
   "license": "MIT",

@@ -1,7 +1,7 @@
 {
   "scopeName": "source.pyxpic",
   "patterns": [
-    { "name": "constant.numeric.unit.pyxpic", "match": "\\b[0-9][0-9_]*(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?(?:GHz|MHz|kHz|Hz|ns|us|ms|min|s|h|KiB|MiB|KB|MB|B|Mbaud|kbaud|baud|Mbps|kbps|bps|uV|mV|V|uA|mA|A|Mohm|kohm|ohm|pF|nF|uF|mF|F|nH|uH|mH|H|uW|mW|W|degC|degF|K|rpm|deg|rad|pct)\\b" },
+    { "name": "constant.numeric.unit.pyxpic", "match": "\\b[0-9][0-9_]*(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?(?:GHz|MHz|kHz|Hz|ns|us|ms|min|s|h|H|KiB|MiB|KB|MB|B|Mbaud|kbaud|baud|Mbps|kbps|bps|uV|mV|V|uA|mA|A|Mohm|kohm|ohm|pF|nF|uF|mF|F|nH|uH|mH|henry|uW|mW|W|degC|degF|K|rpm|deg|rad|pct)\\b" },
     { "include": "source.python" }
   ]
 }

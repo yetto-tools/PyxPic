@@ -65,7 +65,7 @@ Un número decimal pegado a un sufijo es un **literal con unidad**: el lexer lo 
 | Magnitud | Sufijos | Unidad base |
 |---|---|---|
 | Frecuencia | `Hz` `kHz` `MHz` `GHz` | Hz |
-| Tiempo | `ns` `us` `ms` `s` `min` `h` | ns |
+| Tiempo | `ns` `us` `ms` `s` `min` `h` `H` | ns |
 | Memoria | `B` `KB` `MB` `KiB` `MiB` | B |
 | Comunicación serial | `baud` `kbaud` `Mbaud` | baud |
 | Transferencia de datos | `bps` `kbps` `Mbps` | bps |
@@ -73,7 +73,7 @@ Un número decimal pegado a un sufijo es un **literal con unidad**: el lexer lo 
 | Corriente | `uA` `mA` `A` | uA |
 | Resistencia | `ohm` `kohm` `Mohm` | mohm |
 | Capacitancia | `pF` `nF` `uF` `mF` `F` | pF |
-| Inductancia | `nH` `uH` `mH` `H` | nH |
+| Inductancia | `nH` `uH` `mH` `henry` | nH |
 | Potencia | `uW` `mW` `W` | uW |
 | Temperatura | `degC` `degF` `K` | mK (milikelvin) |
 | Rotación | `rpm` | rpm |
