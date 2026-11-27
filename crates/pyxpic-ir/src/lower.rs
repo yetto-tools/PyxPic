@@ -32,7 +32,7 @@ pub fn lower_unoptimized(prog: &Program) -> Module {
     for it in &prog.module.items {
         if let Item::Var(v) = it {
             // las tablas viven en la memoria de programa, no son globales
-            if prog.roms.iter().any(|t| t.0 == v.name.name) || prog.arrays.iter().any(|t| t.0 == v.name.name) || matches!(v.ann.kind, TypeExprKind::Clock(..) | TypeExprKind::Frequency(..) | TypeExprKind::OscMode(..) | TypeExprKind::Setting(..)) {
+            if prog.roms.iter().any(|t| t.0 == v.name.name) || prog.arrays.iter().any(|t| t.0 == v.name.name) || matches!(v.ann.kind, TypeExprKind::Clock(..) | TypeExprKind::Frequency(..) | TypeExprKind::OscMode(..) | TypeExprKind::Setting(..) | TypeExprKind::ConstAuto) {
                 continue;
             }
             let sym = &prog.globals[&v.name.name];
@@ -105,7 +105,7 @@ fn ann_type(te: &TypeExpr) -> Type {
         TypeExprKind::Name(n) => Type::from_name(n).unwrap_or(Type::Error),
         TypeExprKind::Const(inner) => ann_type(inner),
         TypeExprKind::None => Type::Void,
-        TypeExprKind::Rom(_) | TypeExprKind::Array(..) | TypeExprKind::Clock(..) | TypeExprKind::Frequency(..) | TypeExprKind::OscMode(..) | TypeExprKind::Setting(..) => Type::Error,
+        TypeExprKind::Rom(_) | TypeExprKind::Array(..) | TypeExprKind::Clock(..) | TypeExprKind::Frequency(..) | TypeExprKind::OscMode(..) | TypeExprKind::Setting(..) | TypeExprKind::ConstAuto => Type::Error,
     }
 }
 
@@ -418,7 +418,7 @@ impl<'a> FnLower<'a> {
                     },
                 }
             }
-            ExprKind::Int(_) | ExprKind::Quantity(..) | ExprKind::Bool(_) | ExprKind::Name(_) => {
+            ExprKind::Int(_) | ExprKind::Quantity(..) | ExprKind::Decimal(..) | ExprKind::Bool(_) | ExprKind::Name(_) => {
                 let src = self.value(e);
                 self.emit(Inst::Copy { dst: dst.unwrap(), src });
             }

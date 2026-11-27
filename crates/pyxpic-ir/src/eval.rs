@@ -12,6 +12,7 @@ pub fn binary(op: BinOp, a: i128, b: i128) -> i128 {
         BinOp::Div if b == 0 => -1,
         BinOp::Mod if b == 0 => a,
         BinOp::Div => a / b, // trunca hacia cero
+        BinOp::TrueDiv => unreachable!("'/' solo existe entre decimales al compilar: el verificador no lo deja pasar a la IR"),
         BinOp::Mod => a % b,
         BinOp::BitAnd => a & b,
         BinOp::BitOr => a | b,

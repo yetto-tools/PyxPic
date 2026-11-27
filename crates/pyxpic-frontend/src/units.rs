@@ -206,6 +206,36 @@ impl Decimal {
     }
 }
 
+/// Maximo comun divisor (siempre positivo).
+pub fn gcd(a: i128, b: i128) -> i128 {
+    let (mut a, mut b) = (a.abs(), b.abs());
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a
+}
+
+/// Un racional `num/den` normalizado (den > 0, sin factores comunes); `None` si `den` es 0 o desborda.
+pub fn ratio(num: i128, den: i128) -> Option<(i128, i128)> {
+    if den == 0 {
+        return None;
+    }
+    let g = gcd(num, den).max(1);
+    let (n, d) = (num / g, den / g);
+    Some(if d < 0 { (n.checked_neg()?, d.checked_neg()?) } else { (n, d) })
+}
+
+impl Decimal {
+    /// El valor como racional exacto: `11.0592` es 691/62500.
+    pub fn as_ratio(&self) -> Option<(i128, i128)> {
+        if self.exp10 >= 0 {
+            ratio(self.mantissa.checked_mul(10i128.checked_pow(self.exp10 as u32)?)?, 1)
+        } else {
+            ratio(self.mantissa, 10i128.checked_pow((-self.exp10) as u32)?)
+        }
+    }
+}
+
 /// Por que un literal con unidad no se pudo convertir.
 #[derive(Debug, PartialEq, Eq)]
 pub enum UnitError {

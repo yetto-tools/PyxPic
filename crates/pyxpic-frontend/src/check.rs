@@ -226,6 +226,8 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         target,
         info: vec![ExprInfo { ty: Type::Error, konst: None }; module.expr_count as usize],
         dims: vec![None; module.expr_count as usize],
+        rats: vec![None; module.expr_count as usize],
+        decimal_consts: HashMap::new(),
         quantity_pending: Vec::new(),
         clock_resolved: false,
         clock_decl: None,
@@ -355,6 +357,7 @@ fn fold(op: BinOp, a: i128, b: i128) -> Option<i128> {
         BinOp::Sub => a.checked_sub(b),
         BinOp::Mul => a.checked_mul(b),
         BinOp::Div => a.checked_div(b), // trunca hacia cero
+        BinOp::TrueDiv => None,         // solo entre decimales (decimal_binary)
         BinOp::Mod => a.checked_rem(b), // signo del dividendo (como C)
         BinOp::BitAnd => Some(a & b),
         BinOp::BitOr => Some(a | b),
@@ -376,6 +379,10 @@ struct Checker<'a> {
     info: Vec<ExprInfo>,
     /// La magnitud fisica de cada expresion (`8MHz`, `500ms`...): `None` para un numero sin unidad.
     dims: Vec<Option<Dim>>,
+    /// El valor exacto (num/den) de cada expresion decimal no entera.
+    rats: Vec<Option<(i128, i128)>>,
+    /// `FACTOR: Const = 0.5`: constantes decimales con nombre (solo a nivel de modulo).
+    decimal_consts: HashMap<String, (i128, i128)>,
     /// Literales con unidad que ningun parametro ha usado todavia: los que sobren son un error (`PYP2230`).
     quantity_pending: Vec<(u32, Span, Dim)>,
     clock_resolved: bool,
@@ -3141,6 +3148,92 @@ impl<'a> Checker<'a> {
         self.info[e.id as usize].konst = Some(v / per_unit);
     }
 
+    /// Una constante racional exacta: siempre un `decimal` (`1.0 / 4` es 0.25, no la division entera 0). Un decimal con valor entero
+    /// pasa a ser un entero solo donde se pide un entero (`expect`): `RESULT: Const[uint8] = 100 * 0.5`.
+    fn set_rational(&mut self, e: &Expr, (n, d): (i128, i128)) -> Type {
+        match crate::units::ratio(n, d) {
+            Some(r) => {
+                self.rats[e.id as usize] = Some(r);
+                self.set(e, Type::Decimal, None)
+            }
+            None => {
+                self.d.error("PYP2250", e.span, "decimal invalido o demasiado grande");
+                self.set(e, Type::Error, None)
+            }
+        }
+    }
+
+    /// El valor racional de una expresion constante (decimal o entera).
+    fn rational_of(&self, e: &Expr) -> Option<(i128, i128)> {
+        match self.ty(e) {
+            Type::Decimal => self.rats[e.id as usize],
+            Type::Literal | Type::Int { .. } => self.konst(e).map(|k| (k, 1)),
+            _ => None,
+        }
+    }
+
+    /// `+ - * /` con un decimal: aritmetica racional exacta al compilar. Un resultado entero es un literal entero (`100 * 0.5` es 50);
+    /// uno no entero sigue siendo un decimal. Con un valor de ejecucion es un error: sin punto fijo no hay forma de operar un decimal en el PIC.
+    fn decimal_binary(&mut self, e: &Expr, op: BinOp, l: &Expr, r: &Expr) -> Type {
+        let (Some((a, b)), Some((c, d))) = (self.rational_of(l), self.rational_of(r)) else {
+            self.d.error("PYP2251", e.span, "un decimal no entero solo se opera con constantes al compilar: con un valor en ejecucion hace falta un tipo de punto fijo (Fixed o QFixed)");
+            return self.set(e, Type::Error, None);
+        };
+        let res = match op {
+            BinOp::Add => a.checked_mul(d).zip(c.checked_mul(b)).and_then(|(x, y)| x.checked_add(y)).zip(b.checked_mul(d)),
+            BinOp::Sub => a.checked_mul(d).zip(c.checked_mul(b)).and_then(|(x, y)| x.checked_sub(y)).zip(b.checked_mul(d)),
+            BinOp::Mul => a.checked_mul(c).zip(b.checked_mul(d)),
+            BinOp::TrueDiv if c == 0 => {
+                self.d.error("PYP2050", r.span, "division por cero");
+                return self.set(e, Type::Error, None);
+            }
+            BinOp::TrueDiv => a.checked_mul(d).zip(b.checked_mul(c)),
+            BinOp::Div => {
+                self.d.error("PYP2251", e.span, "'//' es la division entera: con un decimal usa '/' (division exacta, 1.0 / 3)");
+                return self.set(e, Type::Error, None);
+            }
+            _ => {
+                self.d.error("PYP2251", e.span, format!("el operador '{}' no se aplica a un decimal: solo + - * /", op.symbol()));
+                return self.set(e, Type::Error, None);
+            }
+        };
+        match res {
+            Some((n, den)) => self.set_rational(e, (n, den)),
+            None => {
+                self.d.error("PYP2250", e.span, "el resultado decimal es demasiado grande");
+                self.set(e, Type::Error, None)
+            }
+        }
+    }
+
+    /// `FACTOR: Const = 0.5`: una constante sin tipo; el valor decide (decimal o entero). Solo a nivel de modulo; no ocupa RAM.
+    fn declare_const_auto(&mut self, v: &VarDecl, is_global: bool) {
+        let name = &v.name.name;
+        if !is_global {
+            self.d.error("PYP2011", v.name.span, "un Const sin tipo se declara a nivel de modulo: dentro de una funcion usa Const[tipo]");
+            return;
+        }
+        if self.globals.contains_key(name) || self.decimal_consts.contains_key(name) || self.fidx.contains_key(name) {
+            self.d.error("PYP2009", v.name.span, format!("'{name}' ya esta declarado"));
+            return;
+        }
+        let Some(val) = &v.value else {
+            self.d.error("PYP2007", v.span, format!("'{name}' debe inicializarse en su declaracion"));
+            return;
+        };
+        match (self.expr(val), self.konst(val)) {
+            (Type::Error, _) => {}
+            (Type::Decimal, _) => {
+                let r = self.rats[val.id as usize].unwrap();
+                self.decimal_consts.insert(name.clone(), r);
+            }
+            (Type::Literal, Some(k)) => {
+                self.globals.insert(name.clone(), Symbol { name: name.clone(), ty: Type::Literal, kind: SymKind::Global, konst: Some(k), is_final: true });
+            }
+            _ => self.d.error("PYP2011", val.span, "un valor Const debe ser una expresion constante"),
+        }
+    }
+
     /// La magnitud de una expresion, si la tiene.
     fn dim(&self, e: &Expr) -> Option<Dim> {
         self.dims[e.id as usize]
@@ -3294,6 +3387,9 @@ impl<'a> Checker<'a> {
             TypeExprKind::OscMode(m) => return self.declare_osc_mode(v, m, is_global),
             TypeExprKind::Setting(w, e) => return self.declare_clock_setting(v, w.as_deref(), e.as_deref(), is_global),
             _ => {}
+        }
+        if matches!(v.ann.kind, TypeExprKind::ConstAuto) {
+            return self.declare_const_auto(v, is_global);
         }
         match &v.ann.kind {
             TypeExprKind::Const(inner) if matches!(inner.kind, TypeExprKind::Rom(_)) => {
@@ -4161,7 +4257,13 @@ impl<'a> Checker<'a> {
 
     /// Comprueba que `e` tenga tipo `target` (los literales se adaptan).
     fn expect(&mut self, e: &Expr, target: Type, msg: Option<&str>) {
-        let t = self.expr(e);
+        let mut t = self.expr(e);
+        // un decimal de valor entero (100 * 0.5 = 50) vale como entero donde se pide uno
+        if t == Type::Decimal && target.is_int() {
+            if let Some((n, 1)) = self.rats[e.id as usize] {
+                t = self.set(e, Type::Literal, Some(n));
+            }
+        }
         if t == Type::Error || target == Type::Error {
             return;
         }
@@ -4173,7 +4275,13 @@ impl<'a> Checker<'a> {
                 self.coerce_literal(e, target);
             }
         } else if t != target {
-            let hint = if t.is_int() && target.is_int() { format!("; usa {target}(...) para convertir explicitamente") } else { String::new() };
+            let hint = if t.is_int() && target.is_int() {
+                format!("; usa {target}(...) para convertir explicitamente")
+            } else if t == Type::Decimal {
+                "; un decimal no entero solo existe al compilar: multiplicalo hasta un entero (100 * 0.5) o usa un tipo de punto fijo".to_string()
+            } else {
+                String::new()
+            };
             let m = msg.map(String::from).unwrap_or_else(|| format!("se esperaba {target}, se encontro {t}{hint}"));
             self.d.error("PYP2041", e.span, m);
         }
@@ -4182,6 +4290,7 @@ impl<'a> Checker<'a> {
     fn expr(&mut self, e: &Expr) -> Type {
         match &e.kind {
             ExprKind::Int(v) => self.set(e, Type::Literal, Some(*v)),
+            ExprKind::Decimal(n, d) => self.set_rational(e, (*n, *d)),
             ExprKind::Quantity(v, dim) => {
                 self.dims[e.id as usize] = Some(*dim);
                 if !dim.is_plain_integer() {
@@ -4226,6 +4335,10 @@ impl<'a> Checker<'a> {
     }
 
     fn name(&mut self, e: &Expr, n: &str) -> Type {
+        if let Some(&r) = self.decimal_consts.get(n) {
+            self.read_names.insert(n.to_string());
+            return self.set_rational(e, r);
+        }
         if matches!(n, "SOURCE_FREQ" | "FOSC" | "FCY") && !self.globals.contains_key(n) {
             // el reloj se resuelve con lo declarado hasta aqui (CLOCK y FREQUENCY van al principio del programa)
             self.resolve_clock_decls();
@@ -4288,6 +4401,10 @@ impl<'a> Checker<'a> {
         let t = self.expr(inner);
         if t == Type::Error {
             return self.set(e, Type::Error, None);
+        }
+        if t == Type::Decimal && matches!(op, UnOp::Neg | UnOp::Pos) {
+            let (n, d) = self.rats[inner.id as usize].unwrap();
+            return self.set_rational(e, if op == UnOp::Neg { (-n, d) } else { (n, d) });
         }
         if !matches!(t, Type::Int { .. } | Type::Literal) {
             self.d.error("PYP2044", e.span, format!("operador unario no aplicable a {t}"));
@@ -4406,6 +4523,13 @@ impl<'a> Checker<'a> {
         let rt = self.expr(r);
         if lt == Type::Error || rt == Type::Error {
             return self.set(e, Type::Error, None);
+        }
+        if op == BinOp::TrueDiv && lt != Type::Decimal && rt != Type::Decimal {
+            self.d.error("PYP1022", e.span, "'/' solo divide decimales al compilar (1.0 / 3); para enteros usa '//' (division entera)");
+            return self.set(e, Type::Error, None);
+        }
+        if lt == Type::Decimal || rt == Type::Decimal {
+            return self.decimal_binary(e, op, l, r);
         }
         let Some(t) = self.unify(l, r, lt, rt, sym) else { return self.set(e, Type::Error, None) };
         let (a, b) = (self.konst(l), self.konst(r));

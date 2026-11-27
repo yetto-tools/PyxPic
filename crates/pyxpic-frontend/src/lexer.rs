@@ -10,6 +10,8 @@ pub enum Tok {
     Int(i128),
     /// `8MHz`, `500ms`...: el valor exacto en la unidad base de su magnitud (`units.rs`).
     Quantity(i128, Dim),
+    /// `0.5`, `1.5e-3`: un decimal exacto `num/den`.
+    Decimal(i128, i128),
     /// Contenido literal entre comillas (sin interpretar escapes).
     Str(String, u8),
     /// `f"..."`: el contenido sin decodificar.
@@ -253,9 +255,51 @@ impl<'a> Lexer<'a> {
         true
     }
 
+    /// `0.5`, `2.54`, `1.5e-3`, `1e3`: un decimal sin unidad, como racional exacto. Solo con parte decimal o exponente (un entero
+    /// sigue el camino de siempre).
+    fn decimal_literal(&mut self) -> bool {
+        let start = self.i;
+        let mut j = start;
+        let digits = |j: &mut usize, b: &[u8]| {
+            while *j < b.len() && (b[*j].is_ascii_digit() || b[*j] == b'_') {
+                *j += 1;
+            }
+        };
+        digits(&mut j, self.b);
+        let mut is_decimal = false;
+        if self.b.get(j) == Some(&b'.') && self.b.get(j + 1).is_some_and(|c| c.is_ascii_digit()) {
+            j += 1;
+            digits(&mut j, self.b);
+            is_decimal = true;
+        }
+        if matches!(self.b.get(j), Some(b'e' | b'E')) {
+            let mut k = j + 1;
+            if matches!(self.b.get(k), Some(b'+' | b'-')) {
+                k += 1;
+            }
+            if self.b.get(k).is_some_and(|c| c.is_ascii_digit()) {
+                j = k;
+                digits(&mut j, self.b);
+                is_decimal = true;
+            }
+        }
+        if !is_decimal || self.b.get(j).is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_') {
+            return false;
+        }
+        match units::Decimal::parse(&self.src[start..j]).and_then(|d| d.as_ratio()) {
+            Some((n, d)) => self.push(Tok::Decimal(n, d), start),
+            None => {
+                self.d.error("PYP0008", Span::new(start, j), "literal decimal invalido o demasiado grande");
+                self.push(Tok::Int(0), start);
+            }
+        }
+        self.i = j;
+        true
+    }
+
     fn number(&mut self) {
         let start = self.i;
-        if self.unit_literal() {
+        if self.unit_literal() || self.decimal_literal() {
             return;
         }
         let (radix, skip) = match (self.peek(0), self.peek(1)) {

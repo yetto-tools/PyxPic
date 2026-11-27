@@ -16,6 +16,8 @@ pub enum Type {
     Void,
     /// Literal entero que aun no tomo tipo: lo toma del contexto si su valor cabe.
     Literal,
+    /// Constante decimal no entera (`0.5`, `2.54`): un racional exacto que solo existe al compilar.
+    Decimal,
     /// Marcador para suprimir errores en cascada.
     Error,
 }
@@ -101,6 +103,7 @@ impl fmt::Display for Type {
             Type::Bool => f.write_str("bool"),
             Type::Void => f.write_str("None"),
             Type::Literal => f.write_str("int literal"),
+            Type::Decimal => f.write_str("decimal"),
             Type::Error => f.write_str("<error>"),
         }
     }

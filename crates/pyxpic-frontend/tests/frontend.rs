@@ -160,7 +160,7 @@ fn shifts() {
 
 #[test]
 fn unsupported_python_is_rejected_with_specific_codes() {
-    assert_err("x: u8 = 1.5\n", "PYP0007");
+    assert_err("x: u8 = 1.5\n", "PYP2041"); // un decimal no entero es un literal exacto, pero no cabe en un u8
     assert_err("def f(a: u8) -> u8:\n    return a / 2\n", "PYP1022");
     assert_err("def f(a: u8) -> u8:\n    return a ** 2\n", "PYP1022");
     assert_err("class A:\n    pass\n", "PYP1001");

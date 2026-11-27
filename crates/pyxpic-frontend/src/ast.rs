@@ -11,6 +11,8 @@ pub enum BinOp {
     Sub,
     Mul,
     Div, // '//' (division entera, trunca hacia cero)
+    /// '/': division exacta, solo entre decimales al compilar (`1.0 / 3`); con enteros es un error.
+    TrueDiv,
     Mod,
     BitAnd,
     BitOr,
@@ -26,6 +28,7 @@ impl BinOp {
             BinOp::Sub => "-",
             BinOp::Mul => "*",
             BinOp::Div => "//",
+            BinOp::TrueDiv => "/",
             BinOp::Mod => "%",
             BinOp::BitAnd => "&",
             BinOp::BitOr => "|",
@@ -85,6 +88,8 @@ pub enum ExprKind {
     Int(i128),
     /// `8MHz`, `500ms`, `3.3V`: un literal con unidad; el valor es un entero exacto en la unidad base de su magnitud.
     Quantity(i128, crate::units::Dim),
+    /// `0.5`, `2.54`, `1.5e-3`: un decimal exacto `num/den` (normalizado); solo existe al compilar.
+    Decimal(i128, i128),
     Bool(bool),
     Name(String),
     Unary(UnOp, Box<Expr>),
@@ -156,6 +161,8 @@ pub enum TypeExprKind {
     Name(String),
     /// `Const[T]`
     Const(Box<TypeExpr>),
+    /// `Const` sin tipo (`FACTOR: Const = 0.5`): el valor es una constante de compilacion y el tipo lo da el valor.
+    ConstAuto,
     /// `uint8[16]`: arreglo de capacidad fija en RAM (solo a nivel de modulo).
     Array(Box<TypeExpr>, i128),
     /// `CLOCK: Internal`: la fuente del reloj (`Internal`, `Crystal`, `External`, `Resonator`, `RC`, `Secondary`).

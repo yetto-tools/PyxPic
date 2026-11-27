@@ -659,6 +659,7 @@ impl<'a> Gen<'a> {
                 }
             }
             BinOp::Mul | BinOp::Div | BinOp::Mod => return self.runtime_binop(dst, op, lhs, rhs),
+            BinOp::TrueDiv => unreachable!("'/' solo existe entre decimales al compilar: nunca llega a la IR"),
         }
         Ok(())
     }

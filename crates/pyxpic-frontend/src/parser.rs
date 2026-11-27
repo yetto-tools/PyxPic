@@ -44,7 +44,7 @@ struct Parser<'a> {
 fn describe(t: &Tok) -> String {
     match t {
         Tok::Ident(s) => format!("'{s}'"),
-        Tok::Int(_) | Tok::Quantity(..) => "un numero".into(),
+        Tok::Int(_) | Tok::Quantity(..) | Tok::Decimal(..) => "un numero".into(),
         Tok::Str(..) => "una cadena".into(),
         Tok::FStr(..) => "una f-string".into(),
         Tok::Newline => "fin de linea".into(),
@@ -322,6 +322,10 @@ impl<'a> Parser<'a> {
             }
             // una sola forma: la palabra de Python no dice nada en un PIC
             Tok::Ident(s) if s == "Final" => self.err("PYP1030", sp, "'Final' no existe en PyxPic: una constante se declara Const[u32] (el valor se fija al compilar y no ocupa RAM)"),
+            Tok::Ident(s) if s == "Const" && !matches!(self.peek_at(1), Tok::LBracket) => {
+                self.bump();
+                Ok(TypeExpr { span: sp, kind: TypeExprKind::ConstAuto })
+            }
             Tok::Ident(s) if s == "Const" => {
                 self.bump();
                 self.expect(Tok::LBracket, "'[' (Const[tipo])")?;
@@ -711,10 +715,7 @@ impl<'a> Parser<'a> {
                 Tok::Star => BinOp::Mul,
                 Tok::SlashSlash => BinOp::Div,
                 Tok::Percent => BinOp::Mod,
-                Tok::Slash => {
-                    let sp = self.span();
-                    return self.err("PYP1022", sp, "'/' no existe: usa '//' (division entera)");
-                }
+                Tok::Slash => BinOp::TrueDiv,
                 Tok::At => {
                     let sp = self.span();
                     return self.err("PYP1022", sp, "'@' no esta soportado");
@@ -876,6 +877,10 @@ impl<'a> Parser<'a> {
             Tok::Quantity(v, dim) => {
                 self.bump();
                 self.mk(sp, ExprKind::Quantity(v, dim))
+            }
+            Tok::Decimal(n, d) => {
+                self.bump();
+                self.mk(sp, ExprKind::Decimal(n, d))
             }
             Tok::LParen => {
                 self.bump();
