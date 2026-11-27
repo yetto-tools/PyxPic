@@ -30,7 +30,7 @@ pub mod uart;
 pub use adc::{AdcCall, AdcClock, AdcConfig, AdcOp};
 pub use bits::BitsOp;
 pub use check::{time_unit, DelayUnit, PinDecl, Program};
-pub use clock::{ClockKind, ClockSource, OscillatorMode, OscillatorProfile};
+pub use clock::{ClockKind, ClockOutput, ClockSettings, ClockSource, OscillatorMode, OscillatorProfile, PllProfile, SwitchProfile, Toggle};
 pub use comparator::{CmpId, CmpRef, CompCall, CompOp, CvrefOp};
 pub use diag::{Diagnostic, Diagnostics, Severity, Span};
 pub use eeprom::{EepromCall, EepromOp};

@@ -468,3 +468,29 @@ fn pic16f887_declares_pin_electrical_limits_and_portb_pullups() {
     }
     assert_eq!(pk.pins.iter().find(|p| p.name == "RB3").unwrap().weak_pullup.as_deref(), Some("WPUB3"));
 }
+
+#[test]
+fn the_oscillator_file_only_names_real_config_values() {
+    // todo FOSC, bit de configuracion y valor de oscillator.json existe en config.json
+    let p = pack();
+    let osc = p.oscillator.as_ref().expect("el pack del PIC16F887 trae oscillator.json");
+    let mut words = p.config.build_words();
+    let mut names: Vec<(String, String)> = Vec::new();
+    if let Some(i) = &osc.internal {
+        names.push(("FOSC".into(), i.fosc.clone()));
+    }
+    for m in &osc.modes {
+        names.push(("FOSC".into(), m.fosc.clone()));
+    }
+    for o in &osc.clock_output {
+        names.push(("FOSC".into(), o.off.clone()));
+        names.push(("FOSC".into(), o.on.clone()));
+    }
+    for s in osc.fail_safe.iter().chain(osc.switching.iter()) {
+        names.push((s.setting.clone(), "ON".into()));
+        names.push((s.setting.clone(), "OFF".into()));
+    }
+    for (n, v) in names {
+        p.config.apply(&mut words, &n, &v).unwrap_or_else(|e| panic!("oscillator.json: {n} = {v}: {e}"));
+    }
+}

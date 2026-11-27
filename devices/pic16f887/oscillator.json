@@ -2,7 +2,8 @@
   "schema_version": 1,
   "sources": [
     "DS40001291H cap. 4 (p.63-77): osciladores; registro 4-1 OSCCON (p.64): IRCF<2:0>, HFINTOSC y LFINTOSC",
-    "DS40001291H tabla 17-1 (p.249): frecuencias por modo (LP, XT, HS, EC)"
+    "DS40001291H tabla 17-1 (p.249): frecuencias por modo (LP, XT, HS, EC)",
+    "DS40001291H 4.7 y 4.8 (pdf p.71-73): Two-Speed Start-up (IESO) y Fail-Safe Clock Monitor (FCMEN); sin PLL ni divisores de reloj"
   ],
   "internal": {
     "fosc": "INTRC_NOCLKOUT",
@@ -25,5 +26,11 @@
     { "mode": "HS", "fosc": "HS", "sources": ["Crystal", "Resonator"], "min_hz": 1000000, "max_hz": 20000000, "pins": [["RA7", "OSC1"], ["RA6", "OSC2"]] },
     { "mode": "EC", "fosc": "EC", "sources": ["External"], "min_hz": 1, "max_hz": 20000000, "pins": [["RA7", "CLKIN"]] },
     { "mode": "RC", "fosc": "EXTRC_NOCLKOUT", "sources": ["RC"], "min_hz": 1, "max_hz": 20000000, "pins": [["RA7", "OSC1"]] }
-  ]
+  ],
+  "clock_output": [
+    { "mode": "INTOSC", "off": "INTRC_NOCLKOUT", "on": "INTRC_CLKOUT", "pin": ["RA6", "CLKOUT"] },
+    { "mode": "RC", "off": "EXTRC_NOCLKOUT", "on": "EXTRC_CLKOUT", "pin": ["RA6", "CLKOUT"] }
+  ],
+  "fail_safe": { "setting": "FCMEN", "modes": ["LP", "XT", "HS", "EC", "RC"], "note": "DS40001291H 4.8 (FSCM): todos los modos de oscilador externo" },
+  "switching": { "setting": "IESO", "modes": ["LP", "XT", "HS"], "note": "DS40001291H 4.7 (Two-Speed Start-up): LP, XT y HS" }
 }

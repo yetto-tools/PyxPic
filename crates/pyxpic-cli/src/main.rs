@@ -602,6 +602,13 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
             return ExitCode::from(1);
         }
         settings.push(("FOSC".to_string(), cs.fosc.to_string()));
+        for (n, v) in &cs.extra_config {
+            if settings.iter().any(|(s, _)| s == n) {
+                eprintln!("{file}: error: el programa declara 'CLOCK: {}' con ajustes que fijan {n} = {v}: quita --config {n}=...", cs.kind.name());
+                return ExitCode::from(1);
+            }
+            settings.push((n.clone(), v.clone()));
+        }
     }
     let opts = match backend_options(&pack, &settings) {
         Ok(o) => o,

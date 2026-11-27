@@ -164,6 +164,9 @@ pub enum TypeExprKind {
     Frequency(Box<Expr>),
     /// `OSC_MODE: HS`: el modo del oscilador externo (`Auto` = el que corresponde a la frecuencia).
     OscMode(String),
+    /// `PLL: 4`, `PLL: Off`, `CLOCK_DIVIDER: 2`, `CLOCK_OUTPUT: On`, `FAIL_SAFE_CLOCK: On`, `CLOCK_SWITCHING: On`: un ajuste del reloj,
+    /// como palabra (`On`, `Off`) o como expresion constante.
+    Setting(Option<String>, Option<Box<Expr>>),
     /// `None` (solo como tipo de retorno)
     None,
 }

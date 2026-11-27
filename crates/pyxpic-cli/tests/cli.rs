@@ -961,3 +961,26 @@ fn the_text_output_is_unchanged_and_json_is_only_for_check() {
     assert_eq!(o.status.code(), Some(2));
     assert!(text(&o).contains("'text' o 'json'"), "{}", text(&o));
 }
+
+#[test]
+fn clock_settings_reach_the_configuration_words() {
+    let dir = tmp("clock-settings");
+    let build = |extra: &str, name: &str| {
+        let src = dir.join(format!("{name}.py"));
+        std::fs::write(&src, format!("from pyxpic.device import PIC16F887\nCLOCK: Crystal\nFREQUENCY: 20MHz\n{extra}\n\n\ndef main() -> None:\n    pass\n")).unwrap();
+        let out = dir.join(format!("{name}.hex"));
+        let o = pyxpic(&root(), &["build", src.to_str().unwrap(), "-o", out.to_str().unwrap()]);
+        assert!(o.status.success(), "{}", text(&o));
+        Image::from_intel_hex(&std::fs::read_to_string(&out).unwrap()).unwrap().get(0x2007).unwrap()
+    };
+    let base = build("", "base");
+    assert_eq!(base, 0x20D2);
+    // FCMEN es el bit 11 e IESO el bit 10 de CONFIG1 (DS40001291H, registro 14-1)
+    assert_eq!(build("FAIL_SAFE_CLOCK: On", "fscm"), (base | 0x0800) & !0x0000);
+    assert_eq!(build("CLOCK_SWITCHING: On", "ieso") & 0x0400, 0x0400);
+    assert_eq!(build("FAIL_SAFE_CLOCK: Off", "off"), base & !0x0800);
+    // pedir a mano un bit que el programa fija es una contradiccion
+    let src = dir.join("fscm.py");
+    let o = pyxpic(&root(), &["build", src.to_str().unwrap(), "-o", dir.join("x.hex").to_str().unwrap(), "--config", "FCMEN=OFF"]);
+    assert!(!o.status.success() && text(&o).contains("FCMEN"), "{}", text(&o));
+}

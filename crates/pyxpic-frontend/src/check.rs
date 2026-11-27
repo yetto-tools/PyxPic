@@ -231,6 +231,8 @@ pub fn check(module: &Module, target: &TargetProfile, d: &mut Diagnostics) -> Ch
         clock_decl: None,
         frequency_decl: None,
         osc_mode_decl: None,
+        clock_settings: clock::ClockSettings::default(),
+        clock_setting_spans: BTreeMap::new(),
         globals: BTreeMap::new(),
         functions: Vec::new(),
         fidx: HashMap::new(),
@@ -380,6 +382,8 @@ struct Checker<'a> {
     clock_decl: Option<(ClockKind, Span)>,
     frequency_decl: Option<(u32, Span)>,
     osc_mode_decl: Option<(String, Span)>,
+    clock_settings: clock::ClockSettings,
+    clock_setting_spans: BTreeMap<String, Span>,
     globals: BTreeMap<String, Symbol>,
     functions: Vec<FuncInfo>,
     fidx: HashMap<String, usize>,
@@ -3150,6 +3154,7 @@ impl<'a> Checker<'a> {
             TypeExprKind::Clock(kind) => return self.declare_clock(v, kind, is_global),
             TypeExprKind::Frequency(e) => return self.declare_frequency(v, e, is_global),
             TypeExprKind::OscMode(m) => return self.declare_osc_mode(v, m, is_global),
+            TypeExprKind::Setting(w, e) => return self.declare_clock_setting(v, w.as_deref(), e.as_deref(), is_global),
             _ => {}
         }
         match &v.ann.kind {
@@ -3393,13 +3398,71 @@ impl<'a> Checker<'a> {
         self.osc_mode_decl = Some((mode.to_string(), v.ann.span));
     }
 
+    /// `PLL`, `CLOCK_DIVIDER`, `CLOCK_OUTPUT`, `FAIL_SAFE_CLOCK` y `CLOCK_SWITCHING`: ajustes complementarios del reloj.
+    fn declare_clock_setting(&mut self, v: &VarDecl, word: Option<&str>, e: Option<&Expr>, is_global: bool) {
+        let name = v.name.name.as_str();
+        if !is_global {
+            self.d.error("PYP2190", v.name.span, format!("{name} se declara a nivel de modulo, junto a CLOCK"));
+            return;
+        }
+        if let Some(val) = &v.value {
+            self.expr(val);
+            self.d.error("PYP2190", val.span, format!("{name}: el valor va despues de los dos puntos, sin '='"));
+        }
+        if self.clock_setting_spans.insert(name.to_string(), v.span).is_some() {
+            self.d.error("PYP2192", v.name.span, format!("{name} ya se declaro: una sola vez"));
+            return;
+        }
+        let onoff = |w: Option<&str>| match w {
+            Some("On") => Some(true),
+            Some("Off") => Some(false),
+            _ => None,
+        };
+        let number = |this: &mut Self, e: Option<&Expr>| -> Option<u32> {
+            let e = e?;
+            if this.expr(e) == Type::Error {
+                return None;
+            }
+            match this.konst(e).filter(|n| (1..=u32::MAX as i128).contains(n)).filter(|_| this.dim(e).is_none()) {
+                Some(n) => Some(n as u32),
+                None => {
+                    this.d.error("PYP2193", e.span, format!("{name} es un numero entero constante mayor que 0, sin unidad"));
+                    None
+                }
+            }
+        };
+        match name {
+            "PLL" => match word {
+                Some("Off") => self.clock_settings.pll = Some(clock::Toggle::Off),
+                Some("On") => self.clock_settings.pll = Some(clock::Toggle::On),
+                Some(_) => self.d.error("PYP2190", v.ann.span, "PLL es Off, On o el multiplicador: 'PLL: 4'"),
+                None => self.clock_settings.pll = number(self, e).map(clock::Toggle::Mult),
+            },
+            "CLOCK_DIVIDER" => match word {
+                Some(_) => self.d.error("PYP2190", v.ann.span, "CLOCK_DIVIDER es el divisor: 'CLOCK_DIVIDER: 2'"),
+                None => self.clock_settings.divider = number(self, e),
+            },
+            _ => {
+                let Some(b) = onoff(word) else {
+                    self.d.error("PYP2190", v.ann.span, format!("{name} es On u Off: '{name}: On'"));
+                    return;
+                };
+                match name {
+                    "CLOCK_OUTPUT" => self.clock_settings.output = Some(b),
+                    "FAIL_SAFE_CLOCK" => self.clock_settings.fail_safe = Some(b),
+                    _ => self.clock_settings.switching = Some(b),
+                }
+            }
+        }
+    }
+
     /// Junta `CLOCK`, `FREQUENCY` y `OSC_MODE`, los valida contra el perfil del dispositivo y aplica el reloj.
     fn resolve_clock_decls(&mut self) {
         if std::mem::replace(&mut self.clock_resolved, true) {
             return;
         }
         let (clock, freq, mode) = (self.clock_decl, self.frequency_decl, self.osc_mode_decl.clone());
-        if clock.is_none() && freq.is_none() && mode.is_none() {
+        if clock.is_none() && freq.is_none() && mode.is_none() && self.clock_setting_spans.is_empty() {
             return;
         }
         if self.clock_hz.is_some() {
@@ -3408,8 +3471,8 @@ impl<'a> Checker<'a> {
             return;
         }
         let Some((kind, kspan)) = clock else {
-            let at = freq.map(|f| f.1).or(mode.as_ref().map(|m| m.1)).unwrap_or(Span::new(0, 0));
-            self.d.error("PYP2190", at, "FREQUENCY y OSC_MODE acompanan a CLOCK: declara primero 'CLOCK: Internal' o 'CLOCK: Crystal'");
+            let at = freq.map(|f| f.1).or(mode.as_ref().map(|m| m.1)).or(self.clock_setting_spans.values().next().copied()).unwrap_or(Span::new(0, 0));
+            self.d.error("PYP2190", at, "FREQUENCY, OSC_MODE, PLL y los demas ajustes acompanan a CLOCK: declara primero 'CLOCK: Internal' o 'CLOCK: Crystal'");
             return;
         };
         let profile = self.target.oscillator.clone().unwrap_or_else(clock::OscillatorProfile::pic16f887);
@@ -3421,7 +3484,7 @@ impl<'a> Checker<'a> {
                 return;
             }
         };
-        let src = match clock::resolve(&profile, kind, hz, mode.as_ref().map(|m| m.0.as_str())) {
+        let src = match clock::resolve_with(&profile, kind, hz, mode.as_ref().map(|m| m.0.as_str()), &self.clock_settings) {
             Ok(s) => s,
             Err(msg) => {
                 self.d.error("PYP2194", at, msg);
@@ -3429,8 +3492,8 @@ impl<'a> Checker<'a> {
             }
         };
         if let Some(max) = self.target.max_clock_hz {
-            if hz > max {
-                self.d.error("PYP2094", at, format!("{hz} Hz excede el reloj maximo de '{}' ({max} Hz)", self.target.name));
+            if src.system_hz > max {
+                self.d.error("PYP2094", at, format!("{} Hz (FOSC resultante) excede el reloj maximo de '{}' ({max} Hz)", src.system_hz, self.target.name));
             }
         }
         self.apply_clock_source(src, kspan);
@@ -3449,7 +3512,7 @@ impl<'a> Checker<'a> {
                 format!("CLOCK: {} ({}) ocupa {}: dejan de estar disponibles para cualquier otro uso del programa (importarlos como E/S es el error PYP2150)", src.kind.name(), clock::fmt_hz(src.hz), pins.join(" y ")),
             );
         }
-        self.clock_hz = Some(src.hz);
+        self.clock_hz = Some(src.system_hz);
         self.clock_source = Some(src);
     }
 
@@ -3458,7 +3521,8 @@ impl<'a> Checker<'a> {
     fn define_clock_constants(&mut self) {
         let Some(hz) = self.clock_hz.or(self.target.default_clock_hz) else { return };
         let per = self.target.clocks_per_cycle.unwrap_or(4).max(1);
-        for (name, v) in [("SOURCE_FREQ", hz), ("FOSC", hz), ("FCY", hz / per)] {
+        let source = self.clock_source.as_ref().map(|c| c.hz).unwrap_or(hz);
+        for (name, v) in [("SOURCE_FREQ", source), ("FOSC", hz), ("FCY", hz / per)] {
             self.globals.entry(name.to_string()).or_insert(Symbol { name: name.to_string(), ty: U32, kind: SymKind::Global, konst: Some(v as i128), is_final: true });
         }
     }

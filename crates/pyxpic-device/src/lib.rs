@@ -488,6 +488,66 @@ pub struct Oscillator {
     pub internal: Option<InternalOsc>,
     /// Modos del oscilador externo: el primero que contiene la frecuencia es el automatico.
     pub modes: Vec<OscMode>,
+    /// PLL del dispositivo (multiplicadores admitidos); `None` si no tiene.
+    #[serde(default)]
+    pub pll: Option<OscPll>,
+    /// Divisores de frecuencia admitidos; vacio si no tiene.
+    #[serde(default)]
+    pub dividers: Vec<OscDivider>,
+    /// Salida de reloj (CLKOUT) por modo.
+    #[serde(default)]
+    pub clock_output: Vec<OscClockOutput>,
+    /// Monitor de fallas del oscilador (bit de configuracion y modos donde aplica).
+    #[serde(default)]
+    pub fail_safe: Option<OscSwitch>,
+    /// Cambio entre fuentes de reloj (arranque en dos velocidades).
+    #[serde(default)]
+    pub switching: Option<OscSwitch>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OscPll {
+    pub multipliers: Vec<OscSetting>,
+    pub sources: Vec<String>,
+    pub min_input_hz: u32,
+    pub max_input_hz: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OscDivider {
+    pub value: u32,
+    #[serde(default)]
+    pub config: Vec<(String, String)>,
+}
+
+/// Un valor con los ajustes de configuracion que lo producen.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OscSetting {
+    pub value: u32,
+    #[serde(default)]
+    pub config: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OscClockOutput {
+    pub mode: String,
+    pub off: String,
+    pub on: String,
+    pub pin: (String, String),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OscSwitch {
+    /// Bit de configuracion que lo habilita (`FCMEN`, `IESO`).
+    pub setting: String,
+    pub modes: Vec<String>,
+    #[serde(default)]
+    pub note: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -554,6 +614,16 @@ impl Oscillator {
             reset_hz: self.internal.as_ref().map(|i| i.reset_hz).unwrap_or(0),
             reset_ircf: self.internal.as_ref().map(|i| i.reset_ircf).unwrap_or(0),
             modes,
+            pll: self.pll.as_ref().map(|p| pyxpic_frontend::PllProfile {
+                multipliers: p.multipliers.iter().map(|m| (m.value, m.config.clone())).collect(),
+                sources: p.sources.iter().filter_map(|s| ClockKind::parse(s)).collect(),
+                min_input_hz: p.min_input_hz,
+                max_input_hz: p.max_input_hz,
+            }),
+            dividers: self.dividers.iter().map(|d| (d.value, d.config.clone())).collect(),
+            clock_output: self.clock_output.iter().map(|o| pyxpic_frontend::ClockOutput { mode: o.mode.clone(), off: o.off.clone(), on: o.on.clone(), pin: o.pin.clone() }).collect(),
+            fail_safe: self.fail_safe.as_ref().map(|s| pyxpic_frontend::SwitchProfile { setting: s.setting.clone(), modes: s.modes.clone() }),
+            switching: self.switching.as_ref().map(|s| pyxpic_frontend::SwitchProfile { setting: s.setting.clone(), modes: s.modes.clone() }),
         }
     }
 }

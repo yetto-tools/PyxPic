@@ -374,6 +374,15 @@ impl<'a> Parser<'a> {
             let sp = self.span();
             let e = self.expr()?;
             TypeExpr { span: sp.to(self.prev_span()), kind: TypeExprKind::Frequency(Box::new(e)) }
+        } else if matches!(name.name.as_str(), "PLL" | "CLOCK_DIVIDER" | "CLOCK_OUTPUT" | "FAIL_SAFE_CLOCK" | "CLOCK_SWITCHING") {
+            let sp = self.span();
+            if let Tok::Ident(w) = self.peek().clone() {
+                self.bump();
+                TypeExpr { span: sp, kind: TypeExprKind::Setting(Some(w), None) }
+            } else {
+                let e = self.expr()?;
+                TypeExpr { span: sp.to(self.prev_span()), kind: TypeExprKind::Setting(None, Some(Box::new(e))) }
+            }
         } else if name.name == "OSC_MODE" {
             let m = self.ident("el modo del oscilador (Auto, LP, XT, HS, EC...)")?;
             TypeExpr { span: m.span, kind: TypeExprKind::OscMode(m.name) }

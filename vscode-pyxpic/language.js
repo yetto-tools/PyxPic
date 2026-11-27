@@ -39,6 +39,11 @@ const info = {
   CLOCK: "Fuente del reloj del sistema: `CLOCK: Internal` (oscilador interno, 4 MHz si no hay FREQUENCY) o `CLOCK: Crystal`, `External`, `Resonator`, `RC`. La frecuencia va en `FREQUENCY: 8MHz`. Con un oscilador externo, RA7 y RA6 dejan de estar disponibles como E/S. No combinar con CLOCK_HZ.",
   FREQUENCY: "Frecuencia de la fuente de reloj: `FREQUENCY: 11.0592MHz`. Acepta literales con unidad (`8MHz`, `32.768kHz`, `8e6Hz`) y expresiones constantes (`16MHz / 2`, `8 * MHz`). El compilador la valida contra los modos del dispositivo.",
   OSC_MODE: "Modo del oscilador externo: `Auto` (el que corresponde a la frecuencia) o uno del dispositivo (`LP`, `XT`, `HS`, `EC`, `RC` en el PIC16F887).",
+  PLL: "Multiplicador de la PLL del dispositivo: `PLL: 4`, `PLL: On` u `Off`. FOSC = SOURCE_FREQ * PLL / CLOCK_DIVIDER. El PIC16F887 no tiene PLL.",
+  CLOCK_DIVIDER: "Divisor de la frecuencia del reloj: `CLOCK_DIVIDER: 2`; debe ser exacto y estar entre los del dispositivo.",
+  CLOCK_OUTPUT: "`CLOCK_OUTPUT: On` saca el reloj por CLKOUT (RA6 en PIC16F887 con Internal o RC) y ocupa el pin.",
+  FAIL_SAFE_CLOCK: "`FAIL_SAFE_CLOCK: On` activa el monitor de fallas del oscilador (FCMEN); aplica a los modos de oscilador externo.",
+  CLOCK_SWITCHING: "`CLOCK_SWITCHING: On` activa el arranque en dos velocidades (IESO); aplica a LP, XT y HS.",
   SOURCE_FREQ: "Constante del compilador: frecuencia de la fuente de reloj, en Hz.",
   FOSC: "Constante del compilador: frecuencia del sistema, en Hz (sin PLL ni divisores es SOURCE_FREQ).",
   FCY: "Constante del compilador: frecuencia del ciclo de instruccion, en Hz (FOSC / 4 en PIC16).",
@@ -119,7 +124,7 @@ function completions(prefix) {
   const match = /\b(ADC|UART|EEPROM|PWM[12]|SPI|I2C)\.\w*$/.exec(prefix);
   if (match) return members[match[1]];
   if (/\.\w*$/.test(prefix)) return [];
-  return ["uint8", "uint16", "uint32", "int8", "int16", "int32", "Const", "CLOCK", "FREQUENCY", "OSC_MODE", "Internal", "Crystal", "External", "Resonator", "RC", "Secondary", "SOURCE_FREQ", "FOSC", "FCY", "MHz", "kHz", "Hz", "CLOCK_HZ", "ord"];
+  return ["uint8", "uint16", "uint32", "int8", "int16", "int32", "Const", "CLOCK", "FREQUENCY", "OSC_MODE", "PLL", "CLOCK_DIVIDER", "CLOCK_OUTPUT", "FAIL_SAFE_CLOCK", "CLOCK_SWITCHING", "Internal", "Crystal", "External", "Resonator", "RC", "Secondary", "SOURCE_FREQ", "FOSC", "FCY", "MHz", "kHz", "Hz", "CLOCK_HZ", "ord"];
 }
 
 function isPyxPic(text) {

@@ -1,6 +1,6 @@
 # Reloj: `CLOCK` y `FREQUENCY` (y literales con unidad)
 
-**Estado: implementado (#69), fases 1 y 2.** El reloj se declara en dos líneas, **sin imports**: la fuente y su frecuencia por separado.
+**Estado: implementado (#69), fases 1 a 3.** El reloj se declara en dos líneas, **sin imports**: la fuente y su frecuencia por separado.
 
 ```python
 CLOCK: Internal                 # oscilador interno; sin FREQUENCY es 4 MHz (el valor de reset)
@@ -84,9 +84,24 @@ Se pueden combinar con expresiones constantes: `4MHz * 2`, `16MHz / 2`, `8 * MHz
 
 Los valores de las magnitudes cuya unidad base no era un entero del lenguaje (tiempo, voltaje, corriente...) **no se aceptan donde se espera un número** (`X: uint32 = 500ms` es `PYP2230`): solo los consume un parámetro que declara esa magnitud. Las unidades no dependen del microcontrolador; que un dispositivo pueda generar o medir un valor lo valida cada función del SDK con su Device Pack.
 
+## Ajustes complementarios
+
+Opcionales, a continuación de `CLOCK` (y `FREQUENCY`); cada uno se valida contra el perfil del dispositivo. Pedir lo que el dispositivo no tiene es un error (`PYP2194`) que dice qué sí tiene; apagarlo (`Off`, `PLL: Off`, `CLOCK_DIVIDER: 1`) siempre es válido.
+
+| Declaración | Qué hace | PIC16F887 |
+|---|---|---|
+| `PLL: 4` / `PLL: On` / `PLL: Off` | Multiplica la fuente: `FOSC = SOURCE_FREQ * PLL / CLOCK_DIVIDER`. `On` solo basta si el dispositivo tiene un único multiplicador. Valida la fuente y el rango de entrada de la PLL | no tiene PLL |
+| `CLOCK_DIVIDER: 2` | Divide la frecuencia; debe ser exacta | no tiene divisores |
+| `CLOCK_OUTPUT: On` | Saca el reloj por el pin CLKOUT (`FOSC` con `CLKOUT`): ocupa el pin | `Internal` y `RC` → RA6 (`INTRC_CLKOUT`, `EXTRC_CLKOUT`); LP/XT/HS usan OSC2 y EC no tiene salida |
+| `FAIL_SAFE_CLOCK: On` | Monitor de fallas del oscilador (bit `FCMEN` de CONFIG1) | modos externos LP, XT, HS, EC y RC (DS40001291H 4.8) |
+| `CLOCK_SWITCHING: On` | Cambio interno/externo al arrancar (Two-Speed Start-up, bit `IESO`) | LP, XT y HS (DS40001291H 4.7) |
+
+La frecuencia resultante (`FOSC`) se valida contra el máximo del dispositivo (`PYP2094`) y es la que usan `pause`, la UART, el ADC y los temporizadores; `SOURCE_FREQ` sigue siendo la de la fuente. Los bits de configuración que piden estos ajustes los pone el compilador: pedir otro valor con `--config FCMEN=...` es una contradicción. No cambia de reloj en marcha (`OSCCON<SCS>`): eso sigue siendo manual.
+
 ### Qué falta (fases siguientes)
 
-- **Fase 3:** `PLL`, `CLOCK_DIVIDER`, `CLOCK_OUTPUT`, `FAIL_SAFE_CLOCK` y `CLOCK_SWITCHING` (el PIC16F887 no tiene PLL ni divisores; sí `FCMEN` e `IESO`). Con PLL, `FOSC` dejará de ser igual a `SOURCE_FREQ`.
+- BASIC todavía no tiene `PLL`, `CLOCK_DIVIDER`, `CLOCK_OUTPUT`, `FAIL_SAFE_CLOCK` ni `CLOCK_SWITCHING` (fase 5).
+- La PLL y el divisor se probaron con un perfil sintético: ningún dispositivo del repositorio las tiene todavía; su `oscillator.json` (`pll`, `dividers`) se llenará con el primer PIC que las traiga.
 - **Fase 4:** unidades en los periféricos (`UART.start(baud=9600baud)`, `PWM.start(frequency=20kHz, duty=50pct)`, `TMR2.every(20ms)`, `delay(500ms)`, `ADC.start(reference=5V)`) con validación de la magnitud por parámetro. Hoy los parámetros siguen recibiendo enteros (baudios, Hz, ms), y las magnitudes de frecuencia, baudios, tasa y memoria se aceptan donde se espera un número (su unidad base es la que el lenguaje ya usaba).
 - **Fase 5:** BASIC (`CLOCK INTERNAL 8 MHZ` ya produce el mismo AST que Python; faltan los literales con unidad en su lexer) y el resaltado de los sufijos en VS Code.
 
@@ -99,7 +114,7 @@ Los valores de las magnitudes cuya unidad base no era un entero del lenguaje (ti
 | `PYP2192` | `CLOCK` y `CLOCK_HZ` a la vez, o cualquiera de las tres declaraciones dos veces |
 | `PYP2193` | Falta `FREQUENCY` (`Crystal`, `External`...), o no es una constante mayor que 0 |
 | `PYP2194` | La fuente o el modo no admiten esa frecuencia, o el dispositivo no tiene esa fuente (con los valores válidos en el mensaje) |
-| `PYP2094` | La frecuencia excede el reloj máximo del dispositivo |
+| `PYP2094` | La frecuencia (o el `FOSC` resultante con PLL y divisor) excede el reloj máximo del dispositivo |
 | `PYP2150` | RA6 o RA7 se importan como E/S y el oscilador externo los usa |
 | `PYP2230` | Una magnitud con unidad (tiempo, voltaje...) donde ningún parámetro la acepta |
 | `PYP2231` | Operación entre magnitudes incompatibles |
@@ -109,7 +124,7 @@ Los valores de las magnitudes cuya unidad base no era un entero del lenguaje (ti
 ## Lo que no hace, y lo que no puede comprobar
 
 - **El circuito:** que el cristal esté puesto, sus capacitores o que el reloj externo llegue. El compilador solo valida lo que dice el datasheet.
-- **Cambiar de reloj en marcha, Two-Speed Start-up y el monitor de falla:** no se tocan (fase 3). El modo `RC` no valida la frecuencia contra el circuito.
+- **Cambiar de reloj en marcha (`OSCCON<SCS>`):** no se toca. El modo `RC` no valida la frecuencia contra el circuito.
 - **Desviación del oscilador interno:** `Internal` a 4 MHz es nominal; el PIC16F887 tiene tolerancia (se calibra con `OSCTUNE`, que no se toca). Para una UART exacta conviene un cristal.
 
 ## Verificación

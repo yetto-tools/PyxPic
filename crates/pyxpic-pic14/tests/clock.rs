@@ -342,3 +342,121 @@ main:
     assert_eq!(a, b);
     assert_eq!(a.map(|c| (c.hz, c.fosc)), Some((16_000_000, "HS".to_string())));
 }
+
+// ---- fase 3: PLL, divisor, salida de reloj, monitor de fallas y cambio de fuente ----------------------------------------
+
+fn with_pll_profile() -> pyxpic_frontend::TargetProfile {
+    // un dispositivo imaginario con PLL x4 / x8 (entrada de 4 a 16 MHz, solo cristal) y divisores 2 y 4; maximo 64 MHz
+    let mut p = pyxpic_frontend::OscillatorProfile::pic16f887();
+    p.pll = Some(pyxpic_frontend::PllProfile { multipliers: vec![(4, vec![("PLLEN".into(), "ON".into())]), (8, vec![])], sources: vec![pyxpic_frontend::ClockKind::Crystal], min_input_hz: 4_000_000, max_input_hz: 16_000_000 });
+    p.dividers = vec![(2, vec![]), (4, vec![])];
+    let mut t = pack().target_profile();
+    t.oscillator = Some(p);
+    t.max_clock_hz = Some(64_000_000);
+    t
+}
+
+#[test]
+fn the_pll_and_the_divider_multiply_and_divide_the_source_exactly() {
+    let t = with_pll_profile();
+    let src = |decl: &str| {
+        let s = prog(decl);
+        let r = analyze(&s, &t);
+        r.program.unwrap_or_else(|| panic!("{decl}: {}", r.diagnostics.render(&s, "t.py")))
+    };
+    let p = src("CLOCK: Crystal\nFREQUENCY: 8MHz\nPLL: 4");
+    let c = p.clock_source.unwrap();
+    assert_eq!((c.hz, c.system_hz), (8_000_000, 32_000_000));
+    assert_eq!(c.extra_config, vec![("PLLEN".to_string(), "ON".to_string())]);
+    assert_eq!(p.clock_hz, Some(32_000_000));
+    let c = src("CLOCK: Crystal\nFREQUENCY: 8MHz\nPLL: 8\nCLOCK_DIVIDER: 2").clock_source.unwrap();
+    assert_eq!(c.system_hz, 32_000_000);
+    let c = src("CLOCK: Crystal\nFREQUENCY: 8MHz\nCLOCK_DIVIDER: 4").clock_source.unwrap();
+    assert_eq!(c.system_hz, 2_000_000);
+    // PLL: Off y CLOCK_DIVIDER: 1 son validos y no hacen nada
+    assert_eq!(src("CLOCK: Crystal\nFREQUENCY: 8MHz\nPLL: Off\nCLOCK_DIVIDER: 1").clock_source.unwrap().system_hz, 8_000_000);
+    // FOSC y FCY siguen a la frecuencia resultante; SOURCE_FREQ es la de la fuente
+    let s = "from pyxpic.device import PIC16F887\nCLOCK: Crystal\nFREQUENCY: 8MHz\nPLL: 4\nS: Const[uint32] = SOURCE_FREQ\nF: Const[uint32] = FOSC\nY: Const[uint32] = FCY\n\n\ndef main() -> None:\n    pass\n";
+    let p = analyze(s, &t).program.unwrap();
+    let k = |n: &str| p.globals.get(n).and_then(|g| g.konst);
+    assert_eq!((k("S"), k("F"), k("Y")), (Some(8_000_000), Some(32_000_000), Some(8_000_000)));
+}
+
+#[test]
+fn pll_and_divider_errors_name_what_the_device_has() {
+    let t = with_pll_profile();
+    for (decl, frag) in [
+        ("CLOCK: Crystal\nFREQUENCY: 8MHz\nPLL: 3", "no tiene multiplicador x3; valen 4, 8"),
+        ("CLOCK: Crystal\nFREQUENCY: 8MHz\nPLL: On", "necesita el multiplicador"),
+        ("CLOCK: Crystal\nFREQUENCY: 2MHz\nPLL: 4", "admite una entrada de 4 MHz a 16 MHz"),
+        ("CLOCK: Internal\nFREQUENCY: 8MHz\nPLL: 4", "solo trabaja con Crystal"),
+        ("CLOCK: Crystal\nFREQUENCY: 8MHz\nCLOCK_DIVIDER: 3", "no tiene el divisor 3; valen 2, 4"),
+        ("CLOCK: Crystal\nFREQUENCY: 16MHz\nPLL: 8", "excede el reloj maximo"),
+        ("CLOCK: Crystal\nFREQUENCY: 9000001Hz\nCLOCK_DIVIDER: 4", "no se divide en forma exacta"),
+    ] {
+        let s = prog(decl);
+        let r = analyze(&s, &t);
+        let msg = r.diagnostics.render(&s, "t.py");
+        assert!(r.program.is_none() && msg.contains(frag), "{decl}: {msg}");
+    }
+    // el PIC16F887 no tiene ni PLL ni divisores
+    for (decl, frag) in [("PLL: 4", "no tiene PLL"), ("PLL: On", "no tiene PLL"), ("CLOCK_DIVIDER: 2", "no tiene divisor de reloj")] {
+        let (ok, t) = diagnostics(&prog(&format!("CLOCK: Crystal\nFREQUENCY: 8MHz\n{decl}")));
+        assert!(!ok && t.contains("PYP2194") && t.contains(frag), "{decl}: {t}");
+    }
+    let (ok, t) = diagnostics(&prog("CLOCK: Crystal\nFREQUENCY: 8MHz\nPLL: Off\nCLOCK_DIVIDER: 1"));
+    assert!(ok, "apagar lo que el dispositivo no tiene es valido: {t}");
+}
+
+#[test]
+fn the_clock_output_switches_the_fosc_variant_and_takes_ra6() {
+    assert_eq!(source("CLOCK: Internal\nFREQUENCY: 4MHz").fosc, "INTRC_NOCLKOUT");
+    let c = source("CLOCK: Internal\nFREQUENCY: 4MHz\nCLOCK_OUTPUT: On");
+    assert_eq!(c.fosc, "INTRC_CLKOUT");
+    assert_eq!(c.pins, vec![("RA6".to_string(), "CLKOUT".to_string())]);
+    assert_eq!(source("CLOCK: Internal\nCLOCK_OUTPUT: Off").fosc, "INTRC_NOCLKOUT");
+    assert_eq!(source("CLOCK: RC\nFREQUENCY: 2MHz\nCLOCK_OUTPUT: On").fosc, "EXTRC_CLKOUT");
+    // RA6 deja de ser E/S
+    let run = |decl: &str| diagnostics(&format!("from pyxpic.device import PIC16F887\nfrom pyxpic.periph.gpio import RA6\n{decl}\n\n\ndef main() -> None:\n    RA6.output()\n"));
+    let (ok, t) = run("CLOCK: Internal\nCLOCK_OUTPUT: On");
+    assert!(!ok && t.contains("PYP2150") && t.contains("CLKOUT"), "{t}");
+    let (ok, t) = run("CLOCK: Internal\nCLOCK_OUTPUT: Off");
+    assert!(ok, "{t}");
+    // los modos de cristal no tienen CLOCK_OUTPUT: OSC2 es del cristal
+    let (ok, t) = diagnostics(&prog("CLOCK: Crystal\nFREQUENCY: 8MHz\nCLOCK_OUTPUT: On"));
+    assert!(!ok && t.contains("no tiene salida de reloj") && t.contains("INTOSC, RC"), "{t}");
+}
+
+#[test]
+fn fail_safe_and_switching_set_their_config_bits_only_where_the_datasheet_allows() {
+    let c = source("CLOCK: Crystal\nFREQUENCY: 8MHz\nFAIL_SAFE_CLOCK: On\nCLOCK_SWITCHING: On");
+    assert_eq!(c.extra_config, vec![("FCMEN".to_string(), "ON".to_string()), ("IESO".to_string(), "ON".to_string())]);
+    let c = source("CLOCK: External\nFREQUENCY: 8MHz\nFAIL_SAFE_CLOCK: On");
+    assert_eq!(c.extra_config, vec![("FCMEN".to_string(), "ON".to_string())]);
+    assert_eq!(source("CLOCK: Crystal\nFREQUENCY: 8MHz\nFAIL_SAFE_CLOCK: Off").extra_config, vec![("FCMEN".to_string(), "OFF".to_string())]);
+    for (decl, frag) in [
+        ("CLOCK: Internal\nFAIL_SAFE_CLOCK: On", "no aplica al modo INTOSC"),
+        ("CLOCK: External\nFREQUENCY: 8MHz\nCLOCK_SWITCHING: On", "no aplica al modo EC"),
+        ("CLOCK: Internal\nCLOCK_SWITCHING: On", "no aplica al modo INTOSC"),
+    ] {
+        let (ok, t) = diagnostics(&prog(decl));
+        assert!(!ok && t.contains("PYP2194") && t.contains(frag), "{decl}: {t}");
+    }
+}
+
+#[test]
+fn clock_settings_need_clock_and_are_validated_as_declarations() {
+    for (decl, code, frag) in [
+        ("PLL: 4", "PYP2190", "acompanan a CLOCK"),
+        ("CLOCK: Internal\nPLL: 4\nPLL: 4", "PYP2192", "una sola vez"),
+        ("CLOCK: Internal\nCLOCK_OUTPUT: 3", "PYP2190", "On u Off"),
+        ("CLOCK: Internal\nFAIL_SAFE_CLOCK: Maybe", "PYP2190", "On u Off"),
+        ("CLOCK: Internal\nPLL: Maybe", "PYP2190", "Off, On o el multiplicador"),
+        ("CLOCK: Internal\nCLOCK_DIVIDER: 0", "PYP2193", "mayor que 0"),
+        ("CLOCK: Internal\nCLOCK_DIVIDER: 2MHz", "PYP2193", "sin unidad"),
+        ("CLOCK_HZ: Const[uint32] = 4_000_000\nCLOCK_OUTPUT: On", "PYP2192", "CLOCK_HZ"),
+    ] {
+        let (ok, t) = diagnostics(&prog(decl));
+        assert!(!ok && t.contains(code) && t.contains(frag), "{decl}: {t}");
+    }
+}
