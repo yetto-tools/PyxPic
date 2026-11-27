@@ -236,48 +236,17 @@ impl<'a> Lexer<'a> {
     /// (su valor entero exacto en la unidad base de su magnitud). Devuelve `false`, sin avanzar, si no es ese caso.
     fn unit_literal(&mut self) -> bool {
         let start = self.i;
-        let mut j = start;
-        let digits = |j: &mut usize, b: &[u8]| {
-            while *j < b.len() && (b[*j].is_ascii_digit() || b[*j] == b'_') {
-                *j += 1;
-            }
-        };
-        digits(&mut j, self.b);
-        if j == start {
-            return false;
-        }
-        if self.b.get(j) == Some(&b'.') && self.b.get(j + 1).is_some_and(|c| c.is_ascii_digit()) {
-            j += 1;
-            digits(&mut j, self.b);
-        }
-        if matches!(self.b.get(j), Some(b'e' | b'E')) {
-            let mut k = j + 1;
-            if matches!(self.b.get(k), Some(b'+' | b'-')) {
-                k += 1;
-            }
-            if self.b.get(k).is_some_and(|c| c.is_ascii_digit()) {
-                j = k;
-                digits(&mut j, self.b);
-            }
-        }
-        let num_end = j;
-        while j < self.b.len() && (self.b[j].is_ascii_alphanumeric() || self.b[j] == b'_') {
-            j += 1;
-        }
-        let suffix = &self.src[num_end..j];
-        if suffix.is_empty() || units::lookup(suffix).is_none() {
-            return false;
-        }
-        let Some(dec) = units::Decimal::parse(&self.src[start..num_end]) else { return false };
-        self.i = j;
-        match units::to_base(&dec, suffix) {
-            Some(Ok((v, dim))) if v <= u32::MAX as i128 * 1_000_000_000 => self.push(Tok::Quantity(v, dim), start),
-            Some(Err(units::UnitError::NotExact(base))) => {
-                self.d.error("PYP0009", Span::new(start, self.i), format!("'{}' no es un numero entero de {base}: la unidad base de {} es {base}", &self.src[start..j], dec_dim(suffix)));
+        let Some((end, scan)) = units::scan(self.src, start, false) else { return false };
+        self.i = end;
+        match scan {
+            units::Scan::Value(v, dim) if v <= u32::MAX as i128 * 1_000_000_000 => self.push(Tok::Quantity(v, dim), start),
+            units::Scan::NotExact(base) => {
+                let suffix = self.src[start..end].trim_start_matches(|c: char| c.is_ascii_digit() || matches!(c, '.' | '_' | 'e' | 'E' | '+' | '-'));
+                self.d.error("PYP0009", Span::new(start, end), format!("'{}' no es un numero entero de {base}: la unidad base de {} es {base}", &self.src[start..end], dec_dim(suffix)));
                 self.push(Tok::Int(0), start);
             }
             _ => {
-                self.d.error("PYP0008", Span::new(start, self.i), "literal con unidad invalido o demasiado grande");
+                self.d.error("PYP0008", Span::new(start, end), "literal con unidad invalido o demasiado grande");
                 self.push(Tok::Int(0), start);
             }
         }

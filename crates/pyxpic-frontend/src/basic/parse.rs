@@ -42,6 +42,8 @@ pub struct BExpr {
 #[derive(Clone, Debug)]
 pub enum BExprKind {
     Int(i128),
+    /// Un literal con unidad (`8MHZ`, `500ms`).
+    Quantity(i128, crate::units::Dim),
     Name(String),
     /// `B.0` o `pinB.0`: el pin RB0.
     Pin(char, u8),
@@ -79,11 +81,17 @@ pub enum BStmtKind {
     Device(String),
     /// `BAUD 9600`: la velocidad de la UART (la que usan SERTXD y SERRXD y la que inicia el programa); 8N1.
     Baud(BExpr),
-    /// `CLOCK INTERNAL 4 MHZ`: la fuente (`Internal` o `Crystal`), la cantidad y la unidad.
+    /// `CLOCK CRYSTAL 16MHZ [MODE HS]`: la fuente, su frecuencia (un literal con unidad; la forma `4 MHZ` tambien vale) y el modo.
     Clock {
         kind: String,
-        amount: BExpr,
-        unit: String,
+        freq: Option<BExpr>,
+        mode: Option<String>,
+    },
+    /// `PLL 4`, `CLOCKDIVIDER 2`, `CLOCKOUTPUT ON`, `FAILSAFE ON`, `CLOCKSWITCHING ON`: un ajuste del reloj (con su nombre en Python).
+    ClockSetting {
+        name: &'static str,
+        word: Option<String>,
+        value: Option<i128>,
     },
     Import {
         module: String,
@@ -489,6 +497,10 @@ impl<'a> Parser<'a> {
                 self.bump();
                 Some(BExpr { span: sp, kind: BExprKind::Int(v) })
             }
+            T::Quantity(v, d) => {
+                self.bump();
+                Some(BExpr { span: sp, kind: BExprKind::Quantity(v, d) })
+            }
             T::Str(text) => {
                 self.bump();
                 Some(BExpr { span: sp, kind: BExprKind::Str(text) })
@@ -591,13 +603,60 @@ impl<'a> Parser<'a> {
                         return None;
                     }
                 };
-                let amount = self.atom()?;
-                let (unit, usp) = self.ident("la unidad: MHZ, KHZ o HZ")?;
-                if !matches!(unit.to_ascii_uppercase().as_str(), "MHZ" | "KHZ" | "HZ") {
-                    self.err("PYB0021", usp, "la unidad del reloj es MHZ, KHZ o HZ");
-                    return None;
+                // `CLOCK CRYSTAL 16MHZ` o la forma antigua `CLOCK CRYSTAL 16 MHZ`; `CLOCK INTERNAL` solo vale 4 MHz
+                let freq = match self.peek().clone() {
+                    T::Quantity(..) => Some(self.expr()?),
+                    T::Int(v) => {
+                        let sp = self.span();
+                        self.bump();
+                        let (unit, usp) = self.ident("la unidad: MHZ, KHZ o HZ")?;
+                        let mult = match unit.to_ascii_uppercase().as_str() {
+                            "MHZ" => 1_000_000,
+                            "KHZ" => 1_000,
+                            "HZ" => 1,
+                            _ => {
+                                self.err("PYB0021", usp, "la unidad del reloj es MHZ, KHZ o HZ");
+                                return None;
+                            }
+                        };
+                        Some(BExpr { span: sp, kind: BExprKind::Quantity(v * mult, crate::units::Dim::Frequency) })
+                    }
+                    _ => None,
+                };
+                let mode = if self.eat_kw("MODE") { Some(self.ident("el modo del oscilador (AUTO, LP, XT, HS, EC...)")?.0) } else { None };
+                BStmtKind::Clock { kind: kind.to_string(), freq, mode }
+            }
+            "PLL" | "CLOCKDIVIDER" | "CLOCKOUTPUT" | "FAILSAFE" | "CLOCKSWITCHING" => {
+                let name = match self.ident("el ajuste del reloj")?.0.to_ascii_uppercase().as_str() {
+                    "PLL" => "PLL",
+                    "CLOCKDIVIDER" => "CLOCK_DIVIDER",
+                    "CLOCKOUTPUT" => "CLOCK_OUTPUT",
+                    "FAILSAFE" => "FAIL_SAFE_CLOCK",
+                    _ => "CLOCK_SWITCHING",
+                };
+                match self.peek().clone() {
+                    T::Int(v) => {
+                        self.bump();
+                        BStmtKind::ClockSetting { name, word: None, value: Some(v) }
+                    }
+                    T::Ident(w) => {
+                        let sp = self.span();
+                        self.bump();
+                        match w.to_ascii_uppercase().as_str() {
+                            "ON" => BStmtKind::ClockSetting { name, word: Some("On".into()), value: None },
+                            "OFF" => BStmtKind::ClockSetting { name, word: Some("Off".into()), value: None },
+                            _ => {
+                                self.err("PYB0021", sp, "el valor es ON, OFF o un numero: PLL 4, CLOCKOUTPUT ON");
+                                return None;
+                            }
+                        }
+                    }
+                    _ => {
+                        let sp = self.span();
+                        self.err("PYB0021", sp, "falta el valor: PLL 4, CLOCKOUTPUT ON");
+                        return None;
+                    }
                 }
-                BStmtKind::Clock { kind: kind.to_string(), amount, unit }
             }
             "FROM" => {
                 self.bump();
@@ -1055,6 +1114,11 @@ fn is_keyword(upper: &str) -> bool {
             | "DEVICE"
             | "BAUD"
             | "CLOCK"
+            | "PLL"
+            | "CLOCKDIVIDER"
+            | "CLOCKOUTPUT"
+            | "FAILSAFE"
+            | "CLOCKSWITCHING"
             | "FROM"
             | "IMPORT"
             | "SYMBOL"

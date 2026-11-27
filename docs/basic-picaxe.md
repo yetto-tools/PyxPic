@@ -52,7 +52,11 @@ PyxPic BASIC parte del BASIC de PICAXE para que sus programas se reconozcan, per
 
 ```basic
 DEVICE PIC16F887            ' obligatorio: dice para qué PIC está escrito el programa
-CLOCK INTERNAL 4 MHZ        ' INTERNAL o CRYSTAL; MHZ, KHZ o HZ (como `CLOCK: Internal` y `FREQUENCY: 4MHz` en Python)
+CLOCK INTERNAL 8MHZ         ' la fuente y su frecuencia como literal con unidad (como `CLOCK: Internal` y `FREQUENCY: 8MHz` en Python)
+'   CLOCK INTERNAL         -> 4 MHz (el valor de reset)         CLOCK CRYSTAL 11.0592MHZ MODE HS
+'   CLOCK EXTERNAL 8MHZ    -> señal de reloj en CLKIN           CLOCK RESONATOR 8MHZ     CLOCK RC 2MHZ
+'   la forma anterior `CLOCK INTERNAL 4 MHZ` (con espacio) sigue valiendo
+'   ajustes opcionales, uno por línea: PLL 4 · CLOCKDIVIDER 2 · CLOCKOUTPUT ON · FAILSAFE ON · CLOCKSWITCHING ON
 BAUD 9600                   ' velocidad de la UART (8N1): la de SERTXD, SERRXD y UART.write; sin esta línea son 9600
 ```
 

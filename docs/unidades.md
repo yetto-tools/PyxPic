@@ -15,6 +15,10 @@
 
 **Compatibilidad:** un número sin unidad sigue valiendo en todos esos parámetros (`SPI.start(freq=1000000)`, `pause(500)`). `frequency` es el nombre de SPI e I²C (como ya era el de PWM); `freq` se sigue aceptando.
 
+## BASIC
+
+El lexer de BASIC usa el mismo escáner que Python (`units::scan`): `8MHZ`, `11.0592MHz`, `500ms`, `3.3V` son literales con unidad, y como BASIC no distingue mayúsculas los sufijos de frecuencia valen en cualquier caso (`MHZ`, `khz`); los demás distinguen mayúsculas como en Python. Los literales llegan al mismo AST, así que las reglas y los errores (`PYP2240`…) son los de Python: `PAUSE 500ms` genera lo mismo que `PAUSE 500`, y `BAUD 9600baud` vale. El reloj y sus ajustes tienen su forma en BASIC (`CLOCK CRYSTAL 11.0592MHZ MODE HS`, `PLL 4`, `CLOCKDIVIDER 2`, `CLOCKOUTPUT ON`, `FAILSAFE ON`, `CLOCKSWITCHING ON`, ver `docs/basic-picaxe.md`) y producen el mismo reloj que su equivalente en Python (hay una prueba que lo compara para cada forma).
+
 ## Reglas
 
 - **Magnitud equivocada:** `UART.start(baud=9600Hz)`, `pause(500Hz)`, `I2C.start(frequency=3V)` son el error `PYP2240` («espera baudios / tiempo / frecuencia»). `delay_cycles(5ms)` también: recibe ciclos.

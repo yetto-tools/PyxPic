@@ -7,6 +7,8 @@
     { "name": "string.quoted.double.pyxpic-basic", "begin": "\"", "end": "\"|$", "patterns": [{ "name": "constant.character.escape.pyxpic-basic", "match": "\\\\[nrt0\\\\\"']" }] },
     { "name": "constant.numeric.hex.pyxpic-basic", "match": "(?i)(\\$|0x)[0-9a-f_]+\\b" },
     { "name": "constant.numeric.binary.pyxpic-basic", "match": "%[01_]+\\b" },
+    { "name": "constant.numeric.unit.pyxpic-basic", "match": "\\b[0-9][0-9_]*(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?(?:GHz|MHz|kHz|Hz|ns|us|ms|min|s|h|KiB|MiB|KB|MB|B|Mbaud|kbaud|baud|Mbps|kbps|bps|uV|mV|V|uA|mA|A|Mohm|kohm|ohm|pF|nF|uF|mF|F|nH|uH|mH|H|uW|mW|W|degC|degF|K|rpm|deg|rad|pct)\\b" },
+    { "name": "constant.numeric.unit.pyxpic-basic", "match": "(?i)\\b[0-9][0-9_]*(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?(?:ghz|mhz|khz|hz)\\b" },
     { "name": "constant.numeric.decimal.pyxpic-basic", "match": "\\b[0-9][0-9_]*\\b" },
     { "name": "entity.name.label.pyxpic-basic", "match": "^\\s*[A-Za-z_][A-Za-z0-9_]*(?=\\s*:)" },
     { "name": "keyword.control.pyxpic-basic", "match": "(?i)\\b(if|then|else|elseif|endif|end\\s+if|for|to|step|next|do|loop|while|wend|until|select|case|end\\s+select|goto|gosub|return|exit|end|on|interrupt|interrupts|asm|enable|disable)\\b" },

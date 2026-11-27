@@ -6,6 +6,8 @@ use crate::diag::{Diagnostics, Span};
 pub enum T {
     Ident(String),
     Int(i128),
+    /// `8MHZ`, `500ms`, `3.3V`: un literal con unidad (el valor exacto en la unidad base de su magnitud).
+    Quantity(i128, crate::units::Dim),
     Str(String),
     Newline,
     Eof,
@@ -89,6 +91,24 @@ pub fn lex(src: &str, d: &mut Diagnostics) -> Vec<Token> {
             }
             b'0'..=b'9' | b'$' => {
                 let s = i;
+                // un numero decimal pegado a una unidad (8MHZ, 11.0592MHz, 500ms): el mismo escaner que Python
+                if c != b'$' && !(c == b'0' && i + 1 < b.len() && (b[i + 1] == b'x' || b[i + 1] == b'X')) {
+                    if let Some((end, scan)) = crate::units::scan(src, i, true) {
+                        i = end;
+                        match scan {
+                            crate::units::Scan::Value(v, dim) => push(&mut out, T::Quantity(v, dim), s, i),
+                            crate::units::Scan::NotExact(base) => {
+                                d.error("PYB0009", Span::new(s, i), format!("'{}' no es un numero entero de {base} (la unidad base de su magnitud)", &src[s..i]));
+                                push(&mut out, T::Int(0), s, i);
+                            }
+                            crate::units::Scan::TooBig => {
+                                d.error("PYB0009", Span::new(s, i), "literal con unidad demasiado grande");
+                                push(&mut out, T::Int(0), s, i);
+                            }
+                        }
+                        continue;
+                    }
+                }
                 let (radix, digits_from) = if c == b'$' {
                     (16, i + 1)
                 } else if c == b'0' && i + 1 < b.len() && (b[i + 1] == b'x' || b[i + 1] == b'X') {
@@ -110,7 +130,7 @@ pub fn lex(src: &str, d: &mut Diagnostics) -> Vec<Token> {
                 }
             }
             // `%1010` es binario cuando no sigue a un valor; despues de un valor es el modulo
-            b'%' if b.get(i + 1).is_some_and(|x| matches!(x, b'0' | b'1')) && !out.last().is_some_and(|t| matches!(t.t, T::Ident(_) | T::Int(_) | T::RParen)) => {
+            b'%' if b.get(i + 1).is_some_and(|x| matches!(x, b'0' | b'1')) && !out.last().is_some_and(|t| matches!(t.t, T::Ident(_) | T::Int(_) | T::Quantity(..) | T::RParen)) => {
                 let s = i;
                 i += 1;
                 let from = i;

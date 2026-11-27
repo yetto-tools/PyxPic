@@ -239,6 +239,72 @@ fn convert(v: &Decimal, unit: &Unit) -> Result<i128, UnitError> {
     Err(UnitError::NotExact(unit.dim.base_unit()))
 }
 
+/// Resultado de leer un literal con unidad.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Scan {
+    Value(i128, Dim),
+    NotExact(&'static str),
+    TooBig,
+}
+
+/// Lee en `src[start..]` un numero decimal pegado a un sufijo de unidad (`8MHz`, `11.0592MHz`, `8e6Hz`, `500ms`). Devuelve el final del
+/// literal y su valor, o `None` si ahi no hay un literal con unidad. Con `loose_hz` (BASIC, que no distingue mayusculas) los sufijos de
+/// frecuencia se aceptan en cualquier caso (`MHZ`, `khz`).
+pub fn scan(src: &str, start: usize, loose_hz: bool) -> Option<(usize, Scan)> {
+    let b = src.as_bytes();
+    let digits = |j: &mut usize| {
+        while *j < b.len() && (b[*j].is_ascii_digit() || b[*j] == b'_') {
+            *j += 1;
+        }
+    };
+    let mut j = start;
+    digits(&mut j);
+    if j == start {
+        return None;
+    }
+    if b.get(j) == Some(&b'.') && b.get(j + 1).is_some_and(|c| c.is_ascii_digit()) {
+        j += 1;
+        digits(&mut j);
+    }
+    if matches!(b.get(j), Some(b'e' | b'E')) {
+        let mut k = j + 1;
+        if matches!(b.get(k), Some(b'+' | b'-')) {
+            k += 1;
+        }
+        if b.get(k).is_some_and(|c| c.is_ascii_digit()) {
+            j = k;
+            digits(&mut j);
+        }
+    }
+    let num_end = j;
+    while j < b.len() && (b[j].is_ascii_alphanumeric() || b[j] == b'_') {
+        j += 1;
+    }
+    let raw = &src[num_end..j];
+    let canon = if lookup(raw).is_some() {
+        raw
+    } else if loose_hz {
+        match raw.to_ascii_uppercase().as_str() {
+            "HZ" => "Hz",
+            "KHZ" => "kHz",
+            "MHZ" => "MHz",
+            "GHZ" => "GHz",
+            _ => return None,
+        }
+    } else {
+        return None;
+    };
+    let dec = Decimal::parse(&src[start..num_end])?;
+    Some((
+        j,
+        match to_base(&dec, canon)? {
+            Ok((v, d)) => Scan::Value(v, d),
+            Err(UnitError::NotExact(base)) => Scan::NotExact(base),
+            Err(UnitError::TooBig) => Scan::TooBig,
+        },
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

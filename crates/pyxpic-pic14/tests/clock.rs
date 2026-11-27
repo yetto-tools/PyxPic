@@ -460,3 +460,72 @@ fn clock_settings_need_clock_and_are_validated_as_declarations() {
         assert!(!ok && t.contains(code) && t.contains(frag), "{decl}: {t}");
     }
 }
+
+// ---- fase 5: BASIC con literales con unidad y los ajustes del reloj ----------------------------------------------------------
+
+fn basic_source(clock_lines: &str) -> pyxpic_frontend::ClockSource {
+    let bas = format!("DEVICE PIC16F887\n{clock_lines}\n\nmain:\n  GOTO main\n");
+    let t = pack().target_profile();
+    let r = pyxpic_frontend::analyze_in(pyxpic_frontend::Language::Basic, &bas, &t);
+    let p = r.program.unwrap_or_else(|| panic!("{clock_lines}: {}", r.diagnostics.render(&bas, "t.bas")));
+    p.clock_source.expect("declara el reloj")
+}
+
+fn python_source(clock_lines: &str) -> pyxpic_frontend::ClockSource {
+    source(clock_lines)
+}
+
+#[test]
+fn basic_accepts_unit_literals_and_every_clock_setting_like_python() {
+    for (bas, py) in [
+        ("CLOCK CRYSTAL 16MHZ", "CLOCK: Crystal\nFREQUENCY: 16MHz"),
+        ("CLOCK CRYSTAL 16 MHZ", "CLOCK: Crystal\nFREQUENCY: 16MHz"),
+        ("CLOCK CRYSTAL 11.0592MHz", "CLOCK: Crystal\nFREQUENCY: 11.0592MHz"),
+        ("CLOCK CRYSTAL 7.3728mhz", "CLOCK: Crystal\nFREQUENCY: 7372800Hz"),
+        ("CLOCK CRYSTAL 32.768kHz", "CLOCK: Crystal\nFREQUENCY: 32768Hz"),
+        ("CLOCK INTERNAL", "CLOCK: Internal"),
+        ("CLOCK INTERNAL 8MHZ", "CLOCK: Internal\nFREQUENCY: 8MHz"),
+        ("CLOCK INTERNAL 4 MHZ", "CLOCK: Internal\nFREQUENCY: 4MHz"),
+        ("CLOCK EXTERNAL 8MHZ", "CLOCK: External\nFREQUENCY: 8MHz"),
+        ("CLOCK RESONATOR 8MHZ", "CLOCK: Resonator\nFREQUENCY: 8MHz"),
+        ("CLOCK CRYSTAL 2MHZ MODE HS", "CLOCK: Crystal\nFREQUENCY: 2MHz\nOSC_MODE: HS"),
+        ("CLOCK INTERNAL 4MHZ\nCLOCKOUTPUT ON", "CLOCK: Internal\nFREQUENCY: 4MHz\nCLOCK_OUTPUT: On"),
+        ("CLOCK CRYSTAL 8MHZ\nFAILSAFE ON\nCLOCKSWITCHING ON", "CLOCK: Crystal\nFREQUENCY: 8MHz\nFAIL_SAFE_CLOCK: On\nCLOCK_SWITCHING: On"),
+    ] {
+        assert_eq!(basic_source(bas), python_source(py), "{bas}");
+    }
+}
+
+#[test]
+fn basic_clock_errors_are_located_and_name_the_remedy() {
+    let t = pack().target_profile();
+    for (clock, frag) in [
+        ("CLOCK CRYSTAL", "necesita su frecuencia"),
+        ("CLOCK CRYSTAL 90kHz", "no cabe"),
+        ("CLOCK CRYSTAL 16", "la unidad"),
+        ("CLOCK INTERNAL 20MHZ", "oscilador interno"),
+        ("CLOCK CRYSTAL 0.5Hz", "entero de Hz"),
+        ("CLOCK CRYSTAL 8MHZ\nPLL 4", "no tiene PLL"),
+        ("CLOCK INTERNAL\nFAILSAFE ON", "no aplica"),
+        ("CLOCK CRYSTAL 8MHZ\nCLOCKOUTPUT MAYBE", "ON, OFF"),
+    ] {
+        let bas = format!("DEVICE PIC16F887\n{clock}\n\nmain:\n  GOTO main\n");
+        let r = pyxpic_frontend::analyze_in(pyxpic_frontend::Language::Basic, &bas, &t);
+        let msg = r.diagnostics.render(&bas, "t.bas");
+        assert!(r.program.is_none() && msg.contains(frag), "{clock}: {msg}");
+    }
+}
+
+#[test]
+fn basic_commands_take_units_and_generate_the_same_firmware() {
+    let words = |body: &str| -> Vec<(u32, u16)> {
+        let bas = format!("DEVICE PIC16F887\nCLOCK INTERNAL 4MHZ\n\nmain:\n{body}\n  GOTO main\n");
+        let r = pyxpic_frontend::analyze_in(pyxpic_frontend::Language::Basic, &bas, &pack().target_profile());
+        let p = r.program.unwrap_or_else(|| panic!("{body}: {}", r.diagnostics.render(&bas, "t.bas")));
+        let m = lower(&p);
+        verify(&m).unwrap();
+        compile(&m, &Options::default()).unwrap().image.iter().collect()
+    };
+    assert_eq!(words("  PAUSE 500ms"), words("  PAUSE 500"));
+    assert_eq!(words("  PAUSE 2s"), words("  PAUSE 2000"));
+}

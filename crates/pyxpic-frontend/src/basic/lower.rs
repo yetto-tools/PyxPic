@@ -228,6 +228,7 @@ impl<'a> Lw<'a> {
     fn const_eval(&mut self, e: &BExpr) -> Option<i128> {
         match &e.kind {
             BExprKind::Int(v) => Some(*v),
+            BExprKind::Quantity(v, d) if d.is_plain_integer() => Some(*v),
             BExprKind::Name(n) => match self.resolve(n, e.span) {
                 Res::Const(v) => Some(v),
                 _ => None,
@@ -257,6 +258,7 @@ impl<'a> Lw<'a> {
     fn width(&mut self, e: &BExpr) -> Option<u8> {
         match &e.kind {
             BExprKind::Int(v) => (*v > 255).then_some(16),
+            BExprKind::Quantity(..) => Some(16),
             BExprKind::Name(n) => match self.resolve(n, e.span) {
                 Res::Var(v) => Some(v.bits),
                 Res::Const(v) => (v > 255).then_some(16),
@@ -294,6 +296,7 @@ impl<'a> Lw<'a> {
     fn arg(&mut self, a: &BArg) -> Option<Expr> {
         match &a.value.kind {
             BExprKind::Int(v) => Some(self.int(a.value.span, *v)),
+            BExprKind::Quantity(v, d) => Some(self.ex(a.value.span, ExprKind::Quantity(*v, *d))),
             BExprKind::Name(n) if matches!(self.resolve(n, a.value.span), Res::Other) => {
                 let canon = self.note_sdk(n).unwrap_or_else(|| n.clone());
                 Some(self.name_expr(a.value.span, &canon))
@@ -339,6 +342,7 @@ impl<'a> Lw<'a> {
         let sp = e.span;
         match &e.kind {
             BExprKind::Int(v) => Some(self.int(sp, *v)),
+            BExprKind::Quantity(v, d) => Some(self.ex(sp, ExprKind::Quantity(*v, *d))),
             BExprKind::Name(n) => match self.resolve(n, sp) {
                 Res::Var(v) => {
                     if v.array.is_some() {
@@ -630,7 +634,7 @@ impl<'a> Lw<'a> {
             BStmtKind::OnInterrupt(_) | BStmtKind::Asm { .. } => {
                 self.err("PYB0104", sp, "ON INTERRUPT y los bloques ASM van en el nivel principal del programa, fuera de IF, FOR, DO...");
             }
-            BStmtKind::Device(_) | BStmtKind::Baud(_) | BStmtKind::Clock { .. } | BStmtKind::Import { .. } | BStmtKind::Symbol { .. } | BStmtKind::Dim { .. } => {
+            BStmtKind::Device(_) | BStmtKind::Baud(_) | BStmtKind::Clock { .. } | BStmtKind::ClockSetting { .. } | BStmtKind::Import { .. } | BStmtKind::Symbol { .. } | BStmtKind::Dim { .. } => {
                 self.err("PYB0052", sp, "DEVICE, CLOCK, FROM...IMPORT, SYMBOL y DIM van al principio del programa, fuera de los bloques");
             }
         }
@@ -1037,25 +1041,25 @@ impl<'a> Lw<'a> {
                         _ => self.err("PYB0108", e.span, "BAUD es un numero positivo de baudios: BAUD 9600"),
                     }
                 }
-                BStmtKind::Clock { kind, amount, unit } => {
-                    let Some(v) = self.const_eval(amount) else {
-                        self.err("PYB0071", amount.span, "la cantidad del reloj es un numero: CLOCK INTERNAL 4 MHZ");
-                        continue;
-                    };
-                    let unit_name = match unit.to_ascii_uppercase().as_str() {
-                        "MHZ" => "MHz",
-                        "KHZ" => "kHz",
-                        _ => "Hz",
-                    };
-                    let (a, u) = (self.int(amount.span, v), self.name_expr(s.span, unit_name));
-                    let e = self.ex(s.span, ExprKind::Binary(BinOp::Mul, Box::new(a), Box::new(u)));
-                    // el mismo AST que `CLOCK: Crystal` + `FREQUENCY: 16MHz` de Python
-                    let source = TypeExpr { span: s.span, kind: TypeExprKind::Clock(kind.clone()) };
-                    let freq = TypeExpr { span: s.span, kind: TypeExprKind::Frequency(Box::new(e)) };
-                    clock = vec![
-                        Item::Var(VarDecl { span: s.span, name: Ident { name: "CLOCK".into(), span: s.span }, ann: source, value: None }),
-                        Item::Var(VarDecl { span: s.span, name: Ident { name: "FREQUENCY".into(), span: s.span }, ann: freq, value: None }),
-                    ];
+                BStmtKind::Clock { kind, freq, mode } => {
+                    // el mismo AST que `CLOCK: Crystal` + `FREQUENCY: 16MHz` + `OSC_MODE: HS` de Python
+                    let var = |name: &str, ann: TypeExpr| Item::Var(VarDecl { span: s.span, name: Ident { name: name.into(), span: s.span }, ann, value: None });
+                    clock.push(var("CLOCK", TypeExpr { span: s.span, kind: TypeExprKind::Clock(kind.clone()) }));
+                    if let Some(f) = freq {
+                        let BExprKind::Quantity(v, d) = f.kind else {
+                            self.err("PYB0071", f.span, "la frecuencia del reloj es un literal con unidad: CLOCK CRYSTAL 16MHZ");
+                            continue;
+                        };
+                        let e = self.ex(f.span, ExprKind::Quantity(v, d));
+                        clock.push(var("FREQUENCY", TypeExpr { span: f.span, kind: TypeExprKind::Frequency(Box::new(e)) }));
+                    }
+                    if let Some(m) = mode {
+                        clock.push(var("OSC_MODE", TypeExpr { span: s.span, kind: TypeExprKind::OscMode(if m.eq_ignore_ascii_case("AUTO") { "Auto".into() } else { m.to_ascii_uppercase() }) }));
+                    }
+                }
+                BStmtKind::ClockSetting { name, word, value } => {
+                    let e = value.map(|v| Box::new(self.int(s.span, v)));
+                    clock.push(Item::Var(VarDecl { span: s.span, name: Ident { name: (*name).into(), span: s.span }, ann: TypeExpr { span: s.span, kind: TypeExprKind::Setting(word.clone(), e) }, value: None }));
                 }
                 BStmtKind::Import { module, names } => {
                     for (n, _) in names {

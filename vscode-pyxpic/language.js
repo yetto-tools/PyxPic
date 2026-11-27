@@ -67,7 +67,8 @@ const info = {
   ord: "`ord('A')` es 65: el código ASCII de un carácter, resuelto al compilar (sin costo en el PIC). Úsalo para comparar bytes: `if c == ord('A'):`.",
   SPI: "SPI maestro (SCK RC3, SDI RC4, SDO RC5): `SPI.start(freq=1000000, mode=0)` y `SPI.transfer(b)`, que envía y devuelve el byte recibido. El chip select es un pin tuyo.",
   transfer: "`SPI.transfer(b)` envía un byte por SDO y devuelve el que llega a la vez por SDI.",
-  pause: "`pause(ms)` espera una cantidad de milisegundos; consulta el costo y los límites de `pyxpic.system.time`.",
+  pause: "`pause(500ms)` espera una cantidad de milisegundos (también `pause(500)`); consulta el costo y los límites de `pyxpic.system.time`.",
+  every: "`TMR2.every(20ms)` configura Timer2 para un periodo exacto (prescaler, PR2 y postscaler se resuelven al compilar).",
   read: "Lectura del periférico. `ADC.read(AN0)` devuelve uint16; `UART.read()` recibe un byte y espera si es necesario.",
   start: "Configura e inicia el periférico. Los parámetros dependen de si se usa ADC, UART o PWM.",
   write_text: "`UART.write_text(texto)` transmite texto ASCII y f-strings soportados sin reservar un búfer de texto completo en RAM.",
@@ -77,7 +78,12 @@ const info = {
 /** Ayuda al pasar el cursor sobre una palabra de PyxPic BASIC (sin distinguir mayusculas). */
 const basicInfo = {
   device: "`DEVICE PIC16F887`: el PIC para el que esta escrito el programa. Obligatorio.",
-  clock: "`CLOCK INTERNAL 4 MHZ` o `CLOCK CRYSTAL 20 MHZ`: la fuente y la frecuencia del reloj. Con un oscilador externo RA6 y RA7 son del oscilador.",
+  clock: "`CLOCK INTERNAL 8MHZ` o `CLOCK CRYSTAL 11.0592MHZ [MODE HS]`: la fuente (INTERNAL, CRYSTAL, EXTERNAL, RESONATOR, RC) y su frecuencia como literal con unidad. Con un oscilador externo RA6 y RA7 son del oscilador.",
+  pll: "`PLL 4`: multiplicador de la PLL del dispositivo (el PIC16F887 no tiene).",
+  clockdivider: "`CLOCKDIVIDER 2`: divisor de la frecuencia del reloj (el PIC16F887 no tiene).",
+  clockoutput: "`CLOCKOUTPUT ON`: saca el reloj por CLKOUT (RA6 con INTERNAL o RC en el PIC16F887).",
+  failsafe: "`FAILSAFE ON`: monitor de fallas del oscilador externo (FCMEN).",
+  clockswitching: "`CLOCKSWITCHING ON`: arranque en dos velocidades (IESO) con LP, XT o HS.",
   baud: "`BAUD 9600`: la velocidad de la UART (8N1) para SERTXD, SERRXD y UART.write; sin esta linea son 9600. No se combina con UART.start.",
   symbol: "`SYMBOL k = 5` (constante), `SYMBOL x = b3` (otro nombre para una variable) o `SYMBOL led = D.0` (un pin).",
   dim: "`DIM x AS BYTE|WORD|BIT` y `DIM t(16) AS BYTE` (arreglo). Las variables `b0`..`b27` (BYTE) y `w0`..`w13` (WORD) existen sin declarar y no se solapan.",
@@ -111,7 +117,7 @@ const members = {
 };
 
 /** Palabras que se sugieren en un programa BASIC; despues de `OBJETO.` van los metodos del SDK. */
-const basicWords = ["DEVICE", "CLOCK", "BAUD", "SYMBOL", "DIM", "AS", "BYTE", "WORD", "BIT", "LET", "IF", "THEN", "ELSE", "ELSEIF", "ENDIF", "FOR", "TO", "STEP", "NEXT", "DO", "LOOP", "WHILE", "WEND", "UNTIL", "SELECT CASE", "CASE", "END SELECT", "GOTO", "GOSUB", "RETURN", "EXIT", "END", "HIGH", "LOW", "TOGGLE", "OUTPUT", "INPUT", "PAUSE", "PAUSEUS", "READADC", "READADC10", "READ", "WRITE", "PWMOUT", "SERTXD", "SERRXD", "ON INTERRUPT", "ENABLE INTERRUPTS", "DISABLE INTERRUPTS", "ASM", "END ASM", "AND", "OR", "XOR", "NOT", "MOD", "INTERNAL", "CRYSTAL", "MHZ", "KHZ", "HZ", "CR", "LF", "TAB"];
+const basicWords = ["DEVICE", "CLOCK", "BAUD", "SYMBOL", "DIM", "AS", "BYTE", "WORD", "BIT", "LET", "IF", "THEN", "ELSE", "ELSEIF", "ENDIF", "FOR", "TO", "STEP", "NEXT", "DO", "LOOP", "WHILE", "WEND", "UNTIL", "SELECT CASE", "CASE", "END SELECT", "GOTO", "GOSUB", "RETURN", "EXIT", "END", "HIGH", "LOW", "TOGGLE", "OUTPUT", "INPUT", "PAUSE", "PAUSEUS", "READADC", "READADC10", "READ", "WRITE", "PWMOUT", "SERTXD", "SERRXD", "ON INTERRUPT", "ENABLE INTERRUPTS", "DISABLE INTERRUPTS", "ASM", "END ASM", "AND", "OR", "XOR", "NOT", "MOD", "INTERNAL", "CRYSTAL", "EXTERNAL", "RESONATOR", "RC", "MODE", "PLL", "CLOCKDIVIDER", "CLOCKOUTPUT", "FAILSAFE", "CLOCKSWITCHING", "MHZ", "KHZ", "HZ", "CR", "LF", "TAB"];
 
 function basicCompletions(prefix) {
   const match = /\b(ADC|UART|EEPROM|PWM[12])\.\w*$/i.exec(prefix);

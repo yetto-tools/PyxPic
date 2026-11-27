@@ -1,6 +1,6 @@
 # Reloj: `CLOCK` y `FREQUENCY` (y literales con unidad)
 
-**Estado: implementado (#69), fases 1 a 4.** El reloj se declara en dos líneas, **sin imports**: la fuente y su frecuencia por separado.
+**Estado: implementado (#69), fases 1 a 5.** El reloj se declara en dos líneas, **sin imports**: la fuente y su frecuencia por separado.
 
 ```python
 CLOCK: Internal                 # oscilador interno; sin FREQUENCY es 4 MHz (el valor de reset)
@@ -100,10 +100,9 @@ La frecuencia resultante (`FOSC`) se valida contra el máximo del dispositivo (`
 
 ### Qué falta (fases siguientes)
 
-- BASIC todavía no tiene `PLL`, `CLOCK_DIVIDER`, `CLOCK_OUTPUT`, `FAIL_SAFE_CLOCK` ni `CLOCK_SWITCHING` (fase 5).
 - La PLL y el divisor se probaron con un perfil sintético: ningún dispositivo del repositorio las tiene todavía; su `oscillator.json` (`pll`, `dividers`) se llenará con el primer PIC que las traiga.
 - **Fase 4 (hecha):** unidades en los parámetros del SDK, ver `docs/unidades.md`.
-- **Fase 5:** BASIC (`CLOCK INTERNAL 8 MHZ` ya produce el mismo AST que Python; faltan los literales con unidad en su lexer) y el resaltado de los sufijos en VS Code.
+- **Fase 5 (hecha):** BASIC con literales con unidad y los ajustes del reloj, y resaltado de los sufijos en VS Code (`docs/unidades.md`).
 
 ## Diagnósticos
 
