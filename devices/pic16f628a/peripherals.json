@@ -1,0 +1,350 @@
+{
+  "schema_version": 1,
+  "source": "DS40044G: capitulos de cada periferico (paginas en cada entrada) y diagrama de pines p.4",
+  "peripherals": [
+    {
+      "name": "TIMER0",
+      "kind": "timer",
+      "description": "Temporizador/contador de 8 bits con preescalador",
+      "page": 47,
+      "bits": 8,
+      "registers": [
+        "TMR0",
+        "OPTION_REG"
+      ],
+      "interrupts": [
+        {
+          "flag": "T0IF",
+          "enable": "T0IE"
+        }
+      ],
+      "pins": [
+        {
+          "function": "T0CKI",
+          "direction": "in",
+          "claimed_by": [
+            "T0CS"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TIMER1",
+      "kind": "timer",
+      "description": "Temporizador/contador de 16 bits con oscilador propio",
+      "page": 50,
+      "bits": 16,
+      "registers": [
+        "TMR1L",
+        "TMR1H",
+        "T1CON"
+      ],
+      "enable": [
+        "TMR1ON"
+      ],
+      "interrupts": [
+        {
+          "flag": "TMR1IF",
+          "enable": "TMR1IE"
+        }
+      ],
+      "pins": [
+        {
+          "function": "T1CKI",
+          "direction": "in",
+          "claimed_by": [
+            "TMR1CS"
+          ]
+        },
+        {
+          "function": "T1OSI",
+          "direction": "in",
+          "claimed_by": [
+            "T1OSCEN"
+          ]
+        },
+        {
+          "function": "T1OSO",
+          "direction": "out",
+          "claimed_by": [
+            "T1OSCEN"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "TIMER2",
+      "kind": "timer",
+      "description": "Temporizador de 8 bits con registro de periodo, preescalador y postescalador",
+      "page": 54,
+      "bits": 8,
+      "registers": [
+        "TMR2",
+        "T2CON",
+        "PR2"
+      ],
+      "enable": [
+        "TMR2ON"
+      ],
+      "interrupts": [
+        {
+          "flag": "TMR2IF",
+          "enable": "TMR2IE"
+        }
+      ]
+    },
+    {
+      "name": "CCP1",
+      "kind": "ccp",
+      "description": "Captura, comparacion y PWM",
+      "page": 57,
+      "registers": [
+        "CCPR1L",
+        "CCPR1H",
+        "CCP1CON"
+      ],
+      "interrupts": [
+        {
+          "flag": "CCP1IF",
+          "enable": "CCP1IE"
+        }
+      ],
+      "pins": [
+        {
+          "function": "CCP1",
+          "direction": "io"
+        }
+      ],
+      "uses": [
+        "TIMER1",
+        "TIMER2"
+      ]
+    },
+    {
+      "name": "COMPARATORS",
+      "kind": "analog",
+      "description": "Dos comparadores analogicos; el modo CM<2:0> de CMCON los configura (111 los apaga)",
+      "page": 63,
+      "registers": [
+        "CMCON"
+      ],
+      "interrupts": [
+        {
+          "flag": "CMIF",
+          "enable": "CMIE"
+        }
+      ],
+      "pins": [
+        {
+          "function": "AN0",
+          "direction": "analog"
+        },
+        {
+          "function": "AN1",
+          "direction": "analog"
+        },
+        {
+          "function": "AN2",
+          "direction": "analog"
+        },
+        {
+          "function": "AN3",
+          "direction": "analog"
+        },
+        {
+          "function": "CMP1",
+          "direction": "out"
+        },
+        {
+          "function": "CMP2",
+          "direction": "out"
+        }
+      ]
+    },
+    {
+      "name": "VREF",
+      "kind": "analog",
+      "description": "Referencia de voltaje de los comparadores",
+      "page": 69,
+      "registers": [
+        "VRCON"
+      ],
+      "pins": [
+        {
+          "function": "VREF",
+          "direction": "analog",
+          "claimed_by": [
+            "VROE"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "EEPROM",
+      "kind": "memory",
+      "description": "128 bytes de EEPROM de datos",
+      "page": 91,
+      "registers": [
+        "EEDATA",
+        "EEADR",
+        "EECON1",
+        "EECON2"
+      ],
+      "interrupts": [
+        {
+          "flag": "EEIF",
+          "enable": "EEIE"
+        }
+      ]
+    },
+    {
+      "name": "USART",
+      "kind": "serial",
+      "description": "USART direccionable",
+      "page": 73,
+      "registers": [
+        "TXSTA",
+        "RCSTA",
+        "TXREG",
+        "RCREG",
+        "SPBRG"
+      ],
+      "interrupts": [
+        {
+          "flag": "TXIF",
+          "enable": "TXIE"
+        },
+        {
+          "flag": "RCIF",
+          "enable": "RCIE"
+        }
+      ],
+      "pins": [
+        {
+          "function": "TX",
+          "direction": "out",
+          "claimed_by": [
+            "SPEN"
+          ]
+        },
+        {
+          "function": "CK",
+          "direction": "io"
+        },
+        {
+          "function": "RX",
+          "direction": "in",
+          "claimed_by": [
+            "SPEN"
+          ]
+        },
+        {
+          "function": "DT",
+          "direction": "io"
+        }
+      ]
+    },
+    {
+      "name": "OSCILLATOR",
+      "kind": "system",
+      "description": "Oscilador externo o interno",
+      "page": 99,
+      "registers": [
+        "PCON"
+      ],
+      "pins": [
+        {
+          "function": "OSC1",
+          "direction": "analog"
+        },
+        {
+          "function": "OSC2",
+          "direction": "analog"
+        },
+        {
+          "function": "CLKIN",
+          "direction": "in"
+        },
+        {
+          "function": "CLKOUT",
+          "direction": "out"
+        }
+      ]
+    },
+    {
+      "name": "EXT_INT",
+      "kind": "interrupt",
+      "description": "Interrupcion externa en RB0",
+      "page": 109,
+      "registers": [
+        "INTCON",
+        "OPTION_REG"
+      ],
+      "interrupts": [
+        {
+          "flag": "INTF",
+          "enable": "INTE"
+        }
+      ],
+      "pins": [
+        {
+          "function": "INT",
+          "direction": "in"
+        }
+      ]
+    },
+    {
+      "name": "PORTB_IOC",
+      "kind": "interrupt",
+      "description": "Interrupcion por cambio en RB4-RB7",
+      "page": 110,
+      "registers": [
+        "INTCON"
+      ],
+      "interrupts": [
+        {
+          "flag": "RBIF",
+          "enable": "RBIE"
+        }
+      ]
+    },
+    {
+      "name": "WDT",
+      "kind": "system",
+      "description": "Perro guardian",
+      "page": 111,
+      "registers": [
+        "OPTION_REG"
+      ]
+    },
+    {
+      "name": "PROGRAMMING",
+      "kind": "system",
+      "description": "MCLR y programacion en circuito (ICSP) y de bajo voltaje",
+      "page": 114,
+      "pins": [
+        {
+          "function": "MCLR",
+          "direction": "in"
+        },
+        {
+          "function": "VPP",
+          "direction": "in"
+        },
+        {
+          "function": "PGM",
+          "direction": "in"
+        },
+        {
+          "function": "PGC",
+          "direction": "in"
+        },
+        {
+          "function": "PGD",
+          "direction": "io"
+        }
+      ],
+      "registers": []
+    }
+  ]
+}

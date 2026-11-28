@@ -94,6 +94,36 @@ las funciones de pin que posee (con dirección `in`/`out`/`io`/`analog`) y de qu
 `DevicePack::pin_uses("RA4")` devuelve lo que un pin cedería a periféricos: `T0CKI:TIMER0` y `C1OUT:COMPARATORS`. Es la base de los avisos de conflicto de pines
 y de que el SDK de periféricos ([sdk-modulos.md](sdk-modulos.md)) sepa qué pines reclama cada módulo.
 
+## PIC16F628A (`devices/pic16f628a`)
+
+Fuente: **DS40044G** (2009), <https://ww1.microchip.com/downloads/en/DeviceDoc/40044G.pdf> (SHA-256 de la copia usada: `adb957497df5779f…`).
+
+| Dato | Valor | Página |
+|---|---|---|
+| Programa | 2048 x 14 bits, reset `0000h`, interrupción `0004h`, pila de 8 niveles | 17 |
+| RAM | 20h-7Fh, A0h-EFh, 120h-14Fh = **224 B**; 150h-16Fh y 1A0h-1EFh sin implementar | 18 |
+| EEPROM | 128 B | 3 |
+| Configuración | una palabra en `2007h`; `FOSC<2:0>` en los bits 4, 1 y 0 | 98 |
+| Pines | PDIP-18, 15 de E/S (RA5 es solo entrada, MCLR/VPP) | 4 |
+| Reloj | INTOSC 4 MHz; LP hasta 200 kHz, XT 0,1-4 MHz, HS 1-20 MHz | 99, 144 |
+
+**Estado: experimental.** El backend genera GPIO, esperas, registros, ensamblador en línea y el lenguaje. Los periféricos del SDK
+(temporizadores, PWM, UART, EEPROM, comparadores...) dan error hasta tener sus pruebas. Se probó en el simulador (que modela el PIC16F887:
+solo se usa el núcleo y PORTB/TRISB, que coinciden). **En hardware (2026-11-28)** solo se ha probado `examples/python/pic16f628a/blink.py`:
+el LED de RB0 parpadea con el reloj interno. El resto no está probado en hardware.
+
+- No hay `ANSEL`: al configurar RA0-RA3 se escribe `CMCON = 07h`, que **apaga los dos comparadores** (p.63-64).
+- **RA4 es de drenador abierto** (p.33, p.37): como salida no pone nivel alto; un LED va entre VDD y el pin.
+- Palabra por defecto de `pyxpic build`: `0x3F18` (INTOSC con E/S en RA6/RA7, WDT, PWRT, BOR, LVP y protecciones apagados, MCLR interno).
+- Del oscilador interno solo se admiten 4 MHz; el de 48 kHz (`PCON<OSCF>`) no.
+- Falta: límites eléctricos de los pines y los encapsulados SSOP y QFN.
+
+Esquemas ampliados para este chip: `config.json` versión 3 (`extra_bits`, campos de bits no contiguos) y `memory.json` versión 2
+(`data.unimplemented`, huecos de un banco). Las versiones anteriores siguen siendo válidas.
+
+Criterios de aceptación (`crates/pyxpic-pic14/tests/pic16f628a.rs`): el pack valida; el ejemplo conmuta RB0 cada 500 ms en el simulador;
+un pin inexistente o un periférico sin soporte son errores.
+
 ## Configuración por nombre (`config.json`)
 
 Cada palabra tiene `default` (el valor de la memoria sin programar, `0x3FFF`) y, opcionalmente, **`build_default`**: lo que `pyxpic build` programa si no se pide otra cosa

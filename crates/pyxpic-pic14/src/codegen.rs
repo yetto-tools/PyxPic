@@ -172,7 +172,20 @@ impl Default for Options {
 }
 
 /// Dispositivos para los que el backend conoce el mapa de registros (PORTx, TRISx, ANSEL...).
-const SUPPORTED_DEVICES: &[&str] = &["PIC16F887"];
+const SUPPORTED_DEVICES: &[&str] = &["PIC16F887", "PIC16F628A"];
+
+/// `CMCON` con `CM<2:0> = 111`: comparadores apagados y RA0-RA3 digitales (PIC16F628A, DS40044G p.63-64).
+const CMCON_COMPARATORS_OFF: u8 = 0x07;
+
+/// `true` si el backend genera codigo para `device`.
+pub fn is_supported(device: &str) -> bool {
+    SUPPORTED_DEVICES.iter().any(|d| d.eq_ignore_ascii_case(device))
+}
+
+/// Lo que el backend todavia no hace en un dispositivo que soporta; `None` si no hay limites propios del dispositivo.
+pub fn device_limits(device: &str) -> Option<&'static str> {
+    (is_supported(device) && !device.eq_ignore_ascii_case("PIC16F887")).then_some("solo GPIO, esperas, registros y el lenguaje (sin perifericos del SDK todavia)")
+}
 
 #[derive(Debug, Clone)]
 pub struct GlobalSym {
@@ -435,6 +448,8 @@ fn reachable_blocks(f: &Function) -> Vec<bool> {
 
 // ---- generador ------------------------------------------------------------------------------
 struct Gen<'a> {
+    /// Dispositivo para el que se genera.
+    device: String,
     m: &'a Module,
     al: Alloc,
     asm: Asm,
@@ -905,7 +920,12 @@ impl<'a> Gen<'a> {
     fn pin_cfg(&mut self, pin: usize, output: bool) -> Result<(), CodegenError> {
         let p = &self.m.pins[pin];
         let (reg, bit) = port_reg(p)?;
-        if let Some(an) = p.analog {
+        if p.analog.is_some() && self.registers.get("ANSEL").is_none() {
+            // sin ANSEL, los pines analogicos son entradas de los comparadores: se apagan los dos
+            let cmcon = self.reg_bank0("CMCON")?;
+            self.asm.i(Movlw(CMCON_COMPARATORS_OFF));
+            self.asm.i(Movwf(cmcon));
+        } else if let Some(an) = p.analog {
             let (r, b) = if an < 8 { (ANSEL, an) } else { (ANSELH, an - 8) };
             self.asm.i(Bsf(STATUS, BIT_RP0));
             self.asm.i(Bsf(STATUS, BIT_RP1));
@@ -1069,7 +1089,28 @@ impl<'a> Gen<'a> {
         Ok(())
     }
 
+    /// Los perifericos del SDK estan escritos y probados con los registros del PIC16F887: en otro dispositivo se rechazan.
+    fn check_peripheral(&self, inst: &pyxpic_ir::ir::Inst) -> Result<(), CodegenError> {
+        use pyxpic_ir::ir::Inst as I;
+        let what = match inst {
+            I::Timer { .. } => "temporizadores",
+            I::Adc { .. } => "ADC",
+            I::Pwm { .. } => "PWM",
+            I::Eeprom { .. } => "EEPROM",
+            I::I2c { .. } => "I2C",
+            I::Spi { .. } => "SPI",
+            I::Comp { .. } => "comparadores",
+            I::Uart { .. } => "UART",
+            _ => return Ok(()),
+        };
+        if self.device.eq_ignore_ascii_case("PIC16F887") {
+            return Ok(());
+        }
+        unsupported(format!("{what} en el {}: por ahora solo GPIO, esperas, registros y el lenguaje", self.device))
+    }
+
     fn inst(&mut self, inst: &pyxpic_ir::ir::Inst) -> Result<(), CodegenError> {
+        self.check_peripheral(inst)?;
         use pyxpic_ir::ir::Inst as I;
         match inst {
             I::Copy { dst, src } => self.copy(*dst, src),
@@ -1302,6 +1343,7 @@ fn compile_mode(m: &Module, opts: &Options, multi: bool) -> Result<Compiled, Cod
     let mut g = Gen {
         m,
         al,
+        device: opts.device.clone(),
         asm: Asm::default(),
         fn_labels: HashMap::new(),
         isr_ctx,

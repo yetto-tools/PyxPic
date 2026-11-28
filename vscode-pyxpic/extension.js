@@ -413,13 +413,14 @@ function activate(context) {
     const config = vscode.workspace.getConfiguration("pyxpic", uri);
     const tools = language.projectTools(uri?.fsPath || cwd, cwd, config.get("executable", "pyxpic"), config.get("devicesDir", "").trim());
     const exists = (value) => value && require("node:fs").existsSync(value);
-    const packsReady = tools.devices && exists(path.join(tools.devices, "pic16f887", "device.json"));
+    const packs = exists(tools.devices) ? require("node:fs").readdirSync(tools.devices).filter((dir) => exists(path.join(tools.devices, dir, "device.json"))) : [];
+    const packsReady = packs.length > 0;
     const picAs = config.get("picAsPath", "");
     return {
       tools,
       rows: [
         { name: "Compilador PyxPic", value: tools.executable, detail: exists(tools.executable) ? "Ejecutable encontrado y listo para comprobar o compilar." : "Selecciona el ejecutable compilado o instala PyxPic en PATH.", state: exists(tools.executable) ? "Listo" : "Falta configurar", kind: exists(tools.executable) ? "ready" : "warning", action: "Elegir compilador", command: "selectCompiler" },
-        { name: "Device Packs", value: tools.devices || "Búsqueda predeterminada", detail: packsReady ? "PIC16F887 está disponible para el proyecto." : "Selecciona la carpeta devices que contiene los Device Packs.", state: packsReady ? "Listo" : "Falta configurar", kind: packsReady ? "ready" : "warning", action: "Elegir carpeta", command: "selectDevices" },
+        { name: "Device Packs", value: tools.devices || "Búsqueda predeterminada", detail: packsReady ? `Disponibles: ${packs.map((p) => p.toUpperCase()).join(", ")}.` : "Selecciona la carpeta devices que contiene los Device Packs.", state: packsReady ? "Listo" : "Falta configurar", kind: packsReady ? "ready" : "warning", action: "Elegir carpeta", command: "selectDevices" },
         { name: "PIC-AS de XC8", value: picAs || "Sin configurar", detail: picAs ? "La ruta está registrada. La ejecución de PIC-AS desde la extensión sigue pendiente." : "Opcional: PyxPic Native no necesita XC8 ni PIC-AS.", state: picAs ? "Registrado" : "Opcional", kind: picAs ? "ready" : "warning", action: "Elegir PIC-AS", command: "selectPicAs" },
         { name: "Espacio de trabajo", value: vscode.workspace.isTrusted ? "Confiable" : "Modo restringido", detail: vscode.workspace.isTrusted ? "La extensión puede compilar y crear proyectos." : "Confía en la carpeta para habilitar compilación y creación de proyectos.", state: vscode.workspace.isTrusted ? "Listo" : "Requiere confianza", kind: vscode.workspace.isTrusted ? "ready" : "warning", action: "", command: "" },
       ],
@@ -468,11 +469,78 @@ function activate(context) {
         throw new Error(result.stderr.trim().split("\n")[0] || "pyxpic init fallo");
       }
     };
-    const created = await project.create(vscode, init);
+    let devices;
+    try {
+      devices = await deviceList(tools, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd());
+    } catch (error) {
+      void vscode.window.showErrorMessage(`PyxPic no pudo listar los PIC disponibles: ${error.message}`);
+      return;
+    }
+    const created = await project.create(vscode, init, devices);
     if (!created) return;
     const action = await vscode.window.showInformationMessage(`Proyecto ${project.projectName(created.root)} creado para ${created.device}.`, "Abrir proyecto");
     if (action === "Abrir proyecto") await vscode.commands.executeCommand("vscode.openFolder", created.root, true);
     else await vscode.window.showTextDocument(created.main);
+  }
+
+  /** `pyxpic devices --format json`: los PIC que el compilador conoce, con sus relojes. */
+  async function deviceList(tools, cwd) {
+    const result = await cli(tools, ["devices", "--format", "json", ...(tools.devices ? ["--devices-dir", tools.devices] : [])], cwd);
+    try {
+      return JSON.parse(result.stdout).devices;
+    } catch {
+      throw new Error((result.stderr || "la CLI no devolvio la lista (actualiza el compilador)").trim().split("\n")[0]);
+    }
+  }
+
+  /** Asistente «Cambiar de PIC»: la CLI compila en memoria primero (--dry-run) y solo despues de confirmar escribe el programa y el perfil. */
+  async function retarget() {
+    if (!vscode.workspace.isTrusted) {
+      void vscode.window.showErrorMessage("PyxPic necesita un espacio de trabajo de confianza para cambiar el proyecto.");
+      return;
+    }
+    const projectFile = activeProject();
+    if (!projectFile) {
+      void vscode.window.showErrorMessage("Cambiar de PIC necesita un proyecto (pyxpic.toml). Créalo con «PyxPic: Crear proyecto».");
+      return;
+    }
+    const folder = path.dirname(projectFile);
+    if (vscode.workspace.textDocuments.some((d) => d.isDirty && d.uri.scheme === "file" && d.uri.fsPath.startsWith(folder + path.sep))) {
+      void vscode.window.showErrorMessage("Guarda los cambios del proyecto antes de cambiar de PIC.");
+      return;
+    }
+    const { tools } = toolsFor(projectFile);
+    let chosen;
+    try {
+      const report = await projectReport(projectFile);
+      const current = report.targets.find((t) => t.name === report.default_target) || report.targets[0];
+      chosen = await project.chooseTarget(vscode, await deviceList(tools, folder), current?.device);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`PyxPic no pudo preparar el cambio: ${error.message}`);
+      return;
+    }
+    if (!chosen) return;
+    const args = ["project", "retarget", chosen.device, "--clock", chosen.clock, "--project", projectFile, ...(tools.devices ? ["--devices-dir", tools.devices] : [])];
+    const show = (result) => {
+      output.clear();
+      output.append(`${result.stdout}${result.stderr}`);
+      output.show(true);
+    };
+    const preview = await cli(tools, [...args, "--dry-run"], folder);
+    if (preview.error) {
+      show(preview);
+      void vscode.window.showErrorMessage(`El proyecto no se puede pasar a ${chosen.device}; no se cambió nada. Consulta la salida PyxPic.`);
+      return;
+    }
+    const answer = await vscode.window.showInformationMessage(`¿Cambiar el proyecto a ${chosen.device} con ${chosen.clock}? Se actualizan el programa y pyxpic.toml (queda una copia .bak).`, { modal: true }, "Cambiar");
+    if (answer !== "Cambiar") return;
+    const result = await cli(tools, args, folder);
+    show(result);
+    if (result.error) void vscode.window.showErrorMessage("PyxPic no pudo cambiar el proyecto. Consulta la salida PyxPic.");
+    else {
+      refreshStatus();
+      void vscode.window.showInformationMessage(`Proyecto listo para ${chosen.device}.`);
+    }
   }
 
   /** Los datos y el ejecutable para hablar con la CLI desde un archivo o desde la carpeta abierta. */
@@ -653,6 +721,7 @@ function activate(context) {
     vscode.commands.registerCommand("pyxpic.examples", examples),
     vscode.commands.registerCommand("pyxpic.welcome", openWelcome),
     vscode.commands.registerCommand("pyxpic.newProject", newProject),
+    vscode.commands.registerCommand("pyxpic.retarget", retarget),
     vscode.commands.registerCommand("pyxpic.openFile", openFile),
     vscode.commands.registerCommand("pyxpic.openProject", openProject),
     vscode.commands.registerCommand("pyxpic.selectTarget", selectTarget),

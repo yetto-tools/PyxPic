@@ -128,3 +128,20 @@ Los errores de lectura salen con código de salida 2; los de contenido (disposit
 ## Verificación
 
 `crates/pyxpic-cli/tests/cli.rs` prueba también `project set` (solo cambian las claves pedidas y se conservan los comentarios, `--unset`, `--dry-run`, los cambios inválidos que no escriben nada, perfiles nuevos, claves de proyecto y los errores de uso), y `init` y `project check`: un proyecto recién creado que se revisa y compila sin editar nada, el alias del dispositivo y el reloj, que no se crea nada si algo no es válido ni se sobrescribe un archivo existente, todos los problemas por perfil (dispositivo contrario, reloj imposible, configuración inexistente o con valor inválido, programa ausente o con errores) sin modificar archivos, y el JSON versionado. `crates/pyxpic-cli/src/project.rs` (pruebas unitarias del análisis: un proyecto completo con rutas relativas, los errores con sus claves válidas y la elección de perfil) y `crates/pyxpic-cli/tests/cli.rs`: un proyecto que compila **sin argumentos** con dispositivo, reloj (`FOSC = HS`, 100 ms = 500 000 ciclos a 20 MHz), configuración (`WDTE`) y salida tomados del perfil y sin `from pyxpic.device import ...` en el fuente; el conflicto de dispositivo y el aviso de reloj; `--target`, `default_target` y `--config` sobre el perfil; los errores del archivo; y el ejemplo `examples/python/proyecto/` con sus dos destinos. **No probado en hardware.**
+
+## Elegir y cambiar de PIC
+
+```
+pyxpic devices                                   # los PIC para los que se puede compilar (--format json para herramientas)
+pyxpic init luz --device PIC16F628A              # proyecto nuevo para ese PIC
+pyxpic project retarget PIC16F628A               # pasa el proyecto actual a otro PIC
+pyxpic project retarget 16F887 --clock "Crystal 20MHz" --dry-run
+```
+
+`retarget` cambia la declaración del programa principal (`from pyxpic.device import ...` o `DEVICE ...`) y el perfil de destino; si el perfil
+se llamaba como el PIC anterior, también lo renombra. **Compila en memoria antes de escribir**: si un pin no existe, un reloj no vale o el
+backend del chip nuevo todavía no genera un periférico, muestra los errores y no cambia nada. No reasigna pines: eso lo decide quien programa.
+Deja un `.bak` de cada archivo modificado. Los demás perfiles del proyecto no se tocan.
+
+Criterios de aceptación (`crates/pyxpic-cli/tests/retarget.rs`): el proyecto cambiado compila; un cambio imposible no escribe ningún archivo;
+`devices` solo ofrece relojes que el chip acepta.

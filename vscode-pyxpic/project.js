@@ -2,10 +2,28 @@
 
 const path = require("node:path");
 
-const clocks = [
-  { label: "Oscilador interno · 4 MHz", value: "Internal 4MHz", detail: "Configuración inicial del PIC16F887; no requiere componentes externos." },
-  { label: "Cristal · 20 MHz", value: "Crystal 20MHz", detail: "Cristal o resonador en OSC1/OSC2; reserva RA6 y RA7." },
-];
+/**
+ * Los dos pasos del asistente: PIC y reloj. Los datos salen de `pyxpic devices --format json`, asi que un Device Pack nuevo aparece solo.
+ * Devuelve `{ device, clock }` o `undefined` si se cancela.
+ */
+async function chooseTarget(vscode, devices, current) {
+  const items = devices.filter((d) => d.buildable).map((d) => ({
+    label: d.name,
+    description: `${d.name === current ? "actual · " : ""}${d.program_words} palabras · ${d.ram_bytes} B de RAM · ${d.io_pins} pines de E/S`,
+    detail: d.limits ? `Limitado: ${d.limits}` : undefined,
+    data: d,
+  }));
+  if (!items.length) {
+    void vscode.window.showErrorMessage("PyxPic no encontró Device Packs para compilar. Usa «PyxPic: Seleccionar Device Packs».");
+    return undefined;
+  }
+  const device = await vscode.window.showQuickPick(items, { title: "PyxPic · Paso 1 de 2: PIC", placeHolder: "¿Para qué PIC vas a compilar?" });
+  if (!device) return undefined;
+  const clocks = device.data.clocks.map((c) => ({ label: c.label, detail: c.detail, value: c.value }));
+  const clock = await vscode.window.showQuickPick(clocks, { title: "PyxPic · Paso 2 de 2: reloj", placeHolder: `Reloj del ${device.label}` });
+  if (!clock) return undefined;
+  return { device: device.label, clock: clock.value };
+}
 
 /** `Crystal 20MHz` -> `CLOCK: Crystal` y `FREQUENCY: 20MHz` (dos lineas, como en el fuente). */
 function clockLines(clock) {
@@ -14,10 +32,10 @@ function clockLines(clock) {
 }
 
 function source(device, clock) {
-  return `"""Proyecto PyxPic para ${device}.\n\nEl firmware se compila de Python a instrucciones nativas del PIC.\n"""\nfrom pyxpic.device import ${device}\nfrom pyxpic.periph.gpio import RD0\nfrom pyxpic.system.time import pause\n\n${clockLines(clock)}\n\n\ndef main() -> None:\n    RD0.output()\n    while True:\n        RD0.toggle()\n        pause(500)\n`;
+  return `"""Proyecto PyxPic para ${device}.\n\nEl firmware se compila de Python a instrucciones nativas del PIC.\n"""\nfrom pyxpic.device import ${device}\nfrom pyxpic.periph.gpio import RB0\nfrom pyxpic.system.time import pause\n\n${clockLines(clock)}\n\n\ndef main() -> None:\n    RB0.output()\n    while True:\n        RB0.toggle()\n        pause(500)\n`;
 }
 
-async function create(vscode, init) {
+async function create(vscode, init, devices) {
   const name = await vscode.window.showInputBox({
     title: "Crear proyecto PyxPic",
     prompt: "Nombre del proyecto",
@@ -26,10 +44,8 @@ async function create(vscode, init) {
   if (!name) return undefined;
   const location = await vscode.window.showOpenDialog({ canSelectFiles: false, canSelectFolders: true, canSelectMany: false, openLabel: "Elegir carpeta" });
   if (!location || !location[0]) return undefined;
-  const device = await vscode.window.showQuickPick([{ label: "PIC16F887", detail: "Primer dispositivo soportado por PyxPic." }], { title: "Dispositivo objetivo", placeHolder: "Selecciona un dispositivo" });
-  if (!device) return undefined;
-  const clock = await vscode.window.showQuickPick(clocks, { title: "Reloj del proyecto", placeHolder: "Selecciona la fuente y frecuencia del reloj" });
-  if (!clock) return undefined;
+  const target = await chooseTarget(vscode, devices);
+  if (!target) return undefined;
 
   const root = vscode.Uri.joinPath(location[0], name);
   try {
@@ -44,19 +60,19 @@ async function create(vscode, init) {
   if (init) {
     // la CLI escribe pyxpic.toml y main.py (un proyecto, no un archivo suelto)
     try {
-      await init(root.fsPath, name, device.label, clock.value);
+      await init(root.fsPath, name, target.device, target.clock);
     } catch (error) {
       void vscode.window.showErrorMessage(`No se creó el proyecto: ${error instanceof Error ? error.message : String(error)}`);
       return undefined;
     }
   } else {
-    await vscode.workspace.fs.writeFile(main, Buffer.from(source(device.label, clock.value), "utf8"));
+    await vscode.workspace.fs.writeFile(main, Buffer.from(source(target.device, target.clock), "utf8"));
   }
-  return { root, main, device: device.label, clock: clock.value };
+  return { root, main, device: target.device, clock: target.clock };
 }
 
 function projectName(uri) {
   return path.basename(uri.fsPath);
 }
 
-module.exports = { clocks, source, create, projectName };
+module.exports = { source, create, chooseTarget, projectName };

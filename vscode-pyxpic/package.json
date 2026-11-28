@@ -1,8 +1,8 @@
 {
   "name": "pyxpic-ide",
   "displayName": "PyxPic IDE",
-  "description": "v0.1.32 · Comprueba y compila programas PyxPic desde VS Code.",
-  "version": "0.1.32",
+  "description": "v0.1.33 · Comprueba y compila programas PyxPic desde VS Code.",
+  "version": "0.1.33",
   "publisher": "pyxpic",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -48,6 +48,7 @@
       { "command": "pyxpic.openFile", "title": "PyxPic: Abrir archivo" },
       { "command": "pyxpic.pinout", "title": "PyxPic: Ver pinout" },
       { "command": "pyxpic.selectTarget", "title": "PyxPic: Perfil de destino" },
+      { "command": "pyxpic.retarget", "title": "PyxPic: Cambiar de PIC" },
       { "command": "pyxpic.projectCheck", "title": "PyxPic: Revisar proyecto" },
       { "command": "pyxpic.mode", "title": "PyxPic: Archivo suelto o proyecto" },
       { "command": "pyxpic.status", "title": "PyxPic: Estado y ayuda" },

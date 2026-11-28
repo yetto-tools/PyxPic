@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "sources": [
+    "DS40044G cap. 14.2 (p.99-101): ocho modos de oscilador; INTOSC de 4 MHz (el de 48 kHz, PCON<OSCF>, todavia no se admite)",
+    "DS40044G tabla 17-4 (p.144): LP hasta 200 kHz, XT 0,1-4 MHz, HS 1-20 MHz, EC hasta 20 MHz, RC hasta 4 MHz"
+  ],
+  "internal": {
+    "fosc": "INTRC_NOCLKOUT",
+    "reset_hz": 4000000,
+    "reset_ircf": 6,
+    "frequencies": [
+      {
+        "hz": 4000000,
+        "ircf": 6
+      }
+    ]
+  },
+  "modes": [
+    {
+      "mode": "LP",
+      "fosc": "LP",
+      "sources": [
+        "Crystal",
+        "Resonator"
+      ],
+      "min_hz": 30000,
+      "max_hz": 200000,
+      "pins": [
+        [
+          "RA7",
+          "OSC1"
+        ],
+        [
+          "RA6",
+          "OSC2"
+        ]
+      ]
+    },
+    {
+      "mode": "XT",
+      "fosc": "XT",
+      "sources": [
+        "Crystal",
+        "Resonator"
+      ],
+      "min_hz": 100000,
+      "max_hz": 4000000,
+      "pins": [
+        [
+          "RA7",
+          "OSC1"
+        ],
+        [
+          "RA6",
+          "OSC2"
+        ]
+      ]
+    },
+    {
+      "mode": "HS",
+      "fosc": "HS",
+      "sources": [
+        "Crystal",
+        "Resonator"
+      ],
+      "min_hz": 1000000,
+      "max_hz": 20000000,
+      "pins": [
+        [
+          "RA7",
+          "OSC1"
+        ],
+        [
+          "RA6",
+          "OSC2"
+        ]
+      ]
+    },
+    {
+      "mode": "EC",
+      "fosc": "EC",
+      "sources": [
+        "External"
+      ],
+      "min_hz": 1,
+      "max_hz": 20000000,
+      "pins": [
+        [
+          "RA7",
+          "CLKIN"
+        ]
+      ]
+    },
+    {
+      "mode": "RC",
+      "fosc": "EXTRC_NOCLKOUT",
+      "sources": [
+        "RC"
+      ],
+      "min_hz": 1,
+      "max_hz": 4000000,
+      "pins": [
+        [
+          "RA7",
+          "OSC1"
+        ]
+      ]
+    }
+  ],
+  "clock_output": [
+    {
+      "mode": "INTOSC",
+      "off": "INTRC_NOCLKOUT",
+      "on": "INTRC_CLKOUT",
+      "pin": [
+        "RA6",
+        "CLKOUT"
+      ]
+    },
+    {
+      "mode": "RC",
+      "off": "EXTRC_NOCLKOUT",
+      "on": "EXTRC_CLKOUT",
+      "pin": [
+        "RA6",
+        "CLKOUT"
+      ]
+    }
+  ]
+}

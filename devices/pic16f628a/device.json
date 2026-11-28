@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "name": "PIC16F628A",
+  "vendor": "Microchip",
+  "family": "PIC16 mid-range (PIC14)",
+  "cpu": {
+    "core": "pic14",
+    "data_bits": 8,
+    "instruction_bits": 14,
+    "instruction_count": 35,
+    "max_clock_hz": 20000000,
+    "clocks_per_instruction": 4,
+    "default_clock_hz": 4000000,
+    "vdd_min_uv": 3000000,
+    "vdd_max_uv": 5500000
+  },
+  "io_pins": 15,
+  "peripherals": {
+    "eeprom_bytes": 128,
+    "ccp": 1,
+    "usart": 1,
+    "comparators": 2,
+    "timers_8bit": 2,
+    "timers_16bit": 1
+  },
+  "pyxpic": {
+    "support_level": "experimental",
+    "max_int_bits": 32
+  },
+  "sources": [
+    "DS40044G: https://ww1.microchip.com/downloads/en/DeviceDoc/40044G.pdf (p.3-4: caracteristicas y pines; p.136, figura 17-1: 3,0 V a 5,5 V en el PIC16F628A; el rango desde 2,0 V es del PIC16LF628A)"
+  ]
+}

@@ -26,6 +26,8 @@ const USAGE: &str = "uso:
   pyxpic init [carpeta] [--name N] [--device PIC16F887] [--clock DECLARACION]   crea pyxpic.toml y un main.py de partida
   pyxpic project check [--project pyxpic.toml] [--target perfil] [--format text|json] [--devices-dir dir]   revisa el proyecto sin modificar nada
   pyxpic project set [--target perfil] [--create] [--dry-run] [--unset CLAVE] [CLAVE=VALOR]...   cambia un perfil (valida antes de escribir)
+  pyxpic project retarget PIC [--clock DECLARACION] [--target perfil] [--dry-run]   pasa el proyecto a otro PIC (programa y perfil; compila antes de escribir)
+  pyxpic devices [--format text|json] [--devices-dir dir]   los PIC para los que se puede compilar y sus relojes
 
 opciones:
   --project <pyxpic.toml>  archivo de proyecto (por defecto se busca el mas cercano al programa; sin archivo, usa su 'main')
@@ -208,6 +210,7 @@ fn main() -> ExitCode {
     match args.first().map(String::as_str) {
         Some("device") => device(&args[1..]),
         Some("init") => workflow::init(&args[1..]),
+        Some("devices") => workflow::devices_cmd(&args[1..]),
         Some("project") => workflow::project_cmd(&args[1..]),
         Some("clean") => clean::clean(&args[1..]),
         Some("monitor") => monitor::monitor(&args[1..]),
@@ -764,7 +767,7 @@ fn compile(cmd: &str, args: &[String]) -> ExitCode {
         println!("  Reloj:         {hz} Hz ({source})");
     }
     if let Some(cs) = &module.clock_source {
-        println!("  Oscilador:     {}", cs.describe());
+        println!("  Oscilador:     {}", cs.describe_for(pack.registers.get("OSCCON").is_some()));
     }
     println!("  Configuracion: {cfg_text}");
     ExitCode::SUCCESS

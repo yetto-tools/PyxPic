@@ -82,7 +82,7 @@ test("los comandos comprueban y compilan con la CLI real y muestran sus errores"
   const sections = actionTree.getChildren();
   assert.deepEqual(sections.map((section) => section.label), ["Proyecto", "Construir", "Entorno"]);
   assert.deepEqual(actionTree.getChildren(sections[0]).map((action) => action.command), ["pyxpic.welcome", "pyxpic.newProject", "pyxpic.openProject", "pyxpic.openFile", "pyxpic.examples"]);
-  assert.deepEqual(actionTree.getChildren(sections[1]).map((action) => action.command), ["pyxpic.check", "pyxpic.build", "pyxpic.clean", "pyxpic.selectTarget", "pyxpic.projectCheck", "pyxpic.status"]);
+  assert.deepEqual(actionTree.getChildren(sections[1]).map((action) => action.command), ["pyxpic.check", "pyxpic.build", "pyxpic.clean", "pyxpic.selectTarget", "pyxpic.retarget", "pyxpic.projectCheck", "pyxpic.status"]);
   assert.deepEqual(actionTree.getChildren(sections[2]).map((action) => action.command), ["pyxpic.selectCompiler", "pyxpic.selectDevices", "pyxpic.selectPicAs", "pyxpic.settings"]);
   assert.ok(webviews.has("pyxpic.pinout"));
   assert.ok(webviews.has("pyxpic.resources"));

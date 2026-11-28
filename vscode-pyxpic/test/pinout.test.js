@@ -20,7 +20,10 @@ test("carga el PDIP-40 desde el Device Pack", () => {
   assert.equal(model.packages[0].name, "PDIP40");
   assert.equal(model.packages[0].pins.length, 40);
   assert.deepEqual(model.packages[0].pins.find((pin) => pin.number === 19), { number: 19, name: "RD0", port: "D", bit: 0, functions: [] });
-  assert.deepEqual(pinout.catalogDevices(devices).map((entry) => entry.name), ["PIC16F887"]);
+  assert.deepEqual(pinout.catalogDevices(devices).map((entry) => entry.name), ["PIC16F628A", "PIC16F887"]);
+  const small = pinout.readDevice(devices, "PIC16F628A");
+  assert.equal(small.packages[0].name, "PDIP18");
+  assert.equal(small.packages[0].pins.find((pin) => pin.number === 6).name, "RB0");
 });
 
 test("renderiza la orientación física y funciones accesibles", () => {

@@ -131,7 +131,7 @@ function harness(initialFile) {
       showInputBox: async () => state.inputs.shift(),
       showTextDocument: async (uri) => { state.shown.push(uri.fsPath); },
       showErrorMessage: async (message) => { state.errors.push(message); settle(); return state.errorAction; },
-      showInformationMessage: async (message) => { state.messages.push(message); settle(); },
+      showInformationMessage: async (message) => { state.messages.push(message); settle(); return state.infoAction; },
     },
     workspace: {
       isTrusted: true,
@@ -272,6 +272,35 @@ test("Crear proyecto crea un proyecto de verdad con pyxpic.toml", async () => {
   assert.ok(fs.existsSync(path.join(created, "main.py")));
   const check = execFileSync(binary, ["project", "check", "--project", path.join(created, "pyxpic.toml")], { cwd: root, encoding: "utf8" });
   assert.match(check, /perfil pic16f887: ok/);
+});
+
+test("Crear proyecto para el PIC16F628A: el asistente ofrece sus relojes y el proyecto compila", async () => {
+  const parent = temp("crear628");
+  const h = harness(path.join(parent, "x.py"));
+  h.inputs.push("luz");
+  h.openQueue.push([{ fsPath: parent }]);
+  h.pickQueue.push((item) => item.label === "PIC16F628A", (item) => item.value === "Internal 4MHz");
+  await h.commands.get("pyxpic.newProject")();
+  assert.ok(!h.pickItems.some((item) => item.value === "Internal 8MHz"), "el 628A no tiene 8 MHz internos");
+  const created = path.join(parent, "luz");
+  const built = execFileSync(binary, ["build", "--project", path.join(created, "pyxpic.toml"), "--devices-dir", devices], { cwd: created, encoding: "utf8" });
+  assert.match(built, /PIC16F628A/);
+});
+
+test("Cambiar de PIC pide confirmación y actualiza el programa y el perfil", async () => {
+  const dir = temp("cambiar");
+  execFileSync(binary, ["init", dir, "--name", "cambiar", "--devices-dir", devices], { cwd: root });
+  const h = harness(path.join(dir, "main.py"));
+  const read = () => fs.readFileSync(path.join(dir, "main.py"), "utf8");
+  const choose = () => h.pickQueue.push((item) => item.label === "PIC16F628A", (item) => item.value === "Internal 4MHz");
+  choose();
+  await h.commands.get("pyxpic.retarget")();
+  assert.match(read(), /import PIC16F887/, "sin confirmar no cambia nada");
+  choose();
+  h.infoAction = "Cambiar";
+  await h.commands.get("pyxpic.retarget")();
+  assert.match(read(), /import PIC16F628A/);
+  assert.match(fs.readFileSync(path.join(dir, "pyxpic.toml"), "utf8"), /device = "PIC16F628A"/);
 });
 
 test("el menú de la barra de estado cambia entre proyecto y archivo suelto", async () => {

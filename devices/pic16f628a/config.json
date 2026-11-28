@@ -1,0 +1,161 @@
+{
+  "schema_version": 3,
+  "source": "DS40044G p.98 (Registro 14-1)",
+  "word_bits": 14,
+  "space": {
+    "start": "0x2000",
+    "end": "0x3FFF",
+    "note": "solo accesible durante la programacion"
+  },
+  "id_locations": [
+    {
+      "name": "IDLOC0",
+      "address": "0x2000",
+      "mask": "0x7F"
+    },
+    {
+      "name": "IDLOC1",
+      "address": "0x2001",
+      "mask": "0x7F"
+    },
+    {
+      "name": "IDLOC2",
+      "address": "0x2002",
+      "mask": "0x7F"
+    },
+    {
+      "name": "IDLOC3",
+      "address": "0x2003",
+      "mask": "0x7F"
+    }
+  ],
+  "words": [
+    {
+      "name": "CONFIG",
+      "address": "0x2007",
+      "default": "0x3FFF",
+      "build_default": "0x3F18",
+      "fields": [
+        {
+          "name": "CP",
+          "lsb": 13,
+          "width": 1,
+          "names": {
+            "ON": "0",
+            "OFF": "1"
+          },
+          "values": {
+            "1": "proteccion de codigo deshabilitada",
+            "0": "0000h-07FFh protegido"
+          }
+        },
+        {
+          "name": "CPD",
+          "lsb": 8,
+          "width": 1,
+          "names": {
+            "ON": "0",
+            "OFF": "1"
+          },
+          "values": {
+            "1": "proteccion de datos deshabilitada",
+            "0": "proteccion de datos habilitada"
+          }
+        },
+        {
+          "name": "LVP",
+          "lsb": 7,
+          "width": 1,
+          "names": {
+            "ON": "1",
+            "OFF": "0"
+          },
+          "values": {
+            "1": "RB4/PGM con programacion de bajo voltaje",
+            "0": "RB4 es E/S digital; HV en MCLR para programar"
+          }
+        },
+        {
+          "name": "BOREN",
+          "lsb": 6,
+          "width": 1,
+          "names": {
+            "ON": "1",
+            "OFF": "0"
+          },
+          "values": {
+            "1": "BOR habilitado",
+            "0": "BOR deshabilitado"
+          }
+        },
+        {
+          "name": "MCLRE",
+          "lsb": 5,
+          "width": 1,
+          "names": {
+            "ON": "1",
+            "OFF": "0"
+          },
+          "values": {
+            "1": "RA5/MCLR funciona como MCLR",
+            "0": "RA5 es entrada digital; MCLR interno a VDD"
+          }
+        },
+        {
+          "name": "PWRTE",
+          "lsb": 3,
+          "width": 1,
+          "names": {
+            "ON": "0",
+            "OFF": "1"
+          },
+          "values": {
+            "1": "PWRT deshabilitado",
+            "0": "PWRT habilitado"
+          }
+        },
+        {
+          "name": "WDTE",
+          "lsb": 2,
+          "width": 1,
+          "names": {
+            "ON": "1",
+            "OFF": "0"
+          },
+          "values": {
+            "1": "WDT habilitado",
+            "0": "WDT deshabilitado"
+          }
+        },
+        {
+          "name": "FOSC",
+          "lsb": 0,
+          "width": 2,
+          "extra_bits": [
+            4
+          ],
+          "names": {
+            "LP": "0",
+            "XT": "1",
+            "HS": "2",
+            "EC": "3",
+            "INTRC_NOCLKOUT": "4",
+            "INTRC_CLKOUT": "5",
+            "EXTRC_NOCLKOUT": "6",
+            "EXTRC_CLKOUT": "7"
+          },
+          "values": {
+            "7": "RC, CLKOUT en RA6",
+            "6": "RC, E/S en RA6",
+            "5": "INTOSC, CLKOUT en RA6, E/S en RA7",
+            "4": "INTOSC, E/S en RA6 y RA7",
+            "3": "EC, CLKIN en RA7, E/S en RA6",
+            "2": "HS, cristal de alta velocidad",
+            "1": "XT, cristal/resonador",
+            "0": "LP, cristal de bajo consumo"
+          }
+        }
+      ]
+    }
+  ]
+}

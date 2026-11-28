@@ -115,6 +115,9 @@ pub struct DataMemory {
     pub sfr: Vec<Range>,
     pub bank_select: BankSelect,
     pub gpr: Vec<Range>,
+    /// Huecos del banco sin SFR ni GPR (schema 2): en el PIC16F628A, 150h-16Fh y 1A0h-1EFh.
+    #[serde(default)]
+    pub unimplemented: Vec<Range>,
     pub common: Common,
     pub ram_bytes: u32,
     pub source: String,
@@ -290,11 +293,32 @@ pub struct ConfigField {
     pub name: String,
     pub lsb: u32,
     pub width: u32,
+    /// Bits sueltos que completan el campo por encima de los `width` contiguos (schema 3), del menos al mas significativo:
+    /// en el PIC16F628A `FOSC` es `FOSC1:FOSC0` en los bits 1:0 y `FOSC2` en el bit 4 (DS40044G p.98).
+    #[serde(default)]
+    pub extra_bits: Vec<u32>,
     /// Nombre del valor en el ensamblador PIC-AS (`CONFIG WDTE = OFF`) -> valor (texto decimal). Solo los que tienen nombre.
     #[serde(default)]
     pub names: BTreeMap<String, String>,
     /// Valor (como texto decimal) -> significado.
     pub values: BTreeMap<String, String>,
+}
+
+impl ConfigField {
+    /// Posicion en la palabra de cada bit del valor, del menos al mas significativo.
+    pub fn positions(&self) -> impl Iterator<Item = u32> + '_ {
+        (self.lsb..self.lsb.saturating_add(self.width)).chain(self.extra_bits.iter().copied())
+    }
+
+    /// Bits que tiene el valor del campo.
+    pub fn bit_count(&self) -> u32 {
+        self.width + self.extra_bits.len() as u32
+    }
+
+    /// `word` con el campo puesto a `value`; los demas bits no cambian.
+    pub fn insert(&self, word: u16, value: u64) -> u16 {
+        self.positions().enumerate().fold(word, |w, (i, p)| (w & !(1 << p)) | ((((value >> i) & 1) as u16) << p))
+    }
 }
 
 impl Config {
@@ -332,19 +356,18 @@ impl Config {
         let v = match f.names.get(value) {
             Some(n) => n.parse::<u64>().map_err(|_| format!("{setting}: valor del pack invalido"))?,
             None => match num(value) {
-                Some(v) if v < (1 << f.width) => v,
+                Some(v) if v < (1 << f.bit_count()) => v,
                 _ => {
                     let mut opts: Vec<String> = f.names.iter().map(|(n, v)| format!("{n} ({})", f.values.get(v).map(String::as_str).unwrap_or("?"))).collect();
                     if opts.is_empty() {
                         opts = f.values.iter().map(|(v, d)| format!("{v} ({d})")).collect();
                     }
-                    return Err(format!("{setting} = {value}: valor no valido; opciones: {}; o un numero 0..={}", opts.join(", "), (1u64 << f.width) - 1));
+                    return Err(format!("{setting} = {value}: valor no valido; opciones: {}; o un numero 0..={}", opts.join(", "), (1u64 << f.bit_count()) - 1));
                 }
             },
         };
         let i = slot(w.address.0, words).ok_or_else(|| format!("{setting} esta en {}, que no se programa", w.name))?;
-        let mask = (((1u32 << f.width) - 1) << f.lsb) as u16;
-        words[i].1 = (words[i].1 & !mask) | ((v as u16) << f.lsb);
+        words[i].1 = f.insert(words[i].1, v);
         Ok(())
     }
 }
@@ -724,12 +747,19 @@ impl DevicePack {
             ("registers.json", self.registers.schema_version),
             ("peripherals.json", self.peripherals.schema_version),
         ] {
-            if v != SCHEMA_VERSION && !(file == "config.json" && v == 2) {
+            let newer = (file == "config.json" && matches!(v, 2 | 3)) || (file == "memory.json" && v == 2);
+            if v != SCHEMA_VERSION && !newer {
                 e.push(format!("{file}: schema_version {v} no soportada (se espera {SCHEMA_VERSION})"));
             }
         }
         if self.config.schema_version == 1 && !self.config.id_locations.is_empty() {
             e.push("config.json: id_locations requiere schema_version 2".into());
+        }
+        if self.config.schema_version < 3 && self.config.words.iter().any(|w| w.fields.iter().any(|f| !f.extra_bits.is_empty())) {
+            e.push("config.json: extra_bits requiere schema_version 3".into());
+        }
+        if self.memory.schema_version < 2 && !self.memory.data.unimplemented.is_empty() {
+            e.push("memory.json: data.unimplemented requiere schema_version 2".into());
         }
     }
 
@@ -821,6 +851,9 @@ impl DevicePack {
             parts.push((sfr.start.0, sfr.end.0, "SFR"));
             for r in d.gpr.iter().filter(|r| r.start.0 >= base && r.start.0 <= top) {
                 parts.push((r.start.0, r.end.0, "GPR"));
+            }
+            for r in d.unimplemented.iter().filter(|r| r.start.0 >= base && r.start.0 <= top) {
+                parts.push((r.start.0, r.end.0, "sin implementar"));
             }
             if b > 0 {
                 if let Some(m) = c.mirrors.get(b as usize - 1) {
@@ -1021,7 +1054,9 @@ impl DevicePack {
                         e.push(format!("registers.json: el pin {} no tiene su bit con nombre en PORT{port}/TRIS{port}", p.name));
                     }
                 }
-                for f in &p.functions {
+                // sin ANSEL (PIC16F628A) las entradas analogicas son de los comparadores y se eligen por modo en CMCON
+                let by_cmcon = rg.get("ANSEL").is_none() && rg.get("CMCON").is_some();
+                for f in p.functions.iter().filter(|_| !by_cmcon) {
                     if let Some(n) = f.strip_prefix("AN").and_then(|n| n.parse::<u32>().ok()) {
                         let reg = if n < 8 { "ANSEL" } else { "ANSELH" };
                         if !rg.get(reg).is_some_and(|r| r.bits.iter().any(|x| x.as_deref() == Some(format!("ANS{n}").as_str()))) {
@@ -1120,15 +1155,18 @@ impl DevicePack {
             e.push("peripherals.json/device.json: la cantidad de temporizadores no coincide".into());
         }
         let adc_pins = pr.get("ADC").map_or(0, |a| a.pins.iter().filter(|x| x.function.starts_with("AN")).count() as u32);
-        if adc_pins != want("adc_channels") || pr.get("ADC").and_then(|a| a.bits) != Some(want("adc_bits")) {
+        if adc_pins != want("adc_channels") || pr.get("ADC").and_then(|a| a.bits).unwrap_or(0) != want("adc_bits") {
             e.push("peripherals.json/device.json: canales o bits del ADC no coinciden".into());
         }
-        if pr.get("COMPARATORS").map_or(0, |c| c.enable.len() as u32) != want("comparators") {
+        // un modulo con un bit de encendido por comparador (C1ON, C2ON) los cuenta; el que se configura por modo (CMCON) no declara ninguno
+        let by_mode = |c: &Peripheral| c.enable.is_empty() && c.registers.iter().any(|r| r == "CMCON");
+        if pr.get("COMPARATORS").map_or(want("comparators") != 0, |c| !by_mode(c) && c.enable.len() as u32 != want("comparators")) {
             e.push("peripherals.json/device.json: la cantidad de comparadores no coincide".into());
         }
         let n = |name: &str| u32::from(pr.get(name).is_some());
-        if n("ECCP") != want("eccp") || n("CCP2") != want("ccp") || n("EUSART") != want("eusart") || n("MSSP") != want("mssp") {
-            e.push("peripherals.json/device.json: CCP, ECCP, EUSART o MSSP no coinciden con device.json".into());
+        let ccp = n("CCP1") + n("CCP2");
+        if n("ECCP") != want("eccp") || ccp != want("ccp") || n("EUSART") != want("eusart") || n("USART") != want("usart") || n("MSSP") != want("mssp") {
+            e.push("peripherals.json/device.json: CCP, ECCP, EUSART o MSSP (o USART) no coinciden con device.json".into());
         }
     }
 
@@ -1165,26 +1203,26 @@ impl DevicePack {
             }
             let mut used = 0u64;
             for f in &w.fields {
-                if f.width == 0 || f.lsb + f.width > c.word_bits {
-                    e.push(format!("{ctx}.{}: bits {}..{} fuera de la palabra", f.name, f.lsb, f.lsb + f.width));
+                if f.width == 0 || f.lsb + f.width > c.word_bits || f.extra_bits.iter().any(|&b| b >= c.word_bits) {
+                    e.push(format!("{ctx}.{}: bits {:?} fuera de la palabra", f.name, f.positions().collect::<Vec<_>>()));
                     continue;
                 }
-                let fm = ((1u64 << f.width) - 1) << f.lsb;
-                if used & fm != 0 {
+                let fm = f.positions().fold(0u64, |m, p| m | (1 << p));
+                if used & fm != 0 || fm.count_ones() != f.bit_count() {
                     e.push(format!("{ctx}.{}: se solapa con otro campo", f.name));
                 }
                 used |= fm;
                 let mut seen = BTreeSet::new();
                 for k in f.values.keys() {
                     match k.parse::<u64>() {
-                        Ok(v) if v < (1 << f.width) => {
+                        Ok(v) if v < (1 << f.bit_count()) => {
                             seen.insert(v);
                         }
-                        _ => e.push(format!("{ctx}.{}: valor '{k}' no cabe en {} bit(s)", f.name, f.width)),
+                        _ => e.push(format!("{ctx}.{}: valor '{k}' no cabe en {} bit(s)", f.name, f.bit_count())),
                     }
                 }
-                if seen.len() as u64 != 1 << f.width {
-                    e.push(format!("{ctx}.{}: faltan valores (hay {} de {})", f.name, seen.len(), 1u64 << f.width));
+                if seen.len() as u64 != 1 << f.bit_count() {
+                    e.push(format!("{ctx}.{}: faltan valores (hay {} de {})", f.name, seen.len(), 1u64 << f.bit_count()));
                 }
                 let mut named = BTreeSet::new();
                 for (n, v) in &f.names {

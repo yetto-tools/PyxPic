@@ -20,6 +20,7 @@ const sections = [
     { label: "Compilar a HEX", command: "pyxpic.build", icon: "tools" },
     { label: "Limpiar compilación", command: "pyxpic.clean", icon: "trash" },
     { label: "Perfil de destino", command: "pyxpic.selectTarget", icon: "target" },
+    { label: "Cambiar de PIC…", command: "pyxpic.retarget", icon: "arrow-swap" },
     { label: "Revisar proyecto", command: "pyxpic.projectCheck", icon: "checklist" },
     { label: "Estado y ayuda", command: "pyxpic.status", icon: "info" },
     ],

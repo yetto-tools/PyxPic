@@ -171,6 +171,11 @@ impl TargetReport {
 
 /// Revisa un perfil sin escribir nada: dispositivo y pack, reloj, configuracion y el analisis del programa para ese destino.
 pub fn check_target(project: &Project, name: &str, t: &Target) -> TargetReport {
+    check_target_with(project, name, t, None)
+}
+
+/// `check_target` con el programa en memoria (`source`) en lugar del que hay en disco.
+fn check_target_with(project: &Project, name: &str, t: &Target, source: Option<&str>) -> TargetReport {
     let mut r = TargetReport {
         name: name.to_string(),
         device: t.device.clone(),
@@ -181,7 +186,7 @@ pub fn check_target(project: &Project, name: &str, t: &Target) -> TargetReport {
     };
     let devices_dir = project.devices_dir.as_ref().map(|d| d.to_string_lossy().into_owned());
     let src = match &project.main {
-        Some(m) => match std::fs::read_to_string(m) {
+        Some(m) => match source.map(|s| Ok(s.to_string())).unwrap_or_else(|| std::fs::read_to_string(m)) {
             Ok(s) => Some(s),
             Err(e) => {
                 r.errors.push(format!("no se pudo leer el programa '{}': {e}", m.display()));
@@ -218,7 +223,7 @@ pub fn check_target(project: &Project, name: &str, t: &Target) -> TargetReport {
     if let Some(text) = &t.clock {
         match pyxpic_frontend::parse_clock(text, &target) {
             Ok(c) => {
-                r.clock_description = Some(c.describe());
+                r.clock_description = Some(c.describe_for(pack.registers.get("OSCCON").is_some()));
                 project_clock = Some(c);
             }
             Err(e) => r.errors.push(format!("[target.{name}] clock = \"{text}\": {}", e.trim().replace('\n', " "))),
@@ -284,8 +289,11 @@ pub fn project_cmd(args: &[String]) -> ExitCode {
     if sub == "set" {
         return set_cmd(&args[1..]);
     }
+    if sub == "retarget" {
+        return retarget_cmd(&args[1..]);
+    }
     if sub != "check" {
-        eprintln!("'pyxpic project {sub}' no existe (hay: check, set)");
+        eprintln!("'pyxpic project {sub}' no existe (hay: check, set, retarget)");
         return ExitCode::from(2);
     }
     let (mut project_arg, mut target_arg, mut json, mut devices_arg) = (None::<String>, None::<String>, false, None::<String>);
@@ -612,5 +620,291 @@ pub fn set_cmd(args: &[String]) -> ExitCode {
         return ExitCode::from(2);
     }
     println!("{} actualizado (la version anterior queda en {})", file.display(), bak.display());
+    ExitCode::SUCCESS
+}
+
+// ---- pyxpic devices ----------------------------------------------------------------------------------------------------------------
+
+/// Los Device Packs de las mismas raices que `locate_pack`, uno por nombre y en orden.
+fn all_packs(extra: Option<&str>) -> Vec<DevicePack> {
+    let mut roots: Vec<String> = Vec::new();
+    roots.extend(extra.map(String::from));
+    roots.extend(std::env::var("PYXPIC_DEVICES").ok());
+    roots.push("devices".into());
+    let mut packs = std::collections::BTreeMap::new();
+    for root in &roots {
+        let Ok(rd) = std::fs::read_dir(root) else { continue };
+        for dir in rd.flatten().map(|e| e.path()).filter(|p| p.join("device.json").is_file()) {
+            match load_pack_text(&dir.to_string_lossy()) {
+                Ok(p) => {
+                    packs.entry(p.device.name.clone()).or_insert(p);
+                }
+                Err((m, _)) => eprintln!("aviso: {m}"),
+            }
+        }
+    }
+    packs.into_values().collect()
+}
+
+/// Relojes que se ofrecen para un dispositivo, como los escribe `pyxpic.toml`: primero el del reset, luego el resto del oscilador interno y
+/// los cristales habituales que admite. Cada uno se valida con las mismas reglas que el fuente.
+fn clock_choices(pack: &DevicePack) -> Vec<(String, String, String)> {
+    let target = pack.target_profile();
+    let mut out = Vec::new();
+    if let Some(osc) = &target.oscillator {
+        let mut internal: Vec<u32> = osc.internal.iter().map(|f| f.0).collect();
+        internal.sort_by_key(|&hz| (hz != osc.reset_hz, std::cmp::Reverse(hz)));
+        for hz in internal {
+            out.push((format!("Oscilador interno · {}", pyxpic_frontend::clock::fmt_hz(hz)), format!("Internal {}", hz_expr(hz)), "Sin componentes externos".to_string()));
+        }
+    }
+    for hz in [20_000_000u32, 8_000_000, 4_000_000] {
+        out.push((format!("Cristal · {}", pyxpic_frontend::clock::fmt_hz(hz)), format!("Crystal {}", hz_expr(hz)), "Cristal o resonador en OSC1/OSC2; esos pines dejan de ser E/S".to_string()));
+    }
+    out.retain(|(_, value, _)| pyxpic_frontend::parse_clock(value, &target).is_ok());
+    out
+}
+
+/// `pyxpic devices [--format text|json] [--devices-dir dir]`: lo que usa el asistente de la extension.
+pub fn devices_cmd(args: &[String]) -> ExitCode {
+    let (mut json, mut devices_dir) = (false, None::<String>);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--devices-dir" => devices_dir = it.next().cloned(),
+            "--format" => match it.next().map(String::as_str) {
+                Some("json") => json = true,
+                Some("text") => json = false,
+                _ => {
+                    eprintln!("--format es 'text' o 'json'");
+                    return ExitCode::from(2);
+                }
+            },
+            _ => return crate::usage(),
+        }
+    }
+    let packs = all_packs(devices_dir.as_deref());
+    if json {
+        use serde_json::json;
+        let devices: Vec<_> = packs
+            .iter()
+            .map(|p| {
+                let name = p.device.name.as_str();
+                json!({
+                    "name": name,
+                    "family": p.device.family,
+                    "program_words": p.memory.program.words,
+                    "ram_bytes": p.memory.data.ram_bytes,
+                    "eeprom_bytes": p.memory.eeprom.bytes,
+                    "io_pins": p.device.io_pins,
+                    "support_level": p.device.pyxpic.support_level,
+                    "buildable": pyxpic_pic14::is_supported(name),
+                    "limits": pyxpic_pic14::device_limits(name),
+                    "clocks": clock_choices(p).into_iter().map(|(label, value, detail)| json!({ "label": label, "value": value, "detail": detail })).collect::<Vec<_>>(),
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&json!({ "version": REPORT_VERSION, "devices": devices })).expect("el informe es JSON valido"));
+    } else {
+        for p in &packs {
+            let name = p.device.name.as_str();
+            let state = if !pyxpic_pic14::is_supported(name) { "sin backend: solo check" } else { pyxpic_pic14::device_limits(name).unwrap_or("compila") };
+            println!("{name}: {} palabras, {} B de RAM, {} pines de E/S; {state}", p.memory.program.words, p.memory.data.ram_bytes, p.device.io_pins);
+        }
+    }
+    if packs.is_empty() {
+        eprintln!("no se encontro ningun Device Pack (usa --devices-dir o $PYXPIC_DEVICES)");
+        return ExitCode::from(1);
+    }
+    ExitCode::SUCCESS
+}
+
+// ---- pyxpic project retarget -------------------------------------------------------------------------------------------------------
+
+/// El programa con el dispositivo declarado cambiado a `device`; `None` si no declara ninguno. Solo toca la linea de la declaracion.
+fn redeclare(lang: Language, src: &str, device: &str) -> Option<String> {
+    let old = declared_device_in(lang, src)?;
+    let mut done = false;
+    let out: String = src
+        .split_inclusive('\n')
+        .map(|line| {
+            let head = line.trim_start().to_ascii_lowercase();
+            let is_decl = match lang {
+                Language::Basic => head.starts_with("device"),
+                _ => head.starts_with("from pyxpic.device import"),
+            };
+            match line.to_ascii_uppercase().rfind(&old.to_ascii_uppercase()) {
+                Some(at) if is_decl && !done => {
+                    done = true;
+                    format!("{}{device}{}", &line[..at], &line[at + old.len()..])
+                }
+                _ => line.to_string(),
+            }
+        })
+        .collect();
+    done.then_some(out)
+}
+
+/// Compila en memoria para el destino del perfil: detecta lo que el analisis acepta pero el backend de ese PIC no genera todavia.
+fn try_build(project: &Project, t: &Target, pack: &DevicePack, lang: Language, src: &str) -> Result<(), String> {
+    let mut target = pack.target_profile();
+    if !declares_clock_in(lang, src) {
+        if let Some(text) = &t.clock {
+            target.project_clock = Some(pyxpic_frontend::parse_clock(text, &target)?);
+        }
+    }
+    let Some(program) = analyze_in(lang, src, &target).program else {
+        return Err(format!("{} no es valido para {}", project.main.as_ref().map(|m| m.display().to_string()).unwrap_or_default(), pack.device.name));
+    };
+    let module = pyxpic_ir::lower(&program);
+    let mut settings = t.config.clone();
+    if let Some(cs) = &module.clock_source {
+        settings.push(("FOSC".to_string(), cs.fosc.to_string()));
+        settings.extend(cs.extra_config.iter().cloned());
+    }
+    let opts = crate::backend_options(pack, &settings)?;
+    pyxpic_pic14::compile(&module, &opts).map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// `pyxpic project retarget PIC [--clock DECL] [--project f] [--target perfil] [--dry-run] [--devices-dir dir]`
+///
+/// Cambia la declaracion del programa principal y el perfil a otro PIC. **Compila el resultado en memoria antes de escribir**: si algo no
+/// vale para el chip nuevo (un pin que no existe, un reloj, un periferico) no se escribe nada. Guarda un `.bak` de cada archivo que cambia.
+fn retarget_cmd(args: &[String]) -> ExitCode {
+    let (mut device, mut clock, mut project_arg, mut target_arg, mut devices_arg, mut dry) = (None::<String>, None::<String>, None::<String>, None::<String>, None::<String>, false);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--clock" => clock = it.next().cloned(),
+            "--project" => project_arg = it.next().cloned(),
+            "--target" => target_arg = it.next().cloned(),
+            "--devices-dir" => devices_arg = it.next().cloned(),
+            "--dry-run" => dry = true,
+            s if s.starts_with("--") => return crate::usage(),
+            _ if device.is_none() => device = Some(crate::pic_name(a)),
+            _ => return crate::usage(),
+        }
+    }
+    let Some(device) = device else { return crate::usage() };
+    let fail = |m: String, code: u8| {
+        eprintln!("{m}");
+        ExitCode::from(code)
+    };
+    let Some(file) = project_arg.map(PathBuf::from).or_else(|| project::find(Path::new("."))) else {
+        return fail(format!("no hay un {} en esta carpeta ni en las de arriba (crea uno con: pyxpic init)", project::FILE), 2);
+    };
+    let text = match std::fs::read_to_string(&file) {
+        Ok(t) => t,
+        Err(e) => return fail(format!("no se pudo leer '{}': {e}", file.display()), 2),
+    };
+    let mut old_project = match project::parse(&file, &text) {
+        Ok(p) => p,
+        Err(e) => return fail(e, 2),
+    };
+    if let Some(d) = &devices_arg {
+        old_project.devices_dir = Some(PathBuf::from(d));
+    }
+    let (old_name, old_target) = match old_project.target(target_arg.as_deref()) {
+        Ok(Some(t)) => t,
+        Ok(None) => return fail(format!("{}: no hay perfiles de destino que cambiar", file.display()), 2),
+        Err(e) => return fail(e, 2),
+    };
+    let devices_dir = old_project.devices_dir.as_ref().map(|d| d.to_string_lossy().into_owned());
+    let pack = match locate_pack(&device, devices_dir.as_deref()) {
+        Ok(p) => p,
+        Err((m, c)) => return fail(m, c),
+    };
+    let device = pack.device.name.clone();
+    let Some(main) = old_project.main.clone() else {
+        return fail(format!("{}: el proyecto no define 'main': no hay programa que cambiar", file.display()), 2);
+    };
+    let src = match std::fs::read_to_string(&main) {
+        Ok(s) => s,
+        Err(e) => return fail(format!("no se pudo leer el programa '{}': {e}", main.display()), 2),
+    };
+    let lang = Language::from_path(&main.to_string_lossy());
+    // un programa sin declaracion toma el dispositivo del perfil: no se toca
+    let new_src = redeclare(lang, &src, &device).unwrap_or_else(|| src.clone());
+
+    let mut doc: DocumentMut = match text.parse() {
+        Ok(d) => d,
+        Err(e) => return fail(format!("{}: {e}", file.display()), 2),
+    };
+    let old_device = old_target.device.clone().or_else(|| declared_device_in(lang, &src));
+    // `init` llama al perfil como el dispositivo: ese nombre se actualiza tambien
+    let new_name = match &old_device {
+        Some(d) if d.eq_ignore_ascii_case(&old_name) && !old_project.targets.contains_key(&device.to_lowercase()) => device.to_lowercase(),
+        _ => old_name.clone(),
+    };
+    {
+        let Some(targets) = doc.get_mut("target").and_then(Item::as_table_like_mut) else {
+            return fail("'target' no es una tabla".into(), 2);
+        };
+        if new_name != old_name {
+            if let Some(item) = targets.remove(&old_name) {
+                targets.insert(&new_name, item);
+            }
+        }
+        let Some(table) = targets.get_mut(&new_name).and_then(Item::as_table_like_mut) else {
+            return fail(format!("[target.{old_name}] no es una tabla"), 2);
+        };
+        put(table, "device", Value::from(device.as_str()));
+        if let Some(c) = &clock {
+            put(table, "clock", Value::from(c.as_str()));
+        }
+    }
+    if new_name != old_name && old_project.default_target.as_deref() == Some(old_name.as_str()) {
+        if let Some(p) = doc.get_mut("project").and_then(Item::as_table_like_mut) {
+            put(p, "default_target", Value::from(new_name.as_str()));
+        }
+    }
+    let new_text = doc.to_string();
+    let mut new_project = match project::parse(&file, &new_text) {
+        Ok(p) => p,
+        Err(e) => return fail(format!("el cambio dejaria el archivo invalido, no se escribe nada:\n{e}"), 1),
+    };
+    new_project.devices_dir = old_project.devices_dir.clone();
+    let Some(new_target) = new_project.targets.get(&new_name).cloned() else {
+        return fail(format!("el perfil '{new_name}' ya no existe tras el cambio, no se escribe nada"), 1);
+    };
+    let report = check_target_with(&new_project, &new_name, &new_target, Some(&new_src));
+    let mut errors = report.errors;
+    if errors.is_empty() {
+        if let Err(e) = try_build(&new_project, &new_target, &pack, lang, &new_src) {
+            errors.push(e);
+        }
+    }
+    if !errors.is_empty() {
+        eprintln!("el proyecto no se puede pasar a {device}, no se escribe nada:");
+        for e in &errors {
+            eprintln!("  error: {e}");
+        }
+        eprintln!("corrige el programa (pines, perifericos) o el perfil (--clock) y repite");
+        return ExitCode::from(1);
+    }
+    for w in &report.warnings {
+        println!("  aviso: {w}");
+    }
+    println!("  dispositivo: {} -> {device}", old_device.as_deref().unwrap_or("(sin definir)"));
+    if new_name != old_name {
+        println!("  perfil: {old_name} -> {new_name}");
+    }
+    if let Some(l) = pyxpic_pic14::device_limits(&device) {
+        println!("  limites de {device}: {l}");
+    }
+    if dry {
+        println!("--dry-run: no se escribio nada");
+        return ExitCode::SUCCESS;
+    }
+    for (path, old, new) in [(&main, &src, &new_src), (&file, &text, &new_text)] {
+        if old == new {
+            continue;
+        }
+        let bak = path.with_file_name(format!("{}.bak", path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()));
+        if let Err(e) = std::fs::write(&bak, old).and_then(|_| std::fs::write(path, new)) {
+            return fail(format!("no se pudo escribir '{}': {e}", path.display()), 2);
+        }
+        println!("  {} actualizado (la version anterior queda en {})", path.display(), bak.display());
+    }
     ExitCode::SUCCESS
 }

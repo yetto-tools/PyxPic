@@ -326,7 +326,12 @@ pub fn resolve_with(profile: &OscillatorProfile, kind: ClockKind, hz: u32, mode:
 impl ClockSource {
     /// `Internal 8 MHz (FOSC = INTRC_NOCLKOUT, OSCCON = 0x70)`.
     pub fn describe(&self) -> String {
-        let extra = match self.ircf {
+        self.describe_for(true)
+    }
+
+    /// Como `describe`, pero sin `OSCCON` en los dispositivos que no tienen ese registro (PIC16F628A).
+    pub fn describe_for(&self, has_osccon: bool) -> String {
+        let extra = match self.ircf.filter(|_| has_osccon) {
             Some(i) => format!(", OSCCON = {:#04x}", i << 4),
             None => String::new(),
         };

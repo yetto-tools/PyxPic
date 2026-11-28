@@ -17,6 +17,6 @@ pub mod sim;
 pub mod spi_sim;
 
 pub use asm::{assemble, assemble_fragment, assemble_with, declared_processor, render_errors, xc_inc, AsmEnv, AsmError, Assembled, EnvReg, FragItem, Fragment};
-pub use codegen::{compile, CodegenError, Compiled, DelayReport, Options};
+pub use codegen::{compile, device_limits, is_supported, CodegenError, Compiled, DelayReport, Options};
 pub use hex::{HexError, Image};
 pub use isa::{disassemble, Cycles, Dest, EncodeError, Flag, Inst};

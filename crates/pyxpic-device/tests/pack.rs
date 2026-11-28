@@ -183,7 +183,7 @@ fn rejects_bad_device_info_and_schema() {
     assert!(has(&p.validate(), "support_level"));
 
     let mut p = pack();
-    p.memory.schema_version = 2;
+    p.memory.schema_version = 3;
     assert!(has(&p.validate(), "schema_version"));
 
     let mut p = pack();

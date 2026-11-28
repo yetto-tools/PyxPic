@@ -1,0 +1,78 @@
+{
+  "schema_version": 2,
+  "program": {
+    "words": 2048,
+    "word_bits": 14,
+    "reset_vector": "0x0000",
+    "interrupt_vector": "0x0004",
+    "stack_levels": 8,
+    "source": "DS40044G p.17 (Figura 4-1)"
+  },
+  "data": {
+    "banks": 4,
+    "bank_size": 128,
+    "sfr": [
+      {
+        "start": "0x000",
+        "end": "0x01F"
+      },
+      {
+        "start": "0x080",
+        "end": "0x09F"
+      },
+      {
+        "start": "0x100",
+        "end": "0x11F"
+      },
+      {
+        "start": "0x180",
+        "end": "0x19F"
+      }
+    ],
+    "unimplemented": [
+      {
+        "start": "0x150",
+        "end": "0x16F"
+      },
+      {
+        "start": "0x1A0",
+        "end": "0x1EF"
+      }
+    ],
+    "bank_select": {
+      "register": "STATUS",
+      "bits": [
+        "RP0",
+        "RP1"
+      ]
+    },
+    "gpr": [
+      {
+        "start": "0x020",
+        "end": "0x07F"
+      },
+      {
+        "start": "0x0A0",
+        "end": "0x0EF"
+      },
+      {
+        "start": "0x120",
+        "end": "0x14F"
+      }
+    ],
+    "common": {
+      "start": "0x070",
+      "end": "0x07F",
+      "mirrors": [
+        "0x0F0",
+        "0x170",
+        "0x1F0"
+      ]
+    },
+    "ram_bytes": 224,
+    "source": "DS40044G p.18 (Figura 4-2) y p.20-23 (Tablas 4-3 a 4-6)"
+  },
+  "eeprom": {
+    "bytes": 128
+  }
+}
