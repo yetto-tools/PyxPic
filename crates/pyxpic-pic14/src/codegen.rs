@@ -184,7 +184,7 @@ pub fn is_supported(device: &str) -> bool {
 
 /// Lo que el backend todavia no hace en un dispositivo que soporta; `None` si no hay limites propios del dispositivo.
 pub fn device_limits(device: &str) -> Option<&'static str> {
-    (is_supported(device) && !device.eq_ignore_ascii_case("PIC16F887")).then_some("solo GPIO, esperas, registros y el lenguaje (sin perifericos del SDK todavia)")
+    (is_supported(device) && !device.eq_ignore_ascii_case("PIC16F887")).then_some("solo GPIO, esperas, registros, UART y el lenguaje (sin los demas perifericos del SDK)")
 }
 
 #[derive(Debug, Clone)]
@@ -1089,7 +1089,7 @@ impl<'a> Gen<'a> {
         Ok(())
     }
 
-    /// Los perifericos del SDK estan escritos y probados con los registros del PIC16F887: en otro dispositivo se rechazan.
+    /// Los perifericos del SDK estan escritos y probados con los registros del PIC16F887: en otro dispositivo se rechazan, salvo la UART.
     fn check_peripheral(&self, inst: &pyxpic_ir::ir::Inst) -> Result<(), CodegenError> {
         use pyxpic_ir::ir::Inst as I;
         let what = match inst {
@@ -1100,13 +1100,12 @@ impl<'a> Gen<'a> {
             I::I2c { .. } => "I2C",
             I::Spi { .. } => "SPI",
             I::Comp { .. } => "comparadores",
-            I::Uart { .. } => "UART",
             _ => return Ok(()),
         };
         if self.device.eq_ignore_ascii_case("PIC16F887") {
             return Ok(());
         }
-        unsupported(format!("{what} en el {}: por ahora solo GPIO, esperas, registros y el lenguaje", self.device))
+        unsupported(format!("{what} en el {}: por ahora solo GPIO, esperas, registros, UART y el lenguaje", self.device))
     }
 
     fn inst(&mut self, inst: &pyxpic_ir::ir::Inst) -> Result<(), CodegenError> {
@@ -1850,8 +1849,14 @@ impl<'a> Gen<'a> {
                 let hz = self.clock_hz.ok_or_else(|| CodegenError::Device("UART.start necesita el reloj: declara 'CLOCK: Internal' y 'FREQUENCY: 4MHz'".into()))?;
                 self.uart_report = Some(UartReport { baud: st.baud, achieved: brg.achieved(hz), error_pct: brg.error_pct(hz), brgh: brg.brgh, brg16: brg.brg16, n: brg.n, fosc_hz: hz });
                 // 12.1.1.6 y 12.1.2.8: baudios, modo asincrono (SYNC = 0), SPEN, TXEN y CREN
-                self.write_banked("BAUDCTL", (brg.brg16 as u8) << self.bit_pos("BRG16")?)?;
-                self.write_banked("SPBRGH", (brg.n >> 8) as u8)?;
+                if self.registers.get("BAUDCTL").is_some() {
+                    self.write_banked("BAUDCTL", (brg.brg16 as u8) << self.bit_pos("BRG16")?)?;
+                    self.write_banked("SPBRGH", (brg.n >> 8) as u8)?;
+                } else {
+                    // USART del PIC16F628A: RB1/RX y RB2/TX necesitan su TRIS en 1; el periferico maneja la salida (DS40044G p.73 y p.80)
+                    self.bit_op("TRISB1", true)?;
+                    self.bit_op("TRISB2", true)?;
+                }
                 self.write_banked("SPBRG", brg.n as u8)?;
                 let txsta = (1u8 << self.bit_pos("TXEN")?) | ((brg.brgh as u8) << self.bit_pos("BRGH")?) | ((st.bits9 as u8) << self.bit_pos("TX9")?);
                 self.write_banked("TXSTA", txsta)?;

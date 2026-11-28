@@ -109,3 +109,45 @@ fn untested_peripherals_are_rejected_with_a_clear_error() {
     let err = try_build(src).unwrap_err().to_string();
     assert!(err.contains("temporizadores en el PIC16F628A"), "{err}");
 }
+
+fn uart_program(baud: u32) -> String {
+    format!("from pyxpic.device import PIC16F628A\nfrom pyxpic.periph.uart import UART\nCLOCK: Internal\nFREQUENCY: 4MHz\n\n\ndef main() -> None:\n    UART.start(baud={baud})\n    while True:\n        dato: uint8 = UART.read()\n        UART.write(dato)\n")
+}
+
+#[test]
+fn the_uart_echoes_with_the_8_bit_baud_generator() {
+    let c = try_build(&uart_program(9600)).unwrap();
+    let r = c.uart.expect("informe de la UART");
+    assert_eq!((r.brg16, r.brgh, r.n), (false, true, 25));
+    let mut sim = Sim::new(&c.image);
+    sim.fosc_hz = 4_000_000;
+    sim.write(0x86, 0);
+    sim.uart_feed(b'A', 3_000, true);
+    sim.uart_feed(b'B', 6_000, true);
+    sim.run_until(20_000, |_| false);
+    assert!(sim.uart_violations.is_empty(), "{:?}", sim.uart_violations);
+    assert_eq!(sim.uart_tx.iter().map(|t| t.0).collect::<Vec<_>>(), b"AB".to_vec());
+    assert_eq!(sim.read(0x86) & 0b110, 0b110, "TRISB<2:1> en 1");
+    assert_eq!(sim.read(0x99), 25, "SPBRG");
+    // BAUDCTL (187h) y SPBRGH (9Ah) no existen en este chip: no se escriben
+    assert_eq!((sim.read(0x187), sim.read(0x9A)), (0, 0));
+}
+
+#[test]
+fn a_baud_rate_that_needs_brg16_is_rejected() {
+    // 4 MHz y 200 baudios: con BRGH = 0 haria falta n = 312, que no cabe en SPBRG de 8 bits
+    let src = uart_program(200);
+    let r = analyze(&src, &pack().target_profile());
+    let text = r.diagnostics.render(&src, "t.py");
+    assert!(r.program.is_none() && text.contains("PYP2182"), "{text}");
+}
+
+#[test]
+fn the_uart_pins_cannot_also_be_gpio() {
+    let src = uart_program(9600)
+        .replace("CLOCK:", "from pyxpic.periph.gpio import RB2\nCLOCK:")
+        .replace("    while True:", "    RB2.output()\n    while True:");
+    let r = analyze(&src, &pack().target_profile());
+    let text = r.diagnostics.render(&src, "t.py");
+    assert!(r.program.is_none() && text.contains("PYP2150"), "{text}");
+}

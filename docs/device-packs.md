@@ -107,10 +107,13 @@ Fuente: **DS40044G** (2009), <https://ww1.microchip.com/downloads/en/DeviceDoc/4
 | Pines | PDIP-18, 15 de E/S (RA5 es solo entrada, MCLR/VPP) | 4 |
 | Reloj | INTOSC 4 MHz; LP hasta 200 kHz, XT 0,1-4 MHz, HS 1-20 MHz | 99, 144 |
 
-**Estado: experimental.** El backend genera GPIO, esperas, registros, ensamblador en línea y el lenguaje. Los periféricos del SDK
-(temporizadores, PWM, UART, EEPROM, comparadores...) dan error hasta tener sus pruebas. Se probó en el simulador (que modela el PIC16F887:
-solo se usa el núcleo y PORTB/TRISB, que coinciden). **En hardware (2026-11-28)** solo se ha probado `examples/python/pic16f628a/blink.py`:
-el LED de RB0 parpadea con el reloj interno. El resto no está probado en hardware.
+**Estado: experimental.** El backend genera GPIO, esperas, registros, ensamblador en línea, el lenguaje y la UART. Los demás periféricos del SDK
+(temporizadores, PWM, EEPROM, comparadores...) dan error hasta tener sus pruebas. Se probó en el simulador (que modela el PIC16F887:
+solo se usa el núcleo y PORTB/TRISB, que coinciden). **En hardware (2026-11-28)** se han probado `examples/python/pic16f628a/blink.py`
+(el LED de RB0 parpadea con el reloj interno) y `serial.py` (la UART responde a 9600 baudios). El resto no está probado en hardware.
+
+- **UART:** RB2/TX (pin 8) y RB1/RX (pin 7). Sin BRG16 (a 4 MHz no se baja de 245 baudios); `UART.start` pone `TRISB1` y `TRISB2` en 1 (p.73, p.80).
+  Ejemplo: `examples/python/pic16f628a/serial.py`.
 
 - No hay `ANSEL`: al configurar RA0-RA3 se escribe `CMCON = 07h`, que **apaga los dos comparadores** (p.63-64).
 - **RA4 es de drenador abierto** (p.33, p.37): como salida no pone nivel alto; un LED va entre VDD y el pin.

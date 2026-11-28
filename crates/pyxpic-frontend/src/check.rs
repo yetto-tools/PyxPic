@@ -812,8 +812,8 @@ impl<'a> Checker<'a> {
             for n in names {
                 if n.name == "UART" {
                     if let Some(set) = &self.target.peripherals {
-                        if !set.contains("EUSART") {
-                            self.d.error("PYP2180", n.span, format!("'{}' no tiene UART: el dispositivo no trae el EUSART", self.target.name));
+                        if !set.contains("EUSART") && !set.contains("USART") {
+                            self.d.error("PYP2180", n.span, format!("'{}' no tiene UART: el dispositivo no trae EUSART ni USART", self.target.name));
                             continue;
                         }
                     }
@@ -2280,8 +2280,11 @@ impl<'a> Checker<'a> {
         }
         for p in pend {
             let Some(hz) = self.effective_clock(p.span, "UART.start") else { continue };
-            let Some(brg) = uart::solve(hz, p.baud) else {
-                self.d.error("PYP2182", p.span, format!("{} baudios no se pueden generar con un reloj de {hz} Hz: ni con SPBRG = 0 y BRGH = BRG16 = 1 (FOSC/4) se llega tan alto", p.baud));
+            // sin SPBRGH (USART del PIC16F628A) no hay generador de 16 bits
+            let has_brg16 = self.target.registers.as_ref().is_none_or(|r| r.contains_key("SPBRGH"));
+            let Some(brg) = uart::solve_with(hz, p.baud, has_brg16) else {
+                let why = if has_brg16 { "ni con SPBRG = 0 y BRGH = BRG16 = 1 (FOSC/4) se llega tan alto" } else { "el generador de 8 bits (SPBRG) no llega a esa velocidad" };
+                self.d.error("PYP2182", p.span, format!("{} baudios no se pueden generar con un reloj de {hz} Hz: {why}", p.baud));
                 continue;
             };
             let err = brg.error_pct(hz);

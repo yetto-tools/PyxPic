@@ -11,6 +11,8 @@
 //!
 //! con `n` = `SPBRG` (8 bits) o `SPBRGH:SPBRG` (16 bits, solo con BRG16).
 //!
+//! El USART del PIC16F628A (DS40044G p.75) no tiene BRG16 ni `SPBRGH`: solo las dos primeras filas (ver `solve_with`).
+//!
 //! **Tolerancia al error de baudios** (decision de PyxPic, no del datasheet: el datasheet no da un limite): una trama 8N1 son 10
 //! bits y el receptor muestrea cada bit hacia su centro; si el error total entre los dos extremos pasa de ~4,7 % el ultimo bit se
 //! lee fuera de su ventana. Se avisa por encima de **2,0 %** (el margen para que el otro extremo tambien tenga su error) y es un
@@ -54,8 +56,16 @@ impl UartBrg {
 /// La configuracion de menor error: prueba los cuatro modos con el `n` entero mas cercano por arriba y por abajo; a igual error
 /// gana el modo mas simple (8 bits, BRGH = 0).
 pub fn solve(fosc_hz: u32, baud: u32) -> Option<UartBrg> {
+    solve_with(fosc_hz, baud, true)
+}
+
+/// Como `solve`; con `has_brg16 = false` solo prueba los modos de 8 bits (dispositivos sin `SPBRGH`).
+pub fn solve_with(fosc_hz: u32, baud: u32, has_brg16: bool) -> Option<UartBrg> {
     let mut best: Option<(f64, UartBrg)> = None;
     for (brg16, brgh) in [(false, false), (false, true), (true, false), (true, true)] {
+        if brg16 && !has_brg16 {
+            continue;
+        }
         let probe = UartBrg { baud, brgh, brg16, n: 0 };
         let max_n: i64 = if brg16 { 65_535 } else { 255 };
         let exact = fosc_hz as f64 / (probe.divisor() as f64 * baud as f64) - 1.0;
